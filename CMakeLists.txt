@@ -48,6 +48,7 @@ endfunction()
 
 addApp(emptyProject src/emptyProject.cpp)
 addApp(rasterizationOrder src/rasterizationOrder.cpp)
+addApp(gameOfLife src/gameOfLife.cpp)
 
 #function(getSharedLibraries out lib cfg)
 #  #message("getSharedLibraries(${lib} ${cfg})")
