@@ -52,6 +52,7 @@ addApp(gameOfLife src/gameOfLife.cpp)
 addApp(noise src/noise.cpp)
 addApp(spirv src/spirv.cpp)
 addApp(sort src/Sort.cpp)
+addApp(linearInterpolationOfHomogenousCoords src/linearInterpolationOfHomogenousCoords.cpp)
 
 #function(getSharedLibraries out lib cfg)
 #  #message("getSharedLibraries(${lib} ${cfg})")
