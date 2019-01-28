@@ -53,6 +53,7 @@ addApp(noise src/noise.cpp)
 addApp(spirv src/spirv.cpp)
 addApp(sort src/Sort.cpp)
 addApp(linearInterpolationOfHomogenousCoords src/linearInterpolationOfHomogenousCoords.cpp)
+addApp(csCompiler src/csCompiler.cpp)
 
 #function(getSharedLibraries out lib cfg)
 #  #message("getSharedLibraries(${lib} ${cfg})")
