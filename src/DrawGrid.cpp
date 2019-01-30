@@ -57,5 +57,7 @@ void drawGrid(vars::Vars&vars){
     ->setMatrix4fv("projection",glm::value_ptr(projection->getProjection()))
     ->set1f("far",vars.getFloat("camera.far"))
     ->use();
+  ge::gl::glDepthMask(GL_FALSE);
   ge::gl::glDrawArrays(GL_TRIANGLE_STRIP,0,4);
+  ge::gl::glDepthMask(GL_TRUE);
 }
