@@ -211,36 +211,107 @@ float cpu_bubble(std::vector<uint8_t>&d,size_t nofElements,size_t elementSize){
   return elapsed.count();
 }
 
+float cpu_merge(std::vector<uint8_t>&d,size_t nofElements,size_t elementSize){
+  auto const cmp = [&](uint8_t*a,uint8_t*b){
+    for(size_t i=0;i<elementSize;++i){
+      if(a[i] < b[i])return -1;
+      if(a[i] > b[i])return +1;
+    }
+    return 0;
+  };
+  auto const swap = [&](uint8_t*a,uint8_t*b){
+    for(size_t i=0;i<elementSize;++i){
+      auto c = a[i];
+      a[i] = b[i];
+      b[i] = c;
+    }
+  };
+  auto const ifGreaterSwap = [&](uint8_t*a,uint8_t*b){
+    if(cmp(a,b)>0)swap(a,b);
+  };
+  auto const divRoundUp = [](size_t a,size_t b){
+    return (a/b) + static_cast<size_t>((a%b)>0);
+  };
+
+  auto const mergeSequencePair = [&](uint8_t*leftSequence,uint8_t*rightSequence,size_t sequenceLength){
+    size_t ai=sequenceLength/2;
+    size_t bi=sequenceLength/2;
+    while(ai<sequenceLength||bi<sequenceLength){
+      auto const cmpRes = cmp(leftSequence,rightSequence);
+      if(cmpRes > 0){
+        swap(leftSequence,rightSequence);
+        ai++;
+      }
+      if(cmpRes < 0){
+        ai++;
+      }
+
+
+    }
+  };
+
+  auto const mergeSequences = [&](size_t sequenceLength){
+    auto const nofSequences     = divRoundUp(nofElements,sequenceLength);
+    auto const nofSequencePairs = divRoundUp(nofSequences,2);
+    for(size_t sequencePair=0;sequencePair<nofSequencePairs;++sequencePair){
+      auto const leftSequence  = d.data()+(sequencePair*2+0)*sequenceLength*elementSize;
+      auto const rightSequence = d.data()+(sequencePair*2+1)*sequenceLength*elementSize;
+      mergeSequencePair(leftSequence,rightSequence,sequenceLength);
+    }
+  };
+
+
+  for(size_t sequenceLength=1;sequenceLength<nofElements;sequenceLength<<=1)
+    mergeSequences(sequenceLength);
+
+
+  return 0.f;
+}
+
 float gpu_merge(std::vector<uint8_t>&d,size_t nofElements,size_t elementSize){
   if(elementSize != 4)return std::numeric_limits<float>::infinity();
   auto buffer = std::make_shared<ge::gl::Buffer>(d);
   std::string const src = R".(
   #version 450
   
-  layout(local_size_x=WORKGROUP_SIZE)in;
+  #ifndef WORKGROUP_SIZE
+  #define WORKGROUP_SIZE 64
+  #endif//WORKGROUP_SIZE
+
+  #ifndef ELEMENT_SIZE
+  #define ELEMENT_SIZE 4
+  #endif//ELEMENT_SIZE
+
+  #ifndef LOCAL_ELEMENTS
+  #define LOCAL_ELEMENTS WORKGROUP_SIZE
+  #endif//LOCAL_ELEMENTS
+
+  #define DIVROUNDUP(x,y) (x/y)+uint((x%y)>0)
 
   #define UINT_SIZE             4
   #define ELEMENT_SIZE_IN_UINTS (ELEMENT_SIZE/UINT_SIZE)
   #define LOCAL_SIZE_IN_UINTS   (LOCAL_ELEMENTS*ELEMENT_SIZE_IN_UINTS)
-  #define UINT_LOADS_PER_THREAD (LOCAL_SIZE_IN_UINTS / WORKGROUP_SIZE)
-  #define ELEMENTS_PER_THREAD   (LOCAL_ELEMENTS / WORKGROUP_SIZE)
+  #define UINT_LOADS_PER_THREAD DIVROUNDUP(LOCAL_SIZE_IN_UINTS,WORKGROUP_SIZE)
+  #define ELEMENTS_PER_THREAD   DIVROUNDUP(LOCAL_ELEMENTS,WORKGROUP_SIZE)
+
+  layout(local_size_x=WORKGROUP_SIZE)in;
+
+  layout(binding=0,std430)buffer Data{uint global[];};
 
   shared uint local[LOCAL_SIZE_IN_UINTS];
 
-  layout(binding=0,std430)buffer Data{uint data[];};
-
-  uint loadUint(uint i){
+  uint getGlobal(uint i){
     if(i>=NOF_ELEMENTS)return 0xffffffff;
-    return data[i];
+    return global[i];
   }
 
-  void storeUint(uint i,uint d){
+  void setGlobal(uint i,uint d){
     if(i>=NOF_ELEMENTS)return;
-    data[i] = d;
+    global[i] = d;
   }
 
-  #define GLOBAL_INDEX(i) (gl_LocalInvocationID.x + i*gl_WorkGroupID.x + gl_WorkGroupID.x*gl_WorkGroupSize.x*UINT_LOADS_PER_THREAD)
-  #define LOCAL_INDEX(i)  (gl_LocalInvocationID.x + i*WORKGROUP_SIZE)
+  #define LOCAL_INDEX(i)  (i*WORKGROUP_SIZE + gl_LocalInvocationID.x)
+  #define GLOBAL_INDEX(i) (gl_WorkGroupID.x*LOCAL_SIZE_IN_UINTS + LOCAL_INDEX(i))
 
   void loadToLocal(){
     for(uint i=0;i<UINT_LOADS_PER_THREAD;++i)
@@ -271,40 +342,85 @@ float gpu_merge(std::vector<uint8_t>&d,size_t nofElements,size_t elementSize){
     }
   }
 
-  void bubbleSortEvenRun(){
-    for(uint i=0;i<ELEMENTS_PER_THREAD;++i)
-      if(!less(gl_LocalInvocationID.x*2+i*gl_WorkGroupSize.x,gl_LocalInvocationID.x*2+1+i*gl_WorkGroupSize.x)){
-        swap(gl_LocalInvocationID.x*2+i*gl_WorkGroupSize.x,gl_LocalInvocationID.x*2+1+i*gl_WorkGroupSize.x);
-      }
-  }
-  void bubbleSortOddRun(){
-    for(uint i=0;i<ELEMENTS_PER_THREAD;++i)
-      if(!less(gl_LocalInvocationID.x*2+1+i*gl_WorkGroupSize.x,gl_LocalInvocationID.x*2+2+i*gl_WorkGroupSize.x)){
-        swap(gl_LocalInvocationID.x*2+1+i*gl_WorkGroupSize.x,gl_LocalInvocationID.x*2+2+i*gl_WorkGroupSize.x);
-      }
+#define POWER2LOOP0001(VALUE,MIN,MAX,FCE,...) if(VALUE>=MIN&&VALUE<=MAX){FCE(VALUE,__VA_ARGS__);}                               
+#define POWER2LOOP0002(VALUE,MIN,MAX,FCE,...) POWER2LOOP0001(VALUE,MIN,MAX,FCE,__VA_ARGS__) POWER2LOOP0001(VALUE*2,MIN,MAX,FCE,__VA_ARGS__)  
+#define POWER2LOOP0004(VALUE,MIN,MAX,FCE,...) POWER2LOOP0001(VALUE,MIN,MAX,FCE,__VA_ARGS__) POWER2LOOP0002(VALUE*2,MIN,MAX,FCE,__VA_ARGS__)  
+#define POWER2LOOP0008(VALUE,MIN,MAX,FCE,...) POWER2LOOP0001(VALUE,MIN,MAX,FCE,__VA_ARGS__) POWER2LOOP0004(VALUE*2,MIN,MAX,FCE,__VA_ARGS__)  
+#define POWER2LOOP0016(VALUE,MIN,MAX,FCE,...) POWER2LOOP0001(VALUE,MIN,MAX,FCE,__VA_ARGS__) POWER2LOOP0008(VALUE*2,MIN,MAX,FCE,__VA_ARGS__)  
+#define POWER2LOOP0032(VALUE,MIN,MAX,FCE,...) POWER2LOOP0001(VALUE,MIN,MAX,FCE,__VA_ARGS__) POWER2LOOP0016(VALUE*2,MIN,MAX,FCE,__VA_ARGS__)  
+#define POWER2LOOP0064(VALUE,MIN,MAX,FCE,...) POWER2LOOP0001(VALUE,MIN,MAX,FCE,__VA_ARGS__) POWER2LOOP0032(VALUE*2,MIN,MAX,FCE,__VA_ARGS__)  
+#define POWER2LOOP0128(VALUE,MIN,MAX,FCE,...) POWER2LOOP0001(VALUE,MIN,MAX,FCE,__VA_ARGS__) POWER2LOOP0064(VALUE*2,MIN,MAX,FCE,__VA_ARGS__)  
+#define POWER2LOOP0256(VALUE,MIN,MAX,FCE,...) POWER2LOOP0001(VALUE,MIN,MAX,FCE,__VA_ARGS__) POWER2LOOP0128(VALUE*2,MIN,MAX,FCE,__VA_ARGS__)  
+#define POWER2LOOP0512(VALUE,MIN,MAX,FCE,...) POWER2LOOP0001(VALUE,MIN,MAX,FCE,__VA_ARGS__) POWER2LOOP0256(VALUE*2,MIN,MAX,FCE,__VA_ARGS__)  
+#define POWER2LOOP1024(VALUE,MIN,MAX,FCE,...) POWER2LOOP0001(VALUE,MIN,MAX,FCE,__VA_ARGS__) POWER2LOOP0512(VALUE*2,MIN,MAX,FCE,__VA_ARGS__)  
+#define POWER2LOOP2048(VALUE,MIN,MAX,FCE,...) POWER2LOOP0001(VALUE,MIN,MAX,FCE,__VA_ARGS__) POWER2LOOP1024(VALUE*2,MIN,MAX,FCE,__VA_ARGS__)  
+#define POWER2LOOP4096(VALUE,MIN,MAX,FCE,...) POWER2LOOP0001(VALUE,MIN,MAX,FCE,__VA_ARGS__) POWER2LOOP2048(VALUE*2,MIN,MAX,FCE,__VA_ARGS__)  
+#define POWER2LOOP8192(VALUE,MIN,MAX,FCE,...) POWER2LOOP0001(VALUE,MIN,MAX,FCE,__VA_ARGS__) POWER2LOOP4096(VALUE*2,MIN,MAX,FCE,__VA_ARGS__)  
+
+#define FORLOOP0001(VALUE,MIN,MAX,FCE,...) if(VALUE>=MIN&&VALUE<=MAX){FCE(VALUE,__VA_ARGS__);} 
+#define FORLOOP0002(VALUE,MIN,MAX,FCE,...) FORLOOP0001(VALUE,MIN,MAX,FCE,__VA_ARGS__) FORLOOP0001(VALUE+1   ,MIN,MAX,FCE,__VA_ARGS__) 
+#define FORLOOP0004(VALUE,MIN,MAX,FCE,...) FORLOOP0002(VALUE,MIN,MAX,FCE,__VA_ARGS__) FORLOOP0002(VALUE+2   ,MIN,MAX,FCE,__VA_ARGS__) 
+#define FORLOOP0008(VALUE,MIN,MAX,FCE,...) FORLOOP0004(VALUE,MIN,MAX,FCE,__VA_ARGS__) FORLOOP0004(VALUE+4   ,MIN,MAX,FCE,__VA_ARGS__) 
+#define FORLOOP0016(VALUE,MIN,MAX,FCE,...) FORLOOP0008(VALUE,MIN,MAX,FCE,__VA_ARGS__) FORLOOP0008(VALUE+8   ,MIN,MAX,FCE,__VA_ARGS__) 
+#define FORLOOP0032(VALUE,MIN,MAX,FCE,...) FORLOOP0016(VALUE,MIN,MAX,FCE,__VA_ARGS__) FORLOOP0016(VALUE+16  ,MIN,MAX,FCE,__VA_ARGS__) 
+#define FORLOOP0064(VALUE,MIN,MAX,FCE,...) FORLOOP0032(VALUE,MIN,MAX,FCE,__VA_ARGS__) FORLOOP0032(VALUE+32  ,MIN,MAX,FCE,__VA_ARGS__) 
+#define FORLOOP0128(VALUE,MIN,MAX,FCE,...) FORLOOP0064(VALUE,MIN,MAX,FCE,__VA_ARGS__) FORLOOP0064(VALUE+64  ,MIN,MAX,FCE,__VA_ARGS__) 
+#define FORLOOP0256(VALUE,MIN,MAX,FCE,...) FORLOOP0128(VALUE,MIN,MAX,FCE,__VA_ARGS__) FORLOOP0128(VALUE+128 ,MIN,MAX,FCE,__VA_ARGS__) 
+#define FORLOOP0512(VALUE,MIN,MAX,FCE,...) FORLOOP0256(VALUE,MIN,MAX,FCE,__VA_ARGS__) FORLOOP0256(VALUE+256 ,MIN,MAX,FCE,__VA_ARGS__) 
+#define FORLOOP1024(VALUE,MIN,MAX,FCE,...) FORLOOP0512(VALUE,MIN,MAX,FCE,__VA_ARGS__) FORLOOP0512(VALUE+512 ,MIN,MAX,FCE,__VA_ARGS__) 
+#define FORLOOP2048(VALUE,MIN,MAX,FCE,...) FORLOOP1024(VALUE,MIN,MAX,FCE,__VA_ARGS__) FORLOOP1024(VALUE+1024,MIN,MAX,FCE,__VA_ARGS__) 
+#define FORLOOP4096(VALUE,MIN,MAX,FCE,...) FORLOOP2048(VALUE,MIN,MAX,FCE,__VA_ARGS__) FORLOOP2048(VALUE+2048,MIN,MAX,FCE,__VA_ARGS__) 
+#define FORLOOP8192(VALUE,MIN,MAX,FCE,...) FORLOOP4096(VALUE,MIN,MAX,FCE,__VA_ARGS__) FORLOOP4096(VALUE+4096,MIN,MAX,FCE,__VA_ARGS__) 
+
+#define NOF_SEQUENCES(sequenceLength)                       DIVROUNDUP(LOCAL_ELEMENTS,sequenceLength)
+#define NOF_SEQUENCE_PAIRS(sequenceLength)                  (NOF_SEQUENCES(sequenceLength)>>1)
+#define THREADS_PER_SEQUECE_PAIR(sequenceLength)            DIVROUNDUP(WORKGROUP_SIZE,NOF_SEQUENCE_PAIRS(sequenceLength))
+#define SEQUENCE_PAIRS_RUNNING_IN_PARALLEL(sequenceLength)  DIVROUNDUP(WORKGROUP_SIZE,THREADS_PER_SEQUECE_PAIR(sequenceLength))
+#define ITERATION_NEEDED_TO_MERGE_SEQUENCES(sequenceLength) DIVROUNDUP(NOF_SEQUENCE_PAIRS(sequenceLength),SEQUENCE_PAIRS_RUNNING_IN_PARALLEL(sequenceLength))
+#define PAIR_IN_CHUNK(sequenceLength)                       (gl_LocalInvocationID.x/THREADS_PER_SEQUECE_PAIR(sequenceLength))
+#define CHUNK_SIZE(sequenceLength)                          SEQUENCE_PAIRS_RUNNING_IN_PARALLEL(sequenceLength)
+#define LEFT_SEQUENCE(chunk,sequenceLength)                 (chunk*CHUNK_SIZE(sequenceLength)+(PAIR_IN_CHUNK(sequenceLength)<<1))
+#define RIGHT_SEQUENCE(chunk,sequenceLength)                (LEFT_SEQUENCE(chunk,sequenceLength)+1)
+#define THREAD_ID_IN_SEQUENCE_PAIR(sequenceLength)          (gl_LocalInvocationID.x%THREADS_PER_SEQUECE_PAIR(sequenceLength))
+
+  void mergeSequenceChunk(uint sequenceChunk){
+    #define PAIR_IN_CHUNK (gl_LocalInvocationID.x/THREADS_PER_SEQUECE_PAIR(sequenceLength))
+
   }
 
-  void bubbleOneRun(){
-    bubbleSortEvenRun();
-    barrier();
-    bubbleSortOddRun();
-    barrier();
+  #define MERGE_SEQUENCE_CHUNK(sequenceChunk,...)\
+    mergeSequenceChunk(sequenceChunk)
+
+  #define MERGE_SEQUENCES(sequenceLength,...)\
+    FORLOOP8192(0,0,ITERATION_NEEDED_TO_MERGE_SEQUENCES(sequenceLength),MERGE_SEQUENCE_CHUNK)
+
+
+  void mergeSortQ(){
+    POWER2LOOP8192(1,1,LOCAL_ELEMENTS,MERGE_SEQUENCES)
   }
 
-
-
-  void merge(){
+  void mergeSequencePair(uint leftSequence,uint rightSequence,uint sequenceLength){
   }
 
-  void bubbleSort(){
-    for(uint i=0;i<LOCAL_ELEMENTS;++i)
-      bubbleOneRun();
+  void mergeChunk(uint chunk,uing sequenceLength){
+    mergeSequencePair(LEFT_SEQUENCE(chunk,sequenceLength),RIGHT_SEQUENCE(chunk,sequenceLength),sequenceLength);
   }
+
+  void mergeSequences(uint sequenceLength){
+    for(uint chunk=0;chunk<ITERATION_NEEDED_TO_MERGE_SEQUENCES(sequenceLength);++chunk)
+      mergeChunk(chunk,sequenceLength);
+  }
+
+  void mergeSort(){
+    for(uint sequenceLength=1;sequenceLength<LOCAL_ELEMENTS;i<<=1)
+      mergeSequences(sequenceLength);
+  }
+
 
   void main(){
     loadToLocal();
 
-    bubbleSort();
+    mergeSort()
 
     storeToGlobal();
   }
