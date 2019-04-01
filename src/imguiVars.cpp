@@ -68,6 +68,9 @@ void drawGroup(std::unique_ptr<Group>const&group,vars::Vars &vars){
       change = ImGui::InputScalar(n.c_str(),ImGuiDataType_U32,(uint32_t*)vars.get(fn));
       //ImGui::DragInt(n.c_str(),(int32_t*)vars.get(fn),1,0);
     }
+    if(vars.getType(fn) == typeid(uint64_t)){
+      change = ImGui::InputScalar(n.c_str(),ImGuiDataType_U64,(uint64_t*)vars.get(fn));
+    }
     if(vars.getType(fn) == typeid(bool)){
       change = ImGui::Checkbox(n.c_str(),(bool*)vars.get(fn));
     }
@@ -97,7 +100,7 @@ void drawGroup(std::unique_ptr<Group>const&group,vars::Vars &vars){
 }
 
 
-void drawImguiVars(vars::Vars &vars){
+void drawImguiVars(vars::Vars &vars,vars::Vars &&limits){
   std::vector<std::string>names;
   for(size_t i = 0;i<vars.getNofVars();++i)
     names.push_back(vars.getVarName(i));
@@ -106,7 +109,7 @@ void drawImguiVars(vars::Vars &vars){
   
 
   ImGui::Begin("vars");
-  ImGui::PushItemWidth(-90);
+  ImGui::PushItemWidth(-120);
   ImGui::LabelText("label", "Value");
 
   for(auto const&x:hierarchy.groups)
@@ -116,3 +119,4 @@ void drawImguiVars(vars::Vars &vars){
 
   
 }
+

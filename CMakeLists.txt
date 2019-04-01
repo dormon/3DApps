@@ -33,12 +33,23 @@ set(INCLUDES
   src/Barrier.h
   src/imguiVars.h
   src/DrawGrid.h
+  src/Timer.h
   )
 
 add_library(commonSources OBJECT ${SOURCES} ${INCLUDES})
 target_include_directories(commonSources PUBLIC $<INSTALL_INTERFACE:include>)
 target_include_directories(commonSources PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>)
-target_link_libraries(commonSources PUBLIC Simple3DApp::Simple3DApp BasicCamera::BasicCamera ArgumentViewer::ArgumentViewer assimp::assimp FreeImage::FreeImage FreeImagePlus::FreeImagePlus Vars::Vars StringAligner::StringAligner -lstdc++fs)
+target_link_libraries(commonSources PUBLIC 
+  Simple3DApp::Simple3DApp 
+  BasicCamera::BasicCamera 
+  ArgumentViewer::ArgumentViewer 
+  assimp::assimp 
+  FreeImage::FreeImage 
+  FreeImagePlus::FreeImagePlus 
+  Vars::Vars 
+  StringAligner::StringAligner 
+  -lstdc++fs
+  )
 
 function(addApp name srcs)
   add_executable(${name} ${srcs})
@@ -54,8 +65,11 @@ addApp(noise src/noise.cpp)
 addApp(spirv src/spirv.cpp)
 addApp(sort src/Sort.cpp)
 addApp(linearInterpolationOfHomogenousCoords src/linearInterpolationOfHomogenousCoords.cpp)
+addApp(infiniteInterpolation src/infiniteInterpolation.cpp)
 addApp(csCompiler src/csCompiler.cpp)
 addApp(imagePointCloud src/imagePointCloud.cpp)
+addApp(memoryBandwidth src/memoryBandwidth.cpp)
+addApp(draw2d src/draw2d.cpp)
 
 #function(getSharedLibraries out lib cfg)
 #  #message("getSharedLibraries(${lib} ${cfg})")

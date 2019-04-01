@@ -2,4 +2,4 @@
 
 #include<Vars/Vars.h>
 
-void drawImguiVars(vars::Vars &vars);
+void drawImguiVars(vars::Vars &vars,vars::Vars &&limits = vars::Vars{});
