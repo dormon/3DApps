@@ -63,7 +63,10 @@ void createDrawProgram(vars::Vars&vars){
     fColor = vec4(terrain(noise(ivec2(gl_FragCoord.xy+offset),M,N,p)*.5f+.5f));
     fColor = vec4(noise(ivec2(gl_FragCoord.xy+offset),M,N,p));
     uvec2 cc = uvec2(gl_FragCoord.xy + offset);
-    fColor = vec4(simplexNoise(cc+uvec2(1/sqrt(3)*length(cc/100)),M,N,p));
+    //fColor = vec4(simplexNoise(cc+uvec2(1/sqrt(3)*length(cc/100)),M,N,p));
+    //fColor = vec4(noise(cc*10,M,N,p));
+    if(M!=100||N!=100)
+      fColor = vec4(smoothNoise(3,cc));
   }
   ).";
 
