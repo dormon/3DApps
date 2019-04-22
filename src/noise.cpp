@@ -27,7 +27,7 @@ class Noise: public simple3DApp::Application{
   int32_t M=8;
   int32_t N=8;
   float   p=2.f;
-  glm::ivec2 offset;
+  glm::ivec2 offset = glm::ivec2(0,0);
 
   virtual void                init() override;
 };
@@ -53,7 +53,7 @@ void createDrawProgram(vars::Vars&vars){
   vec4(0.3,.5,0.1,1),
   vec4(1,1,1,1),
   ENDGRADIENT
-
+  #line 56
   out vec4 fColor;
   uniform uint M=8;
   uniform uint N=8;
@@ -64,9 +64,10 @@ void createDrawProgram(vars::Vars&vars){
     fColor = vec4(noise(ivec2(gl_FragCoord.xy+offset),M,N,p));
     uvec2 cc = uvec2(gl_FragCoord.xy + offset);
     //fColor = vec4(simplexNoise(cc+uvec2(1/sqrt(3)*length(cc/100)),M,N,p));
-    //fColor = vec4(noise(cc*10,M,N,p));
-    if(M!=100||N!=100)
-      fColor = vec4(smoothNoise(3,cc));
+    //fColor = vec4(noise(uvec4(cc*10,0,0),M,N,p));
+    fColor = vec4(noise(cc*10,M,N,p));
+    //if((M+N)!=100)fColor = vec4(smoothNoise(5,cc));
+    //if(M!=100||N!=100)fColor = vec4(baseIntegerNoise(cc>>5));
   }
   ).";
 
