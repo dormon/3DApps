@@ -65,7 +65,10 @@ void createDrawProgram(vars::Vars&vars){
     uvec2 cc = uvec2(gl_FragCoord.xy + offset);
     //fColor = vec4(simplexNoise(cc+uvec2(1/sqrt(3)*length(cc/100)),M,N,p));
     //fColor = vec4(noise(uvec4(cc*10,0,0),M,N,p));
-    fColor = vec4(noise(cc*10,M,N,p));
+    //fColor = vec4(1-pow(abs(sin(100*noise(cc,M,N,p))),20));
+    fColor = vec4(noise(cc,M,N,p));
+    //fColor = vec4(noise2(cc*10,M,N));
+    //fColor = vec4(noise3(cc*10));
     //if((M+N)!=100)fColor = vec4(smoothNoise(5,cc));
     //if(M!=100||N!=100)fColor = vec4(baseIntegerNoise(cc>>5));
   }
