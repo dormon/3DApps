@@ -164,7 +164,7 @@ void MemoryBandwidth::draw(){
 
   buffer->clear(GL_R32F,GL_RED,GL_FLOAT);
   program->use();
-  program->bindBuffer("data",buffer);
+  program->bindBuffer("Data",buffer);
   glFinish();
   auto timer = Timer<double>();
   timer.reset();
