@@ -2,19 +2,12 @@
 #include <Vars/Vars.h>
 #include <geGL/StaticCalls.h>
 #include <geGL/geGL.h>
-#include <BasicCamera/FreeLookCamera.h>
-#include <BasicCamera/PerspectiveCamera.h>
-#include <BasicCamera/OrbitCamera.h>
 #include <Barrier.h>
 #include <imguiSDL2OpenGL/imgui.h>
 #include <imguiVars.h>
-#include <DrawGrid.h>
-#include <FreeImagePlus.h>
-#include <assimp/cimport.h>
-#include <assimp/scene.h>
-#include <assimp/postprocess.h>
 #include <sstream>
 #include <Timer.h>
+#include <glm/glm.hpp>
 
 using namespace std;
 using namespace ge::gl;

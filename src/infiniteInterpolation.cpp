@@ -9,10 +9,6 @@
 #include <imguiSDL2OpenGL/imgui.h>
 #include <imguiVars.h>
 #include <DrawGrid.h>
-#include <FreeImagePlus.h>
-#include<assimp/cimport.h>
-#include<assimp/scene.h>
-#include<assimp/postprocess.h>
 
 
 void createProgram(vars::Vars&vars){
