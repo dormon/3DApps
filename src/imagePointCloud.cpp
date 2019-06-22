@@ -11,10 +11,6 @@
 #include <imguiVars.h>
 #include <DrawGrid.h>
 #include <FreeImagePlus.h>
-#include<assimp/cimport.h>
-#include<assimp/scene.h>
-#include<assimp/postprocess.h>
-#include<geGL/StaticCalls.h>
 
 #define ___ std::cerr << __FILE__ << " " << __LINE__ << std::endl
 
@@ -131,9 +127,10 @@ void loadDepthTexture(vars::Vars&vars){
   ge::gl::glPixelStorei(GL_UNPACK_ROW_LENGTH,width);
   ge::gl::glPixelStorei(GL_UNPACK_ALIGNMENT ,1    );
   ge::gl::glTextureSubImage2D(depthTex->getId(),0,0,0,width,height,format,type,data);
-  vars.addFloat("image.near",6.f);
-  vars.addFloat("image.far",1000.f);
-  vars.addFloat("image.pointSize",5);
+  vars.addFloat("image.near"     ,6.f                  );
+  vars.addFloat("image.far"      ,1000.f               );
+  vars.addFloat("image.fovy"     ,glm::half_pi<float>());
+  vars.addFloat("image.pointSize",5                    );
   //colorTex->setData2D(colorImg.accessPixels(),GL_BGRA,GL_UNSIGNED_BYTE);
 }
 
@@ -160,6 +157,28 @@ void createPointCloudProgram(vars::Vars&vars){
 
   uniform float near = 6.f;
   uniform float far  = 1000.f;
+  uniform float fovy = 3.141592f/2.f;
+
+  vec4 compute3DPoint(vec2 ndc,float d,float n,float f,float fovy){
+    float z      = depthToZ(d,n,f);
+    vec4 post    = vec4(ndc*(-z),d*(-z),(-z));
+    ivec2 size   = textureSize(colorTexture,0);
+    float aspect = float(size.x)/float(size.y);
+    float T = n*tan(fovy/2);
+    float B = -T;
+    float R = T/aspect;
+    float L = -R;
+    mat4 invP;
+    invP[0] = vec4((R-L)/(2*n),0          ,0           , 0            );
+    invP[1] = vec4(0          ,(T-B)/(2*n),0           , 0            );
+    invP[2] = vec4(0          ,0          ,0           ,-(f-n)/(2*f*n));
+    invP[3] = vec4((R+L)/(2*n),(T+B)/(2*n),-1          , (n+f)/(2*f*n));
+    
+    return vec4(normalize(vec3(ndc*vec2(R,T),-n))*d,1);
+    //return invP * post;
+
+  }
+
 
   void main(){
     ivec2 coord;
@@ -172,6 +191,7 @@ void createPointCloudProgram(vars::Vars&vars){
     vec2 ndc = vec2(coord)/vec2(size)*2-1;
     ndc *= vec2(float(size.x)/float(size.y),1);
     gl_Position = projection * view * vec4(ndc,z,1);
+    gl_Position = projection * view * compute3DPoint(ndc,depth,near,far,fovy);
   }
   ).";
 
@@ -212,7 +232,8 @@ void drawPointCloud(vars::Vars&vars){
     ->setMatrix4fv("view"      ,glm::value_ptr(view->getView()))
     ->setMatrix4fv("projection",glm::value_ptr(projection->getProjection()))
     ->set1f("near",vars.getFloat("image.near"))
-    ->set1f("far",vars.getFloat("image.far"))
+    ->set1f("far" ,vars.getFloat("image.far" ))
+    ->set1f("fovy",vars.getFloat("image.fovy"))
     ->use();
 
   auto size = vars.get<glm::uvec2>("colorTextureSize");
