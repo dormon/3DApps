@@ -164,10 +164,10 @@ void createPointCloudProgram(vars::Vars&vars){
     vec4 post    = vec4(ndc*(-z),d*(-z),(-z));
     ivec2 size   = textureSize(colorTexture,0);
     float aspect = float(size.x)/float(size.y);
-    float T = n*tan(fovy/2);
-    float B = -T;
-    float R = T/aspect;
+    float R = n*tan(fovy/2);
     float L = -R;
+    float T = R/aspect;
+    float B = -T;
     mat4 invP;
     invP[0] = vec4((R-L)/(2*n),0          ,0           , 0            );
     invP[1] = vec4(0          ,(T-B)/(2*n),0           , 0            );
@@ -189,7 +189,7 @@ void createPointCloudProgram(vars::Vars&vars){
     float depth = texelFetch(depthTexture,coord,0).x;
     float z = depthToZ(depth,near,far);
     vec2 ndc = vec2(coord)/vec2(size)*2-1;
-    ndc *= vec2(float(size.x)/float(size.y),1);
+    //ndc *= vec2(float(size.x)/float(size.y),1);
     gl_Position = projection * view * vec4(ndc,z,1);
     gl_Position = projection * view * compute3DPoint(ndc,depth,near,far,fovy);
   }
@@ -232,8 +232,8 @@ void drawPointCloud(vars::Vars&vars){
     ->setMatrix4fv("view"      ,glm::value_ptr(view->getView()))
     ->setMatrix4fv("projection",glm::value_ptr(projection->getProjection()))
     ->set1f("near",vars.getFloat("image.near"))
-    ->set1f("far" ,vars.getFloat("image.far" ))
-    ->set1f("fovy",vars.getFloat("image.fovy"))
+    //->set1f("far" ,vars.getFloat("image.far" ))
+    //->set1f("fovy",vars.getFloat("image.fovy"))
     ->use();
 
   auto size = vars.get<glm::uvec2>("colorTextureSize");
