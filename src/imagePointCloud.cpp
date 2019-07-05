@@ -67,19 +67,30 @@ void loadColorTexture(vars::Vars&vars){
   auto const imgType = colorImg.getImageType();
   auto const data    = colorImg.accessPixels();
 
+  std::cerr << "color BPP : " << BPP << std::endl;
+  std::cerr << "color type: " << imgType << std::endl;
+
   vars.add<glm::uvec2>("colorTextureSize",glm::uvec2(width,height));
 
   GLenum format;
   GLenum type;
   if(imgType == FIT_BITMAP){
+    std::cerr << "color imgType: FIT_BITMAP" << std::endl;
     if(BPP == 24)format = GL_BGR;
     if(BPP == 32)format = GL_BGRA;
     type = GL_UNSIGNED_BYTE;
   }
   if(imgType == FIT_RGBAF){
+    std::cerr << "color imgType: FIT_RGBAF" << std::endl;
     if(BPP == 32*4)format = GL_RGBA;
     if(BPP == 32*3)format = GL_RGB;
     type = GL_FLOAT;
+  }
+  if(imgType == FIT_RGBA16){
+    std::cerr << "color imgType: FIT_RGBA16" << std::endl;
+    if(BPP == 48)format = GL_RGB ;
+    if(BPP == 64)format = GL_RGBA;
+    type = GL_UNSIGNED_SHORT;
   }
 
   auto colorTex = vars.reCreate<ge::gl::Texture>(
@@ -232,8 +243,8 @@ void drawPointCloud(vars::Vars&vars){
     ->setMatrix4fv("view"      ,glm::value_ptr(view->getView()))
     ->setMatrix4fv("projection",glm::value_ptr(projection->getProjection()))
     ->set1f("near",vars.getFloat("image.near"))
-    //->set1f("far" ,vars.getFloat("image.far" ))
-    //->set1f("fovy",vars.getFloat("image.fovy"))
+    ->set1f("far" ,vars.getFloat("image.far" ))
+    ->set1f("fovy",vars.getFloat("image.fovy"))
     ->use();
 
   auto size = vars.get<glm::uvec2>("colorTextureSize");
