@@ -48,16 +48,21 @@ void createGridProgram(vars::Vars&vars){
 
 }
 
-void drawGrid(vars::Vars&vars){
+void drawGrid(vars::Vars&vars,glm::mat4 const&view,glm::mat4 const&proj){
   createGridProgram(vars);
-  auto view = vars.getReinterpret<basicCamera::CameraTransform>("view");
-  auto projection = vars.get<basicCamera::PerspectiveCamera>("projection");
   vars.get<ge::gl::Program>("gridProgram")
-    ->setMatrix4fv("view"      ,glm::value_ptr(view->getView()))
-    ->setMatrix4fv("projection",glm::value_ptr(projection->getProjection()))
+    ->setMatrix4fv("view"      ,glm::value_ptr(view))
+    ->setMatrix4fv("projection",glm::value_ptr(proj))
     ->set1f("far",vars.getFloat("camera.far"))
     ->use();
   ge::gl::glDepthMask(GL_FALSE);
   ge::gl::glDrawArrays(GL_TRIANGLE_STRIP,0,4);
   ge::gl::glDepthMask(GL_TRUE);
 }
+
+void drawGrid(vars::Vars&vars){
+  auto view = vars.getReinterpret<basicCamera::CameraTransform>("view");
+  auto projection = vars.get<basicCamera::PerspectiveCamera>("projection");
+  drawGrid(vars,view->getView(),projection->getProjection());
+}
+

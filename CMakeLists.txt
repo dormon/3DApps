@@ -83,6 +83,7 @@ addApp2(infiniteInterpolation                 "src/infiniteInterpolation.cpp"   
 addApp2(csCompiler                            "src/csCompiler.cpp"                            "ArgumentViewer::ArgumentViewer")
 addApp2(imagePointCloud                       "src/imagePointCloud.cpp"                       "ArgumentViewer::ArgumentViewer;DrawGrid;imguiVars;FreeImage;FreeImagePlus")
 addApp2(holo                                  "src/holo.cpp"                                  "ArgumentViewer::ArgumentViewer;barrier;imguiVars;FreeImage;FreeImagePlus")
+addApp2(renderHolo                            "src/renderHolo.cpp"                            "ArgumentViewer::ArgumentViewer;DrawGrid;barrier;imguiVars;FreeImage;FreeImagePlus")
 addApp2(memoryBandwidth                       "src/memoryBandwidth.cpp"                       "barrier;imguiVars")
 addApp2(draw2d                                "src/draw2d.cpp"                                "barrier;imguiVars")
 addApp2(triangle                              "src/triangle.cpp"                              "")

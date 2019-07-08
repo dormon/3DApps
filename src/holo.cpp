@@ -201,14 +201,10 @@ void Holo::init(){
 void Holo::key(SDL_Event const& event, bool DOWN) {
   if(event.key.keysym.sym == SDLK_f && DOWN){
     fullscreen = !fullscreen;
-    if(fullscreen){
-      //SDL_DisplayMode mode;
-      //SDL_GetCurrentDisplayMode(1,&mode);
-      //window->setSize(mode.w,mode.h);
+    if(fullscreen)
       window->setFullscreen(sdl2cpp::Window::FULLSCREEN_DESKTOP);
-    }else{
+    else
       window->setFullscreen(sdl2cpp::Window::WINDOW);
-    }
   }
 }
 
