@@ -67,7 +67,7 @@ function(addApp2 name srcs targets)
 endfunction()
 
 addObjectLibrary(barrier   "src/Barrier.cpp;src/Barrier.h"     "Vars::Vars")
-addObjectLibrary(imguiVars "src/imguiVars.cpp;src/imguiVars.h" "Vars::Vars;imguiSDL2OpenGL::imguiSDL2OpenGL;glm")
+addObjectLibrary(imguiVars "src/imguiVars.cpp;src/imguiVars.h;src/addVarsLimits.cpp;src/addVarsLimits.h" "Vars::Vars;imguiSDL2OpenGL::imguiSDL2OpenGL;glm")
 addObjectLibrary(DrawGrid  "src/DrawGrid.cpp;src/DrawGrid.h"   "Vars::Vars;BasicCamera::BasicCamera;barrier")
 
 

@@ -13,6 +13,7 @@
 #include <glm/gtc/type_ptr.hpp>
 #include <DrawGrid.h>
 #include <FreeImagePlus.h>
+#include <addVarsLimits.h>
 
 #define ___ std::cerr << __FILE__ << " " << __LINE__ << std::endl
 
@@ -30,6 +31,100 @@ class Holo: public simple3DApp::Application{
   virtual void                key(SDL_Event const& e, bool down) override;
   virtual void                mouseMove(SDL_Event const& event) override;
 };
+
+void createTrianglesProgram(vars::Vars&vars){
+  if(notChanged(vars,"all",__FUNCTION__,{}))return;
+
+  std::string const vsSrc = R".(
+  void main(){
+  }
+  ).";
+
+  std::string const gsSrc = R".(
+
+  layout(points)in;
+  layout(triangle_strip,max_vertices=30)out;
+
+  uniform mat4 projection;
+  uniform mat4 view;
+  out vec3 gPosition;
+  out vec3 gNormal;
+  out vec4 gColor;
+
+  void genTriangle(vec3 a,vec3 b,vec3 c,vec3 color){
+    vec3 n = normalize(cross(b-a,c-a));
+
+    gPosition = a;
+    gNormal = n;
+    gColor = vec4(color,1);
+    gl_Position = projection*view*vec4(a,1);
+    EmitVertex();
+
+    gPosition = b;
+    gNormal = n;
+    gColor = vec4(color,1);
+    gl_Position = projection*view*vec4(b,1);
+    EmitVertex();
+
+    gPosition = c;
+    gNormal = n;
+    gColor = vec4(color,1);
+    gl_Position = projection*view*vec4(c,1);
+    EmitVertex();
+
+    EndPrimitive();
+  }
+
+  void main(){
+    genTriangle(vec3(-1,0,-1),vec3(+1,0,-1),vec3(+1,+1,-1),vec3(1,0,0));
+    genTriangle(vec3(-3,0,-2),vec3(+3,0,-2),vec3(+3,+3,-2),vec3(0,1,0));
+    genTriangle(vec3(-10,0,-4),vec3(+10,0,-4),vec3(+10,+10,-4),vec3(0,0,1));
+  }
+
+  ).";
+
+  std::string const fsSrc = R".(
+  out vec4 fColor;
+  in vec4 gColor;
+  in vec3 gPosition;
+  in vec3 gNormal;
+  void main(){
+    fColor = gColor;
+  }
+  ).";
+
+  auto vs = std::make_shared<ge::gl::Shader>(GL_VERTEX_SHADER,
+      "#version 450\n",
+      vsSrc
+      );
+  auto gs = std::make_shared<ge::gl::Shader>(GL_GEOMETRY_SHADER,
+      "#version 450\n",
+      gsSrc
+      );
+  auto fs = std::make_shared<ge::gl::Shader>(GL_FRAGMENT_SHADER,
+      "#version 450\n",
+      fsSrc
+      );
+  vars.reCreate<ge::gl::Program>("trianglesProgram",vs,gs,fs);
+
+}
+
+void drawTriangles(vars::Vars&vars,glm::mat4 const&view,glm::mat4 const&proj){
+  createTrianglesProgram(vars);
+  ge::gl::glEnable(GL_DEPTH_TEST);
+  vars.get<ge::gl::Program>("trianglesProgram")
+    ->setMatrix4fv("view"      ,glm::value_ptr(view))
+    ->setMatrix4fv("projection",glm::value_ptr(proj))
+    ->use();
+  ge::gl::glDrawArrays(GL_POINTS,0,1);
+}
+
+void drawTriangles(vars::Vars&vars){
+  auto view = vars.getReinterpret<basicCamera::CameraTransform>("view");
+  auto projection = vars.get<basicCamera::PerspectiveCamera>("projection");
+  drawTriangles(vars,view->getView(),projection->getProjection());
+}
+
 
 void createView(vars::Vars&vars){
   if(notChanged(vars,"all",__FUNCTION__,{"useOrbitCamera"}))return;
@@ -195,7 +290,7 @@ void createHoloProgram(vars::Vars&vars){
 class Quilt{
   public:
     glm::uvec2 counts = glm::uvec2(5,9);
-    glm::uvec2 res = glm::uvec2(512,256);
+    glm::uvec2 res = glm::uvec2(1024,512);
     std::shared_ptr<ge::gl::Framebuffer>fbo;
     std::shared_ptr<ge::gl::Texture>color;
     std::shared_ptr<ge::gl::Texture>depth;
@@ -203,7 +298,11 @@ class Quilt{
     Quilt(vars::Vars&vars):vars(vars){
       fbo = std::make_shared<ge::gl::Framebuffer>();
       color = std::make_shared<ge::gl::Texture>(GL_TEXTURE_2D,GL_RGB8,1,res.x*counts.x,res.y*counts.y);
+      color->texParameteri(GL_TEXTURE_WRAP_S,GL_CLAMP_TO_EDGE);
+      color->texParameteri(GL_TEXTURE_WRAP_T,GL_CLAMP_TO_EDGE);
       depth = std::make_shared<ge::gl::Texture>(GL_TEXTURE_RECTANGLE,GL_DEPTH24_STENCIL8,1,res.x*counts.x,res.y*counts.y);
+      depth->texParameteri(GL_TEXTURE_WRAP_S,GL_CLAMP_TO_EDGE);
+      depth->texParameteri(GL_TEXTURE_WRAP_T,GL_CLAMP_TO_EDGE);
       fbo->attachTexture(GL_COLOR_ATTACHMENT0,color);
       fbo->attachTexture(GL_DEPTH_ATTACHMENT,depth);
       GLenum buffers[] = {GL_COLOR_ATTACHMENT0};
@@ -218,8 +317,6 @@ class Quilt{
       ge::gl::glClearColor(1,0,0,1);
       ge::gl::glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
       size_t counter = 0;
-      glm::mat4 view = centerView;
-      glm::mat4 proj = centerProj;
 
       for(size_t j=0;j<counts.y;++j)
         for(size_t i=0;i<counts.x;++i){
@@ -238,6 +335,8 @@ class Quilt{
           if (numViews > 1)
             currentViewLerp = (float)counter / (numViews - 1) - 0.5f;
 
+          glm::mat4 view = centerView;
+          glm::mat4 proj = centerProj;
           //std::cerr <<currentViewLerp * viewConeSweep << std::endl;
           view[3][0] += currentViewLerp * viewConeSweep;
           proj[2][0] += currentViewLerp * viewConeSweep * projModifier;
@@ -304,12 +403,22 @@ void Holo::draw(){
 
   vars.get<ge::gl::VertexArray>("emptyVao")->bind();
 
-  if(vars.getBool("renderScene"))
-    drawGrid(vars);
+  auto drawScene = [&](glm::mat4 const&view,glm::mat4 const&proj){
+    drawGrid(vars,view,proj);
+    drawTriangles(vars,view,proj);
+  };
+  auto drawSceneSimple = [&](){
+    auto view = vars.getReinterpret<basicCamera::CameraTransform>("view")->getView();
+    auto proj = vars.getReinterpret<basicCamera::CameraProjection>("projection")->getProjection();
+    drawScene(view,proj);
+  };
+  if(vars.getBool("renderScene")){
+    drawSceneSimple();
+  }
   else{
     auto quilt = vars.get<Quilt>("quilt");
     quilt->draw(
-        [&](glm::mat4 const&view,glm::mat4 const&proj){drawGrid(vars,view,proj);},
+        drawScene,
         vars.getReinterpret<basicCamera::CameraTransform>("view")->getView(),
         vars.getReinterpret<basicCamera::CameraProjection>("projection")->getProjection()
         );
@@ -361,10 +470,11 @@ void Holo::init(){
   vars.addBool ("renderScene",true);
   vars.addBool ("showAsSequence",false);
   vars.addUint32("selectedView",0);
+  addVarsLimitsU(vars,"selectedView",0,45);
 
   vars.addFloat("quiltRender.size",5.f);
   vars.addFloat("quiltRender.fov",90.f);
-  vars.addFloat("quiltRender.viewCone",0.f);
+  vars.addFloat("quiltRender.viewCone",10.f);
 
   vars.add<Quilt>("quilt",vars);
 

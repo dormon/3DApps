@@ -1,4 +1,6 @@
 #include <imguiVars.h>
+#include <Vars/Vars.h>
+#include <addVarsLimits.h>
 
 #include <imguiSDL2OpenGL/imgui.h>
 
@@ -6,6 +8,9 @@
 #include<map>
 #include<iostream>
 #include<glm/glm.hpp>
+
+#define ___ std::cerr << __FILE__ << ": " << __LINE__ << std::endl
+
 
 std::string getHead(std::string const&n){
   return n.substr(0,n.find("."));
@@ -61,15 +66,27 @@ void drawGroup(std::unique_ptr<Group>const&group,vars::Vars &vars){
     auto const n = group->name;
     auto const fn = group->fullName;
     bool change = false;
+
+    std::string limitsName = "";
+    if(vars.has(limitsPostfixVariable)){
+      auto const postfix = vars.getString(limitsPostfixVariable);
+      if(vars.has(n + postfix))
+        limitsName = n + postfix;
+    }
+
     if(vars.getType(fn) == typeid(float)){
-      change = ImGui::DragFloat(n.c_str(),(float*)vars.get(fn),0.1f);
+      if(limitsName != ""){
+        auto lims = vars.get<VarsLimits<float>>(limitsName);
+        change = ImGui::DragFloat(n.c_str(),(float*)vars.get(fn),lims->step,lims->minValue,lims->maxValue);
+      }else
+        change = ImGui::DragFloat(n.c_str(),(float*)vars.get(fn));
     }
     if(vars.getType(fn) == typeid(uint32_t)){
-      change = ImGui::InputScalar(n.c_str(),ImGuiDataType_U32,(uint32_t*)vars.get(fn));
-      //ImGui::DragInt(n.c_str(),(int32_t*)vars.get(fn),1,0);
-    }
-    if(vars.getType(fn) == typeid(uint64_t)){
-      change = ImGui::InputScalar(n.c_str(),ImGuiDataType_U64,(uint64_t*)vars.get(fn));
+      if(limitsName != ""){
+        auto lims = vars.get<VarsLimits<uint32_t>>(limitsName);
+        change = ImGui::DragScalar(n.c_str(),ImGuiDataType_U32,(uint32_t*)vars.get(fn),lims->step,&lims->minValue,&lims->maxValue);
+      }else
+        change = ImGui::DragScalar(n.c_str(),ImGuiDataType_U32,(uint32_t*)vars.get(fn),1);
     }
     if(vars.getType(fn) == typeid(bool)){
       change = ImGui::Checkbox(n.c_str(),(bool*)vars.get(fn));
@@ -100,16 +117,15 @@ void drawGroup(std::unique_ptr<Group>const&group,vars::Vars &vars){
 }
 
 
-void drawImguiVars(vars::Vars &vars,vars::Vars &&limits){
+void drawImguiVars(vars::Vars &vars){
   std::vector<std::string>names;
   for(size_t i = 0;i<vars.getNofVars();++i)
     names.push_back(vars.getVarName(i));
   
   VarNamesHierarchy hierarchy(names);
-  
 
   ImGui::Begin("vars");
-  ImGui::PushItemWidth(-120);
+  ImGui::PushItemWidth(-90);
   ImGui::LabelText("label", "Value");
 
   for(auto const&x:hierarchy.groups)
@@ -119,4 +135,3 @@ void drawImguiVars(vars::Vars &vars,vars::Vars &&limits){
 
   
 }
-
