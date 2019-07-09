@@ -28,10 +28,12 @@ class FragmentPlay: public simple3DApp::Application{
   virtual void                key(SDL_Event const& e, bool down) override;
 };
 
-void loadColorTexture(vars::Vars&vars, std::string path){
-    if(notChanged(vars,"all",__FUNCTION__,{"updateTexture"}))return;
+void loadColorTexture(vars::Vars&vars){
+  if(notChanged(vars,"all",__FUNCTION__,{"updateTexture"}))return;
+    if(!vars.getBool("updateTexture")) return;
+
   fipImage colorImg;
-  colorImg.load(path.c_str());
+  colorImg.load(vars.getString("textureFile").c_str());
   auto const width   = colorImg.getWidth();
   auto const height  = colorImg.getHeight();
   auto const BPP     = colorImg.getBitsPerPixel();
@@ -66,17 +68,18 @@ void loadColorTexture(vars::Vars&vars, std::string path){
   ge::gl::glPixelStorei(GL_UNPACK_ROW_LENGTH,width);
   ge::gl::glPixelStorei(GL_UNPACK_ALIGNMENT ,1);
   ge::gl::glTextureSubImage2D(texture->getId(),0,0,0,width,height,format,type,data);
-  auto map = vars.get<std::map<int, std::shared_ptr<ge::gl::Texture>>>("textures")->at(vars.getInt32("textureBindingPoint")) = texture;
+  auto map = vars.get<std::map<int, std::shared_ptr<ge::gl::Texture>>>("textures")->insert({vars.getUint32("textureBindingPoint"), texture});
   vars.reCreate<bool>("updateTexture", false);
 }
 
 
 void loadTextures(vars::Vars&vars){
-  //loadColorTexture(vars);
+  loadColorTexture(vars);
 }
 
 void createProgram(vars::Vars&vars){
   if(notChanged(vars,"all",__FUNCTION__,{"updateShader"}))return;
+    if(!vars.getBool("updateShader")) return;
 
   std::string const vsSrc = R".(
   #version 450 core
@@ -142,12 +145,11 @@ void FragmentPlay::init(){
     exit(0);
   }
   vars.add<std::map<int, std::shared_ptr<ge::gl::Texture>>>("textures");
-  vars.addFloat("baseline", 1.0f);
-  vars.addInt32("textureBindingPoint", 0);
+  vars.addUint32("textureBindingPoint", 0);
   vars.addBool("updateTexture", false);
-  vars.addBool("updateShader", false);
+  vars.addBool("updateShader", true);
   vars.addString("shaderFile", std::string("none"));
-  vars.addVector<std::string>("textureFiles");
+  vars.addString("textureFile", std::string("none"));
   vars.add<ge::gl::VertexArray>("emptyVao");
   vars.add<glm::uvec2>("windowSize",window->getWidth(),window->getHeight());
 
@@ -182,20 +184,10 @@ void FragmentPlay::draw(){
 
   drawImguiVars(vars);
   ImGui::Begin("vars");           
-  static char shaderFile[128] = "none";
-  ImGui::InputText("Shader file:", shaderFile, IM_ARRAYSIZE(shaderFile));
-  vars.reCreate<std::string>("shaderFile", shaderFile);
   
   if(ImGui::Button("Reload shader"))
     vars.reCreate<bool>("updateShader", true);
-  
-  static char textureFile[128] = "none";
-  ImGui::InputText("Texture file:", textureFile, IM_ARRAYSIZE(textureFile));
-  int bindingPoint = 0;
-  ImGui::InputInt("Texture binding:", &bindingPoint);
-  vars.reCreate<int>("textureBindingPoint", bindingPoint);
-  vars.reCreate<std::string>("textureFile", textureFile);
-  
+   
   if(ImGui::Button("Add texture"))
     vars.reCreate<bool>("updateTexture", true);
 
