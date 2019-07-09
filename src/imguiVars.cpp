@@ -8,6 +8,7 @@
 #include<map>
 #include<iostream>
 #include<glm/glm.hpp>
+#include<cstring>
 
 #define ___ std::cerr << __FILE__ << ": " << __LINE__ << std::endl
 
@@ -100,9 +101,16 @@ void drawGroup(std::unique_ptr<Group>const&group,vars::Vars &vars){
     if(vars.getType(fn) == typeid(glm::vec2)){
       change = ImGui::DragFloat2(n.c_str(),(float*)vars.get(fn));
     }
-    //if(vars.getType(fn) == typeid(std::string)){
-    //  ImGui::TextV
-    //}
+    if(vars.getType(fn) == typeid(std::string)){
+      auto&str = vars.getString(fn);
+      auto const maxV = [](size_t i,size_t j){if(i>j)return i;return j;};
+      auto const size = maxV(str.length()*2,256);
+      auto buf = new char[size];
+      std::strcpy(buf,str.c_str());
+      change = ImGui::InputText(n.c_str(),buf,size);
+      str = buf;
+      delete[]buf;
+    }
     if(change)
       vars.updateTicks(fn);
   }
@@ -125,7 +133,7 @@ void drawImguiVars(vars::Vars &vars){
   VarNamesHierarchy hierarchy(names);
 
   ImGui::Begin("vars");
-  ImGui::PushItemWidth(-90);
+  ImGui::PushItemWidth(-160);
   ImGui::LabelText("label", "Value");
 
   for(auto const&x:hierarchy.groups)
