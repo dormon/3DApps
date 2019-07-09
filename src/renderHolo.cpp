@@ -88,8 +88,18 @@ void createTrianglesProgram(vars::Vars&vars){
   in vec4 gColor;
   in vec3 gPosition;
   in vec3 gNormal;
+  uniform mat4 view     = mat4(1);
+  uniform vec3 lightPos = vec3(0,0,10);
   void main(){
-    fColor = gColor;
+    vec3 cameraPos = vec3(inverse(view)*vec4(0,0,0,1));
+    vec3 N = normalize(gNormal);
+    vec3 L = normalize(lightPos - gPosition);
+    vec3 V = normalize(cameraPos - gPosition);
+    vec3 R = -reflect(L,N);
+    float df = abs(dot(N,L));
+    float sf = pow(abs(dot(R,V)),100);
+    fColor = gColor * df + vec4(sf);
+//    fColor = gColor;
   }
   ).";
 
@@ -307,7 +317,6 @@ class Quilt{
       fbo->attachTexture(GL_DEPTH_ATTACHMENT,depth);
       GLenum buffers[] = {GL_COLOR_ATTACHMENT0};
       fbo->drawBuffers(1,buffers);
-      std::cerr << "fbo: "<<int(fbo->check()) << std::endl;
     }
     void draw(std::function<void(glm::mat4 const&view,glm::mat4 const&proj)>const&fce,glm::mat4 const&centerView,glm::mat4 const&centerProj){
       GLint origViewport[4];
@@ -479,6 +488,10 @@ void Holo::init(){
   vars.add<Quilt>("quilt",vars);
 
   createCamera(vars);
+  
+  GLint dims[4];
+  ge::gl::glGetIntegerv(GL_MAX_VIEWPORT_DIMS, dims);
+  std::cerr << "maxFramebuffer: " << dims[0] << " x " << dims[1] << std::endl;
 
 }
 
