@@ -82,12 +82,33 @@ void drawGroup(std::unique_ptr<Group>const&group,vars::Vars &vars){
       }else
         change = ImGui::DragFloat(n.c_str(),(float*)vars.get(fn));
     }
+    if(vars.getType(fn) == typeid(uint64_t)){
+      if(limitsName != ""){
+        auto lims = vars.get<VarsLimits<uint64_t>>(limitsName);
+        change = ImGui::DragScalar(n.c_str(),ImGuiDataType_U64,(uint64_t*)vars.get(fn),lims->step,&lims->minValue,&lims->maxValue);
+      }else
+        change = ImGui::DragScalar(n.c_str(),ImGuiDataType_U64,(uint64_t*)vars.get(fn),1);
+    }
     if(vars.getType(fn) == typeid(uint32_t)){
       if(limitsName != ""){
         auto lims = vars.get<VarsLimits<uint32_t>>(limitsName);
         change = ImGui::DragScalar(n.c_str(),ImGuiDataType_U32,(uint32_t*)vars.get(fn),lims->step,&lims->minValue,&lims->maxValue);
       }else
         change = ImGui::DragScalar(n.c_str(),ImGuiDataType_U32,(uint32_t*)vars.get(fn),1);
+    }
+    if(vars.getType(fn) == typeid(int64_t)){
+      if(limitsName != ""){
+        auto lims = vars.get<VarsLimits<int64_t>>(limitsName);
+        change = ImGui::DragScalar(n.c_str(),ImGuiDataType_S64,(int64_t*)vars.get(fn),lims->step,&lims->minValue,&lims->maxValue);
+      }else
+        change = ImGui::DragScalar(n.c_str(),ImGuiDataType_S64,(int64_t*)vars.get(fn),1);
+    }
+    if(vars.getType(fn) == typeid(int32_t)){
+      if(limitsName != ""){
+        auto lims = vars.get<VarsLimits<int32_t>>(limitsName);
+        change = ImGui::DragScalar(n.c_str(),ImGuiDataType_S32,(int32_t*)vars.get(fn),lims->step,&lims->minValue,&lims->maxValue);
+      }else
+        change = ImGui::DragScalar(n.c_str(),ImGuiDataType_S32,(int32_t*)vars.get(fn),1);
     }
     if(vars.getType(fn) == typeid(bool)){
       change = ImGui::Checkbox(n.c_str(),(bool*)vars.get(fn));
