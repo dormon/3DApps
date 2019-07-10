@@ -35,6 +35,13 @@ void loadColorTexture(vars::Vars&vars){
   if(notChanged(vars,"all",__FUNCTION__,{"texture.update"}))return;
     if(!vars.getBool("texture.update")) return;
 
+  std::ifstream infile(vars.getString("texture.file"));
+  if(infile.fail())
+  {
+      vars.reCreate<bool>("texture.update", false);
+      return;
+  }
+
   fipImage colorImg;
   colorImg.load(vars.getString("texture.file").c_str());
   auto const width   = colorImg.getWidth();
