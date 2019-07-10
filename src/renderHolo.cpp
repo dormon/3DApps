@@ -493,6 +493,8 @@ void Holo::init(){
   ge::gl::glGetIntegerv(GL_MAX_VIEWPORT_DIMS, dims);
   std::cerr << "maxFramebuffer: " << dims[0] << " x " << dims[1] << std::endl;
 
+  ImGui::GetStyle().ScaleAllSizes(4.f);
+  ImGui::GetIO().FontGlobalScale = 4.f;
 }
 
 void Holo::key(SDL_Event const& event, bool DOWN) {
