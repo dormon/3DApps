@@ -1,5 +1,6 @@
 #include <fstream>
 #include <sstream>
+#include <filesystem>
 #include <Simple3DApp/Application.h>
 #include <ArgumentViewer/ArgumentViewer.h>
 #include <Vars/Vars.h>
@@ -13,6 +14,8 @@
 #include <FreeImagePlus.h>
 
 #define ___ std::cerr << __FILE__ << " " << __LINE__ << std::endl
+
+constexpr int INPUT_NAME_SIZE = 128;
 
 class FragmentPlay: public simple3DApp::Application{
  public:
@@ -29,11 +32,11 @@ class FragmentPlay: public simple3DApp::Application{
 };
 
 void loadColorTexture(vars::Vars&vars){
-  if(notChanged(vars,"all",__FUNCTION__,{"updateTexture"}))return;
-    if(!vars.getBool("updateTexture")) return;
+  if(notChanged(vars,"all",__FUNCTION__,{"texture.update"}))return;
+    if(!vars.getBool("texture.update")) return;
 
   fipImage colorImg;
-  colorImg.load(vars.getString("textureFile").c_str());
+  colorImg.load(vars.getString("texture.file").c_str());
   auto const width   = colorImg.getWidth();
   auto const height  = colorImg.getHeight();
   auto const BPP     = colorImg.getBitsPerPixel();
@@ -68,8 +71,9 @@ void loadColorTexture(vars::Vars&vars){
   ge::gl::glPixelStorei(GL_UNPACK_ROW_LENGTH,width);
   ge::gl::glPixelStorei(GL_UNPACK_ALIGNMENT ,1);
   ge::gl::glTextureSubImage2D(texture->getId(),0,0,0,width,height,format,type,data);
-  auto map = vars.get<std::map<int, std::shared_ptr<ge::gl::Texture>>>("textures")->insert({vars.getUint32("textureBindingPoint"), texture});
-  vars.reCreate<bool>("updateTexture", false);
+  auto map = vars.get<std::map<int, std::shared_ptr<ge::gl::Texture>>>("textures")->insert({vars.getUint32("texture.bindingPoint"), texture});
+  vars.getString("texture.log") += std::to_string(vars.getUint32("texture.bindingPoint"))+" - "+vars.getString("texture.file")+"\n";
+  vars.reCreate<bool>("texture.update", false);
 }
 
 
@@ -78,8 +82,11 @@ void loadTextures(vars::Vars&vars){
 }
 
 void createProgram(vars::Vars&vars){
-  if(notChanged(vars,"all",__FUNCTION__,{"updateShader"}))return;
-    if(!vars.getBool("updateShader")) return;
+  if(!vars.getBool("shader.realtime"))
+  {
+      if(notChanged(vars,"all",__FUNCTION__,{"shader.update"}))return;
+        if(!vars.getBool("shader.update")) return;
+  }
 
   std::string const vsSrc = R".(
   #version 450 core
@@ -93,7 +100,7 @@ void createProgram(vars::Vars&vars){
   ).";
 
   std::ifstream file;
-  file.open(vars.getString("shaderFile"));
+  file.open(vars.getString("shader.file"));
   std::string fsSrc;
   
    if(file.fail()) 
@@ -119,19 +126,23 @@ void createProgram(vars::Vars&vars){
       fsSrc
       );
   vars.reCreate<ge::gl::Program>("program",vs,fs);
-  vars.reCreate<bool>("updateShader", false);
+  vars.reCreate<bool>("shader.update", false);
 }
 
 
 void drawFragmentPlay(vars::Vars&vars){
   loadTextures(vars);
    
-    for( auto const& [point, texture] : *vars.get<std::map<int, std::shared_ptr<ge::gl::Texture>>>("textures"))
+    for(auto const& [point, texture] : *vars.get<std::map<int, std::shared_ptr<ge::gl::Texture>>>("textures"))
         texture->bind(point);
   
-    vars.get<ge::gl::Program>("program")
-    //->set1f ("baseline"   ,vars.getFloat("baseline"))
-    ->use();
+    auto program = vars.get<ge::gl::Program>("program");
+    program->setNonexistingUniformWarning(false);
+    for(auto const& variable : *vars.get<std::vector<std::pair<char[INPUT_NAME_SIZE], int>>>("inputInts"))
+        program->set1i(variable.first, variable.second);
+    for(auto const& variable : *vars.get<std::vector<std::pair<char[INPUT_NAME_SIZE], float>>>("inputFloats"))
+        program->set1i(variable.first, variable.second);
+    program->use();
 
   ge::gl::glDrawArrays(GL_TRIANGLE_STRIP,0,4);
 }
@@ -145,11 +156,16 @@ void FragmentPlay::init(){
     exit(0);
   }
   vars.add<std::map<int, std::shared_ptr<ge::gl::Texture>>>("textures");
-  vars.addUint32("textureBindingPoint", 0);
-  vars.addBool("updateTexture", false);
-  vars.addBool("updateShader", true);
-  vars.addString("shaderFile", std::string("none"));
-  vars.addString("textureFile", std::string("none"));
+  vars.addVector<std::pair<char[INPUT_NAME_SIZE], int>>("inputInts");
+  vars.addVector<std::pair<char[INPUT_NAME_SIZE], float>>("inputFloats");
+  vars.addString("texture.log");
+  vars.addUint32("texture.bindingPoint", 0);
+  vars.addBool("texture.update", false);
+  vars.addBool("shader.update", true);
+  vars.addBool("shader.realtime", false);
+  vars.add<std::filesystem::file_time_type>("lastModification");
+  vars.addString("shader.file", std::string("none"));
+  vars.addString("texture.file", std::string("none"));
   vars.add<ge::gl::VertexArray>("emptyVao");
   vars.add<glm::uvec2>("windowSize",window->getWidth(),window->getHeight());
 
@@ -165,6 +181,41 @@ void FragmentPlay::key(SDL_Event const& event, bool DOWN) {
       window->setFullscreen(sdl2cpp::Window::FULLSCREEN_DESKTOP);
     else
       window->setFullscreen(sdl2cpp::Window::WINDOW);
+  }
+}
+
+template<class T>
+void drawInputs(vars::Vars&vars)
+{
+  std::string vectorName = "inputInts";
+  if constexpr (std::is_same_v<T,float>)
+    vectorName = "inputFloats";
+  
+  auto inputs = vars.get<std::vector<std::pair<char[128], T>>>(vectorName);
+
+  for(int i=0; i<inputs->size(); i++) 
+  {    
+      ImGui::Columns(2);
+      ImGui::PushItemWidth(-1);
+      ImGui::InputText(("###"+vectorName+"name"+std::to_string(i)).c_str(), inputs->at(i).first, IM_ARRAYSIZE(inputs->at(i).first)); 
+      ImGui::PopItemWidth();
+      ImGui::NextColumn();
+      ImGui::PushItemWidth(-1);
+      std::string label = "###"+vectorName+"value"+std::to_string(i);
+      if constexpr (std::is_same_v<T,float>)
+          ImGui::InputFloat(label.c_str(), &inputs->at(i).second);
+      else if constexpr (std::is_same_v<T,int>)
+          ImGui::InputInt(label.c_str(), &inputs->at(i).second);
+      ImGui::PopItemWidth();
+      ImGui::NextColumn();
+  }
+  ImGui::Columns(1);
+  if(ImGui::Button("Add"))
+  {  
+    std::string name = std::string("uniformName") + std::to_string(inputs->size());
+    inputs->push_back({});
+    name.copy(inputs->back().first, name.size()+1);
+    inputs->back().first[name.size()] = '\0'; 
   }
 }
 
@@ -186,10 +237,19 @@ void FragmentPlay::draw(){
   ImGui::Begin("vars");           
   
   if(ImGui::Button("Reload shader"))
-    vars.reCreate<bool>("updateShader", true);
+    vars.reCreate<bool>("shader.update", true);
    
   if(ImGui::Button("Add texture"))
-    vars.reCreate<bool>("updateTexture", true);
+    vars.reCreate<bool>("texture.update", true);
+
+  if(ImGui::CollapsingHeader("Input floats"))
+    drawInputs<float>(vars);
+   
+  if(ImGui::CollapsingHeader("Input ints"))
+    drawInputs<int>(vars);
+ 
+  if(ImGui::CollapsingHeader("Bound textures"))
+    ImGui::Text("%s", vars.getString("texture.log").c_str());    
 
   ImGui::End();
 
