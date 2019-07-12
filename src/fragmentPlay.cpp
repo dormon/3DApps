@@ -79,7 +79,7 @@ void loadColorTexture(vars::Vars&vars){
   ge::gl::glPixelStorei(GL_UNPACK_ALIGNMENT ,1);
   ge::gl::glTextureSubImage2D(texture->getId(),0,0,0,width,height,format,type,data);
   auto map = vars.get<std::map<int, std::shared_ptr<ge::gl::Texture>>>("textures")->insert({vars.getUint32("texture.bindingPoint"), texture});
-  vars.getString("texture.log") += std::to_string(vars.getUint32("texture.bindingPoint"))+" - "+vars.getString("texture.file")+"\n";
+  vars.getString("texture.log") += std::to_string(vars.getUint32("texture.bindingPoint"))+" "+vars.getString("texture.file")+"\n";
   vars.reCreate<bool>("texture.update", false);
 }
 
@@ -166,6 +166,7 @@ void FragmentPlay::init(){
   vars.addVector<std::pair<char[INPUT_NAME_SIZE], int>>("inputInts");
   vars.addVector<std::pair<char[INPUT_NAME_SIZE], float>>("inputFloats");
   vars.addString("texture.log");
+  vars.addString("project.file");
   vars.addUint32("texture.bindingPoint", 0);
   vars.addBool("texture.update", false);
   vars.addBool("shader.update", true);
@@ -226,6 +227,73 @@ void drawInputs(vars::Vars&vars)
   }
 }
 
+template<class T>
+void loadInputs(std::ifstream &file, vars::Vars&vars)
+{
+  std::string vectorName = "inputInts";
+  if constexpr (std::is_same_v<T,float>)
+    vectorName = "inputFloats";
+
+  auto inputs = vars.get<std::vector<std::pair<char[128], T>>>(vectorName);
+  std::string token;
+  inputs->clear();
+  while(file >> token)
+    if(token == "#") break;
+    else
+    {std::cerr << token;
+       T value = static_cast<T>(std::stof(token));
+       file >> token;
+        inputs->push_back({});
+        token.copy(inputs->back().first, token.size()+1);
+        inputs->back().first[token.size()] = '\0'; 
+        inputs->back().second = value; 
+    }
+}
+
+void loadProject(vars::Vars&vars)
+{  
+  std::ifstream file(vars.getString("project.file"));
+  if(file.fail())
+    return; 
+
+  std::string token;
+  file >> token;
+  vars.reCreate<std::string>("shader.file", token);
+  vars.reCreate<bool>("shader.update", true);
+  loadInputs<int>(file, vars);
+  loadInputs<float>(file, vars);
+
+  auto textures = vars.get<std::map<int, std::shared_ptr<ge::gl::Texture>>>("textures");
+  textures->clear();
+  vars.reCreate<std::string>("texture.log", "");
+  while(file >> token)
+  {
+       int value = (std::stoi(token));
+       file >> token;
+    
+        vars.reCreate<std::string>("texture.file", token);
+        vars.reCreate<int>("texture.bindingPoint", value);
+        vars.reCreate<bool>("texture.update", true);
+        loadColorTexture(vars);
+  } 
+}
+
+void saveProject(vars::Vars&vars)
+{
+    std::ofstream file(vars.getString("project.file"));
+    file << vars.getString("shader.file") << std::endl;
+    auto intInputs = vars.get<std::vector<std::pair<char[128], int>>>("inputInts");
+    for(auto const &input : *intInputs)
+     file << input.second << " " << input.first;
+    file<< std::endl << "#" << std::endl;
+    auto floatInputs = vars.get<std::vector<std::pair<char[128], float>>>("inputFloats");
+    for(auto const &input : *floatInputs)
+     file << input.second << " " << input.first;
+    file<< std::endl << "#" << std::endl;
+    file << vars.getString("texture.log");
+    
+}
+
 void FragmentPlay::draw(){
   createProgram(vars);
 
@@ -249,6 +317,12 @@ void FragmentPlay::draw(){
   if(ImGui::Button("Add texture"))
     vars.reCreate<bool>("texture.update", true);
 
+  if(ImGui::Button("Load project"))
+    loadProject(vars);
+  
+  if(ImGui::Button("Save project"))
+    saveProject(vars);
+
   if(ImGui::CollapsingHeader("Input floats"))
     drawInputs<float>(vars);
    
@@ -257,6 +331,7 @@ void FragmentPlay::draw(){
  
   if(ImGui::CollapsingHeader("Bound textures"))
     ImGui::Text("%s", vars.getString("texture.log").c_str());    
+
 
   ImGui::End();
 
