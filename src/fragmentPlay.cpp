@@ -148,7 +148,7 @@ void drawFragmentPlay(vars::Vars&vars){
     for(auto const& variable : *vars.get<std::vector<std::pair<char[INPUT_NAME_SIZE], int>>>("inputInts"))
         program->set1i(variable.first, variable.second);
     for(auto const& variable : *vars.get<std::vector<std::pair<char[INPUT_NAME_SIZE], float>>>("inputFloats"))
-        program->set1i(variable.first, variable.second);
+        program->set1f(variable.first, variable.second);
     program->use();
 
   ge::gl::glDrawArrays(GL_TRIANGLE_STRIP,0,4);
