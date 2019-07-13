@@ -73,6 +73,15 @@ void loadColorTexture(vars::Vars&vars){
     if(BPP == 64)format = GL_RGBA;
     type = GL_UNSIGNED_SHORT;
   }
+  if(imgType == FIT_FLOAT){
+    format = GL_RED;
+    type = GL_FLOAT;
+  }
+  if(imgType == FIT_RGBF){
+    format = GL_RGB;
+    type = GL_FLOAT;
+  }
+
  
   auto texture = std::make_shared<ge::gl::Texture>(GL_TEXTURE_2D,GL_RGB8,1,width,height);
   ge::gl::glPixelStorei(GL_UNPACK_ROW_LENGTH,width);
