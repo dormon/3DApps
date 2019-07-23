@@ -16,4 +16,4 @@ void addVarsLimitsU(vars::Vars& vars,std::string const&name,uint32_t mmin,uint32
   auto const postfix = vars.addOrGetString(limitsPostfixVariable,drawImguiVarsDefaultPostfix);
   vars.reCreate<VarsLimits<uint32_t>>(name+postfix,mmin,mmax,step);
 }
-
+ 

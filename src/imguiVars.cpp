@@ -71,8 +71,8 @@ void drawGroup(std::unique_ptr<Group>const&group,vars::Vars &vars){
     std::string limitsName = "";
     if(vars.has(limitsPostfixVariable)){
       auto const postfix = vars.getString(limitsPostfixVariable);
-      if(vars.has(n + postfix))
-        limitsName = n + postfix;
+      if(vars.has(fn + postfix))
+        limitsName = fn + postfix;
     }
 
     if(vars.getType(fn) == typeid(float)){

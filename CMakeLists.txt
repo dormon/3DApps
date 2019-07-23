@@ -69,6 +69,7 @@ endfunction()
 addObjectLibrary(barrier   "src/Barrier.cpp;src/Barrier.h"     "Vars::Vars")
 addObjectLibrary(imguiVars "src/imguiVars.cpp;src/imguiVars.h;src/addVarsLimits.cpp;src/addVarsLimits.h" "Vars::Vars;imguiSDL2OpenGL::imguiSDL2OpenGL;glm")
 addObjectLibrary(DrawGrid  "src/DrawGrid.cpp;src/DrawGrid.h"   "Vars::Vars;BasicCamera::BasicCamera;barrier")
+addObjectLibrary(drawBunny "src/drawBunny.cpp;src/bunny.h;src/bunny.c" "Vars::Vars;BasicCamera::BasicCamera;barrier")
 
 
 
@@ -84,7 +85,7 @@ addApp2(csCompiler                            "src/csCompiler.cpp"              
 addApp2(imagePointCloud                       "src/imagePointCloud.cpp"                       "ArgumentViewer::ArgumentViewer;DrawGrid;imguiVars;FreeImage;FreeImagePlus")
 addApp2(holo                                  "src/holo.cpp"                                  "ArgumentViewer::ArgumentViewer;barrier;imguiVars;FreeImage;FreeImagePlus")
 addApp2(fragmentPlay                           "src/fragmentPlay.cpp"                           "ArgumentViewer::ArgumentViewer;barrier;imguiVars;FreeImage;FreeImagePlus")
-addApp2(renderHolo                            "src/renderHolo.cpp"                            "ArgumentViewer::ArgumentViewer;DrawGrid;barrier;imguiVars;FreeImage;FreeImagePlus")
+addApp2(renderHolo                            "src/renderHolo.cpp"                            "ArgumentViewer::ArgumentViewer;DrawGrid;barrier;imguiVars;FreeImage;FreeImagePlus;drawBunny")
 addApp2(memoryBandwidth                       "src/memoryBandwidth.cpp"                       "barrier;imguiVars")
 addApp2(draw2d                                "src/draw2d.cpp"                                "barrier;imguiVars")
 addApp2(triangle                              "src/triangle.cpp"                              "")

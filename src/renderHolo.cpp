@@ -15,6 +15,8 @@
 #include <FreeImagePlus.h>
 #include <addVarsLimits.h>
 #include <imguiDormon/imgui.h>
+#include <drawBunny.h>
+#include <addVarsLimits.h>
 
 #define ___ std::cerr << __FILE__ << " " << __LINE__ << std::endl
 
@@ -80,6 +82,11 @@ void createTrianglesProgram(vars::Vars&vars){
     genTriangle(vec3(-1,0,-1),vec3(+1,0,-1),vec3(+1,+1,-1),vec3(1,0,0));
     genTriangle(vec3(-3,0,-2),vec3(+3,0,-2),vec3(+3,+3,-2),vec3(0,1,0));
     genTriangle(vec3(-10,0,-4),vec3(+10,0,-4),vec3(+10,+10,-4),vec3(0,0,1));
+    //gColor = vec4(0,0,0,1);
+    //gl_Position = vec4(-1,-1,0,1);EmitVertex();
+    //gl_Position = vec4(4,-1,0,1);EmitVertex();
+    //gl_Position = vec4(-1,4,0,1);EmitVertex();
+    //EndPrimitive();
   }
 
   ).";
@@ -91,6 +98,8 @@ void createTrianglesProgram(vars::Vars&vars){
   in vec3 gNormal;
   uniform mat4 view     = mat4(1);
   uniform vec3 lightPos = vec3(0,0,10);
+  uniform uvec2 size = uvec2(1024,512);
+
   void main(){
     vec3 cameraPos = vec3(inverse(view)*vec4(0,0,0,1));
     vec3 N = normalize(gNormal);
@@ -100,6 +109,13 @@ void createTrianglesProgram(vars::Vars&vars){
     float df = abs(dot(N,L));
     float sf = pow(abs(dot(R,V)),100);
     fColor = gColor * df + vec4(sf);
+    uvec2 pixSize = uvec2(1,1);
+    //if(any(greaterThanEqual(gl_FragCoord.xy,size)))discard;
+    uvec2 coord = uvec2(gl_FragCoord.xy/size);
+    uint offset = 0;//coord.x + coord.y*5;
+
+    //if((uint(gl_FragCoord.x)%size.x) >= 100+offset && (uint(gl_FragCoord.y)%size.y) >= 100 && (uint(gl_FragCoord.x)%size.x) < 100+pixSize.x+offset &&(uint(gl_FragCoord.y)%size.y) < 100+pixSize.y)
+    //  fColor = vec4(0,1,0,1);
 //    fColor = gColor;
   }
   ).";
@@ -165,6 +181,65 @@ void createCamera(vars::Vars&vars){
   createView(vars);
 }
 
+void create3DCursorProgram(vars::Vars&vars){
+  if(notChanged(vars,"all",__FUNCTION__,{}))return;
+
+  std::string const vsSrc = R".(
+  uniform mat4 projection = mat4(1);
+  uniform mat4 view       = mat4(1);
+  uniform mat4 origView   = mat4(1);
+  uniform float distance = 10;
+  out vec3 vColor;
+  void main(){
+    float size = 1;
+    vColor = vec3(1,0,0);
+
+    if(gl_VertexID == 0)gl_Position = projection * view * inverse(origView) * vec4(vec2(-10  ,+0   )*size,-distance,1);
+    if(gl_VertexID == 1)gl_Position = projection * view * inverse(origView) * vec4(vec2(+10  ,+0   )*size,-distance,1);
+    if(gl_VertexID == 2)gl_Position = projection * view * inverse(origView) * vec4(vec2(-10  ,+0.1 )*size,-distance,1);
+    if(gl_VertexID == 3)gl_Position = projection * view * inverse(origView) * vec4(vec2(+0   ,-10  )*size,-distance,1);
+    if(gl_VertexID == 4)gl_Position = projection * view * inverse(origView) * vec4(vec2(+0   ,+10  )*size,-distance,1);
+    if(gl_VertexID == 5)gl_Position = projection * view * inverse(origView) * vec4(vec2(+0.1 ,-10  )*size,-distance,1);
+  }
+  ).";
+
+  std::string const fsSrc = R".(
+  out vec4 fColor;
+  in vec3 vColor;
+  void main(){
+    fColor = vec4(vColor,1);
+  }
+  ).";
+
+  auto vs = std::make_shared<ge::gl::Shader>(GL_VERTEX_SHADER,
+      "#version 450\n",
+      vsSrc
+      );
+  auto fs = std::make_shared<ge::gl::Shader>(GL_FRAGMENT_SHADER,
+      "#version 450\n",
+      fsSrc
+      );
+  vars.reCreate<ge::gl::Program>("cursorProgram",vs,fs);
+
+}
+
+void draw3DCursor(vars::Vars&vars,glm::mat4 const&view,glm::mat4 const&proj){
+  create3DCursorProgram(vars);
+  auto origView = vars.getReinterpret<basicCamera::CameraTransform>("view")->getView();
+  vars.get<ge::gl::Program>("cursorProgram")
+    ->setMatrix4fv("projection",glm::value_ptr(proj))
+    ->setMatrix4fv("view"      ,glm::value_ptr(view))
+    ->setMatrix4fv("origView"  ,glm::value_ptr(origView))
+    ->set1f       ("distance"  ,vars.getFloat("quiltRender.d"))
+    ->use();
+  ge::gl::glDrawArrays(GL_TRIANGLES,0,6);
+}
+
+void draw3DCursor(vars::Vars&vars){
+  auto view = vars.getReinterpret<basicCamera::CameraTransform>("view");
+  auto projection = vars.get<basicCamera::PerspectiveCamera>("projection");
+  draw3DCursor(vars,view->getView(),projection->getProjection());
+}
 
 void loadColorTexture(vars::Vars&vars){
   if(notChanged(vars,"all",__FUNCTION__,{"quiltFileName"}))return;
@@ -202,8 +277,8 @@ void loadColorTexture(vars::Vars&vars){
 
   auto colorTex = vars.reCreate<ge::gl::Texture>(
       "quiltTex",GL_TEXTURE_2D,GL_RGB8,1,width,height);
-  ge::gl::glPixelStorei(GL_UNPACK_ROW_LENGTH,width);
-  ge::gl::glPixelStorei(GL_UNPACK_ALIGNMENT ,1    );
+  //ge::gl::glPixelStorei(GL_UNPACK_ROW_LENGTH,width);
+  //ge::gl::glPixelStorei(GL_UNPACK_ALIGNMENT ,1    );
   ge::gl::glTextureSubImage2D(colorTex->getId(),0,0,0,width,height,format,type,data);
 }
 
@@ -237,17 +312,17 @@ void createHoloProgram(vars::Vars&vars){
   uniform int showAsSequence = 0;
   uniform uint selectedView = 0;
   // HoloPlay values
-  uniform float pitch;
-  uniform float tilt;
-  uniform float center;
-  uniform float invView;
+  uniform float pitch = 354.42108f;
+  uniform float tilt = -0.1153f;
+  uniform float center = 0.04239f;
+  uniform float invView = 1.f;
   uniform float flipX;
   uniform float flipY;
-  uniform float subp;
-  uniform int ri;
-  uniform int bi;
-  uniform vec4 tile;
-  uniform vec4 viewPortion;
+  uniform float subp = 0.00013f;
+  uniform int ri = 0;
+  uniform int bi = 2;
+  uniform vec4 tile = vec4(5,9,45,45);
+  uniform vec4 viewPortion = vec4(0.99976f, 0.99976f, 0.00f, 0.00f);
   uniform vec4 aspect;
   
   layout(binding=0)uniform sampler2D screenTex;
@@ -269,8 +344,10 @@ void createHoloProgram(vars::Vars&vars){
   	for (int i=0; i < 3; i++) 
   	{
   		nuv.z = (texCoords.x + i * subp + texCoords.y * tilt) * pitch - center;
-  		nuv.z = mod(nuv.z + ceil(abs(nuv.z)), 1.0);
-  		nuv.z = (1.0 - invView) * nuv.z + invView * (1.0 - nuv.z);
+  		//nuv.z = mod(nuv.z + ceil(abs(nuv.z)), 1.0);
+  		//nuv.z = (1.0 - invView) * nuv.z + invView * (1.0 - nuv.z);
+  		nuv.z = fract(nuv.z);
+  		nuv.z = (1.0 - nuv.z);
   		rgb[i] = texture(screenTex, texArr(nuv));
   		//rgb[i] = vec4(nuv.z, nuv.z, nuv.z, 1.0);
   	}
@@ -296,17 +373,26 @@ void createHoloProgram(vars::Vars&vars){
       fsSrc
       );
   auto prg = vars.reCreate<ge::gl::Program>("holoProgram",vs,fs);
+  prg->setNonexistingUniformWarning(false);
 }
 
 class Quilt{
   public:
     glm::uvec2 counts = glm::uvec2(5,9);
+    glm::uvec2 baseRes = glm::uvec2(380,238);
     glm::uvec2 res = glm::uvec2(1024,512);
     std::shared_ptr<ge::gl::Framebuffer>fbo;
     std::shared_ptr<ge::gl::Texture>color;
     std::shared_ptr<ge::gl::Texture>depth;
     vars::Vars&vars;
-    Quilt(vars::Vars&vars):vars(vars){
+    void createTextures(){
+      if(notChanged(vars,"all",__FUNCTION__,{"quiltRender.texScale","quiltRender.texScaleAspect"}))return;
+      float texScale = vars.getFloat("quiltRender.texScale");
+      float texScaleAspect =  vars.getFloat("quiltRender.texScaleAspect");
+      auto newRes = glm::uvec2(glm::vec2(baseRes) * texScale * glm::vec2(texScaleAspect,1.f));
+      if(newRes == res)return;
+      res = newRes;
+      std::cerr << "reallocate quilt textures - " << res.x << " x " << res.y << std::endl;
       fbo = std::make_shared<ge::gl::Framebuffer>();
       color = std::make_shared<ge::gl::Texture>(GL_TEXTURE_2D,GL_RGB8,1,res.x*counts.x,res.y*counts.y);
       color->texParameteri(GL_TEXTURE_WRAP_S,GL_CLAMP_TO_EDGE);
@@ -319,7 +405,11 @@ class Quilt{
       GLenum buffers[] = {GL_COLOR_ATTACHMENT0};
       fbo->drawBuffers(1,buffers);
     }
+    Quilt(vars::Vars&vars):vars(vars){
+      createTextures();
+    }
     void draw(std::function<void(glm::mat4 const&view,glm::mat4 const&proj)>const&fce,glm::mat4 const&centerView,glm::mat4 const&centerProj){
+      createTextures();
       GLint origViewport[4];
       ge::gl::glGetIntegerv(GL_VIEWPORT,origViewport);
 
@@ -345,11 +435,32 @@ class Quilt{
           if (numViews > 1)
             currentViewLerp = (float)counter / (numViews - 1) - 0.5f;
 
+          // .5*size*tan(cone)/tan(fov/2)
+            // .5*tan(cone)/tan(fov/2)/aspect
+          
+
           glm::mat4 view = centerView;
           glm::mat4 proj = centerProj;
+
+          float t = (float)counter / (float)(numViews - 1);
+
+          float d = vars.addOrGetFloat("quiltRender.d",0.70f);
+          addVarsLimitsF(vars,"quiltRender.d",0,400,0.01);
+          //float S = vars.addOrGetFloat("quiltRender.S",0.422f);
+          //addVarsLimitsF(vars,"quiltRender.S",0,4,0.01);
+          //view[3][0] += d - 2*d*t;
+          //proj[2][0] += (d - 2*d*t)*S;
+          
+          float S = 0.5f*d*glm::tan(viewCone);
+          float s = S-2*t*S;
+          view[3][0] += s;
+          proj[2][0] += s/(d*aspect*glm::tan(vars.getFloat("camera.fovy")/2));
+
           //std::cerr <<currentViewLerp * viewConeSweep << std::endl;
-          view[3][0] += currentViewLerp * viewConeSweep;
-          proj[2][0] += currentViewLerp * viewConeSweep * projModifier;
+          //std::cerr << "view[3][0] " << view[3][0] << std::endl;
+          //std::cerr << "proj[2][0] " << proj[2][0] << std::endl;
+          //view[3][0] += currentViewLerp * viewConeSweep;
+          //proj[2][0] += currentViewLerp * viewConeSweep * projModifier;
 
           fce(view,proj);
           counter++;
@@ -414,8 +525,18 @@ void Holo::draw(){
   vars.get<ge::gl::VertexArray>("emptyVao")->bind();
 
   auto drawScene = [&](glm::mat4 const&view,glm::mat4 const&proj){
+    vars.get<ge::gl::VertexArray>("emptyVao")->bind();
     drawGrid(vars,view,proj);
-    drawTriangles(vars,view,proj);
+    vars.get<ge::gl::VertexArray>("emptyVao")->unbind();
+    //vars.get<ge::gl::VertexArray>("emptyVao")->bind();
+    //drawTriangles(vars,view,proj);
+    //vars.get<ge::gl::VertexArray>("emptyVao")->bind();
+    drawBunny(vars,view,proj);
+    if(vars.addOrGetBool("quiltRender.drawCursor",true)){
+      vars.get<ge::gl::VertexArray>("emptyVao")->bind();
+      draw3DCursor(vars,view,proj);
+      vars.get<ge::gl::VertexArray>("emptyVao")->unbind();
+    }
   };
   auto drawSceneSimple = [&](){
     auto view = vars.getReinterpret<basicCamera::CameraTransform>("view")->getView();
@@ -427,12 +548,16 @@ void Holo::draw(){
   }
   else{
     auto quilt = vars.get<Quilt>("quilt");
+    vars.get<ge::gl::VertexArray>("emptyVao")->bind();
     quilt->draw(
         drawScene,
         vars.getReinterpret<basicCamera::CameraTransform>("view")->getView(),
         vars.getReinterpret<basicCamera::CameraProjection>("projection")->getProjection()
         );
+    vars.get<ge::gl::VertexArray>("emptyVao")->unbind();
+    vars.get<ge::gl::VertexArray>("emptyVao")->bind();
     drawHolo(vars);
+    vars.get<ge::gl::VertexArray>("emptyVao")->unbind();
   }
 
   vars.get<ge::gl::VertexArray>("emptyVao")->unbind();
@@ -476,7 +601,7 @@ void Holo::init(){
   vars.add<glm::vec4>("quiltView.viewPortion",0.99976f, 0.99976f, 0.00f, 0.00f);
   vars.addBool ("showQuilt");
   vars.addBool ("renderQuilt");
-  vars.addBool ("renderScene",true);
+  vars.addBool ("renderScene",false);
   vars.addBool ("showAsSequence",false);
   vars.addUint32("selectedView",0);
   addVarsLimitsU(vars,"selectedView",0,45);
@@ -484,6 +609,11 @@ void Holo::init(){
   vars.addFloat("quiltRender.size",5.f);
   vars.addFloat("quiltRender.fov",90.f);
   vars.addFloat("quiltRender.viewCone",10.f);
+  vars.addFloat("quiltRender.texScale",1.64f);
+  addVarsLimitsF(vars,"quiltRender.texScale",0.1f,5,0.01f);
+  vars.addFloat("quiltRender.texScaleAspect",0.745f);
+  addVarsLimitsF(vars,"quiltRender.texScaleAspect",0.1f,10,0.01f);
+  
 
   vars.add<Quilt>("quilt",vars);
 
