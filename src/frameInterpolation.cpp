@@ -115,6 +115,7 @@ void createProgram(vars::Vars&vars){
   uniform float far  = 25.f;
   uniform float fovy = 3.141592f/2.f;
   uniform float baseline = 0.5;
+  uniform float step = 0.5; 
 
   void main(){
     ivec2 size   = textureSize(image1,0);
@@ -135,11 +136,11 @@ void createProgram(vars::Vars&vars){
 
     vec3 interCam = vec3(baseline, 0.0, 0.0);
     vec3 camToPoint = point-interCam;
-    vec3 interPoint = (-near/camToPoint.z) * camToPoint;// + interCam;
+    vec3 interPoint = (-near/camToPoint.z) * camToPoint;
     coord.x = int((interPoint.x-L)/(R-L)*size.x);
     coord.y = int((interPoint.y-B)/(T-B)*size.y);
 
-    if(depth < 1000.0f)
+    if(depth < 10000.0f)
       vertexColor = vertexColor/2.0 + texelFetch(image2, coord, 0).xyz/2.0;   
 
     gl_Position = vec4(ndc,1,1);
@@ -177,6 +178,7 @@ void drawFrameInterpolation(vars::Vars&vars){
     auto program = vars.get<ge::gl::Program>("program");
     program->setNonexistingUniformWarning(false);
     program->set1f("baseline", vars.getFloat("baseline"));
+    program->set1f("step", vars.getFloat("step"));
     program->use();
 
   ge::gl::glPointSize(2);
@@ -201,7 +203,9 @@ void FrameInterpolation::init(){
   textureFiles.push_back("/home/ichlubna/Workspace/lf/render/3DApps/data/0001.exr");
   textureFiles.push_back("/home/ichlubna/Workspace/lf/render/3DApps/data/0002.exr");
   vars.addFloat("baseline");
+  vars.addFloat("step");
   addVarsLimitsF(vars,"baseline",-10,10,0.01f);
+  addVarsLimitsF(vars,"step",0.0f,1.0f,0.01f);
   vars.add<glm::uvec2>("windowSize",window->getWidth(),window->getHeight());
 
   std::cerr << SDL_GetNumVideoDisplays() << std::endl;
