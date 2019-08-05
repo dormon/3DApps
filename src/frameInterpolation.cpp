@@ -105,11 +105,10 @@ void createProgram(vars::Vars&vars){
     std::string const csSrc = R".(
   #version 450 core
   layout(local_size_x=64)in;
-  layout(binding=0)uniform sampler2D image1;
-  layout(binding=1)uniform sampler2D image2;
-  layout(binding=2)uniform sampler2D image1Depth;
-  layout(binding=3)uniform sampler2D image2Depth;
-
+  layout(binding=0)uniform sampler2D image;
+  layout(binding=1)uniform sampler2D imageDepth;
+  
+  uniform int pass = 0;
   uniform float near = 0.1f;
   uniform float far  = 25.f;
   uniform float fovy = 3.141592f/2.f;
@@ -122,7 +121,7 @@ void createProgram(vars::Vars&vars){
   };
 
   void main(){ 
-    ivec2 size = textureSize(image1,0);
+    ivec2 size = textureSize(image,0);
 
     if(gl_GlobalInvocationID.x > size.x*size.y)
         return;
@@ -133,15 +132,16 @@ void createProgram(vars::Vars&vars){
     float R = T*aspect;
     float L = -R;
 
-    ivec2 coord;
-    coord.x = int(gl_GlobalInvocationID.x)%size.x;
-    coord.y = int(gl_GlobalInvocationID.x)/size.x;
-    pixels[gl_GlobalInvocationID.x] = texelFetch(image1,coord,0);
-    float depth = texelFetch(image1Depth,coord,0).x;
+    ivec2 coord = ivec2(int(gl_GlobalInvocationID.x), int(gl_GlobalInvocationID.y));
+    float depth = texelFetch(imageDepth,coord,0).x;
+    vec4 color = texelFetch(image, coord, 0);
 
     vec3 point = normalize(vec3( L+(float(coord.x)/size.x)*(R-L), B+(float(coord.y)/size.y)*(T-B),-near))*depth;
 
-    vec3 interCam = vec3(baseline, 0.0, 0.0);
+    vec3 interCam = vec3(step*baseline, 0.0, 0.0);
+    if(pass > 0)
+        interCam = vec3(-(1.0-step)*baseline, 0.0, 0.0);
+        
     vec3 camToPoint = point-interCam;
     vec3 interPoint = (-near/camToPoint.z) * camToPoint;
     coord.x = int((interPoint.x-L)/(R-L)*size.x);
@@ -149,8 +149,8 @@ void createProgram(vars::Vars&vars){
 
     if(depth < 10000.0f)
     {
-      pixels[gl_GlobalInvocationID.x] /= 2.0;
-      pixels[gl_GlobalInvocationID.x] += texelFetch(image2, coord, 0);
+      int position = coord.y*size.x+coord.x;
+      pixels[position] += color*0.5;
     }
     }
   ).";
@@ -204,19 +204,29 @@ void createProgram(vars::Vars&vars){
 }
 
 void drawFrameInterpolation(vars::Vars&vars){ 
-    int i=0; 
-    for(auto const &texture : vars.getVector<std::shared_ptr<ge::gl::Texture>>("textures")) 
-    {
-        texture->bind(i);
-        i++;
-    }
-
+    auto textures = vars.getVector<std::shared_ptr<ge::gl::Texture>>("textures");
     auto computeProgram = vars.get<ge::gl::Program>("computeProgram");
     computeProgram->setNonexistingUniformWarning(false);
     computeProgram->set1f("baseline", vars.getFloat("baseline"));
     computeProgram->set1f("step", vars.getFloat("step"));
+    computeProgram->set1i("pass", 0);
     computeProgram->use();
-    ge::gl::glDispatchCompute(ceil(vars.getInt32("textureSize")/(64.0f*3)),1,1);
+
+    int width = textures[0]->getWidth(0);
+    int height = textures[0]->getHeight(0);  
+
+    GLubyte val = 0;
+    vars.get<ge::gl::Buffer>("result")->clear(GL_R8UI, GL_RED_INTEGER, GL_UNSIGNED_BYTE, &val);
+
+    textures[0]->bind(0);
+    textures[2]->bind(1);
+    ge::gl::glDispatchCompute(width,height,1);
+    ge::gl::glFinish();
+    
+    computeProgram->set1i("pass", 1);
+    textures[1]->bind(0);
+    textures[3]->bind(1);
+    ge::gl::glDispatchCompute(width,height,1);
     ge::gl::glFinish();
 
     auto program = vars.get<ge::gl::Program>("program");
@@ -242,10 +252,6 @@ void FrameInterpolation::init(){
     textureFiles.push_back("../data/0002.png");
     textureFiles.push_back("../data/0001.exr");
     textureFiles.push_back("../data/0002.exr");
-    /*textureFiles.push_back("/home/ichlubna/Workspace/lf/render/3DApps/data/0001.png");
-      textureFiles.push_back("/home/ichlubna/Workspace/lf/render/3DApps/data/0002.png");
-      textureFiles.push_back("/home/ichlubna/Workspace/lf/render/3DApps/data/0001.exr");
-      textureFiles.push_back("/home/ichlubna/Workspace/lf/render/3DApps/data/0002.exr");*/
     vars.addFloat("baseline");
     vars.addFloat("step");
     addVarsLimitsF(vars,"baseline",-10,10,0.01f);
