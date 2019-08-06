@@ -115,6 +115,9 @@ void createProgram(vars::Vars&vars){
   uniform float baseline = 0.5;
   uniform float step = 0.5;
 
+  float DEPTH_TOLERANCE = 0.001;
+  float DEPTH_LIMIT = 1000000.0;
+
   layout(std430, binding=2) buffer pixelLayout
   {
         vec4 pixels[];
@@ -144,40 +147,45 @@ void createProgram(vars::Vars&vars){
         
     vec3 camToPoint = point-interCam;
     vec3 interPoint = (-near/camToPoint.z) * camToPoint;
-    coord.x = int((interPoint.x-L)/(R-L)*size.x);
-    coord.y = int((interPoint.y-B)/(T-B)*size.y);
+    coord.x = int(round((interPoint.x-L)/(R-L)*size.x));
+    coord.y = int(round((interPoint.y-B)/(T-B)*size.y));
 
-    if(depth < 10000.0f)
+    if(depth < DEPTH_LIMIT)
     {
       int position = coord.y*size.x+coord.x;
-      pixels[position] += color*0.5;
+      
+      if(pass > 0)
+      {
+          vec4 old = pixels[position];
+          if(abs(old.w - depth) < DEPTH_TOLERANCE)
+            pixels[position] = old*0.5 + color*0.5;
+          else if(old.w > depth || old.w < 0)
+            pixels[position] = vec4(color.xyz, depth);
+            //pixels[position] = vec4(1.0,0.0,0.0, depth);
+      }
+      else
+        pixels[position] = vec4(color.xyz, depth);
     }
     }
   ).";
 
     std::string const vsSrc = R".(
-  #version 450 core
 
-  out int vertexId;
-  layout(binding=0)uniform sampler2D image1;
+    #version 450 core
+     out vec2 texCoords;
+     void main(){
+       texCoords = vec2(gl_VertexID&1,gl_VertexID>>1);
+       gl_Position = vec4(texCoords*2-1,0,1);
+     }
   
-  void main(){
-    ivec2 size   = textureSize(image1,0);
-
-    ivec2 coord;
-    coord.x = gl_VertexID%size.x;
-    coord.y = gl_VertexID/size.x;
-    vec2 ndc = vec2(coord)/vec2(size)*2-1;
-
-    gl_Position = vec4(ndc,1,1);
-    vertexId = gl_VertexID;
-  }
   ).";
 
     std::string const fsSrc = R".(
       #version 450 core
       layout(location=0)out vec4 fragColor;
-      flat in int vertexId;
+      layout(binding=0)uniform sampler2D image;
+      in vec2 texCoords;
+      int KERNEL = 2;
 
       layout(std430, binding=2) buffer pixelLayout
       {
@@ -186,7 +194,22 @@ void createProgram(vars::Vars&vars){
 
       void main()
       {
-          fragColor = pixels[vertexId];
+          ivec2 size = textureSize(image,0);
+          ivec2 coords = ivec2(round(texCoords*size));
+          int position = coords.y*size.x+coords.x;
+          fragColor = vec4(pixels[position].xyz, 1.0);
+          if(pixels[position].w  == -1.0)
+            fragColor = vec4(1.0,0.0,0.0,1.0);
+/*
+            if(pixels[position].w  < 0.0)
+                for(int x=-KERNEL; x<KERNEL; x++)
+                    for(int y=-KERNEL; y<KERNEL; y++)
+                    {
+                        ivec2 newCoords = coords+ivec2(x,y);
+                        vec4 color = pixels[newCoords.y*size.x+newCoords.x];
+                        if(color.w > 0.0)
+                            fragColor = vec4(color.xyz, 1.0);
+                    }*/
       }
       ).";
 
@@ -215,26 +238,29 @@ void drawFrameInterpolation(vars::Vars&vars){
     int width = textures[0]->getWidth(0);
     int height = textures[0]->getHeight(0);  
 
-    GLubyte val = 0;
-    vars.get<ge::gl::Buffer>("result")->clear(GL_R8UI, GL_RED_INTEGER, GL_UNSIGNED_BYTE, &val);
+    GLfloat clearVal[4]{0.0,0.0,0.0,-1.0};
+    vars.get<ge::gl::Buffer>("result")->clear(GL_RGBA32F, GL_RGBA, GL_FLOAT, clearVal);
 
     textures[0]->bind(0);
     textures[2]->bind(1);
-    ge::gl::glDispatchCompute(width,height,1);
-    ge::gl::glFinish();
+    ge::gl::glDispatchCompute(width,height,1);	
+    ge::gl::glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+    //ge::gl::glFinish();
     
     computeProgram->set1i("pass", 1);
     textures[1]->bind(0);
     textures[3]->bind(1);
     ge::gl::glDispatchCompute(width,height,1);
-    ge::gl::glFinish();
+    ge::gl::glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+    //ge::gl::glFinish();
 
     auto program = vars.get<ge::gl::Program>("program");
     program->setNonexistingUniformWarning(false);
     program->use();
 
     ge::gl::glPointSize(2);
-    ge::gl::glDrawArrays(GL_POINTS,0,vars.getInt32("textureSize"));
+    ge::gl::glDrawArrays(GL_TRIANGLE_STRIP,0,4);
+    //ge::gl::glDrawArrays(GL_POINTS,0,vars.getInt32("textureSize"));
 }
 
 void FrameInterpolation::init(){
