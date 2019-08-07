@@ -104,11 +104,12 @@ void createProgram(vars::Vars&vars){
 
     std::string const csSrc = R".(
   #version 450 core
-  layout(local_size_x=64)in;
-  layout(binding=0)uniform sampler2D image;
-  layout(binding=1)uniform sampler2D imageDepth;
+  layout(local_size_x=8, local_size_y=8)in;
+  layout(binding=0)uniform sampler2D images[4];
+  /*layout(binding=1)uniform sampler2D image2;
+  layout(binding=2)uniform sampler2D image1Depth;
+  layout(binding=3)uniform sampler2D image2Depth;*/
   
-  uniform int pass = 0;
   uniform float near = 0.1f;
   uniform float far  = 25.f;
   uniform float fovy = 3.141592f/2.f;
@@ -122,50 +123,59 @@ void createProgram(vars::Vars&vars){
   {
         vec4 pixels[];
   };
-
-  void main(){ 
-    ivec2 size = textureSize(image,0);
-
-    if(gl_GlobalInvocationID.x > size.x*size.y)
-        return;
-
+ 
+    ivec2 size = textureSize(images[0],0);
     float aspect = float(size.x)/float(size.y);
     float T = near*tan(fovy/2);
     float B = -T;
     float R = T*aspect;
     float L = -R;
 
-    ivec2 coord = ivec2(int(gl_GlobalInvocationID.x), int(gl_GlobalInvocationID.y));
-    float depth = texelFetch(imageDepth,coord,0).x;
-    vec4 color = texelFetch(image, coord, 0);
+    ivec2 projectPixel(float depth, ivec2 coord, bool leftCam)
+    {    
+        vec3 point = normalize(vec3( L+(float(coord.x)/size.x)*(R-L), B+(float(coord.y)/size.y)*(T-B),-near))*depth;
 
-    vec3 point = normalize(vec3( L+(float(coord.x)/size.x)*(R-L), B+(float(coord.y)/size.y)*(T-B),-near))*depth;
-
-    vec3 interCam = vec3(step*baseline, 0.0, 0.0);
-    if(pass > 0)
-        interCam = vec3(-(1.0-step)*baseline, 0.0, 0.0);
+        vec3 interCam;
+        if(leftCam)
+            interCam = vec3(step*baseline, 0.0, 0.0);
+        else
+            interCam = vec3(-(1.0-step)*baseline, 0.0, 0.0);
         
-    vec3 camToPoint = point-interCam;
-    vec3 interPoint = (-near/camToPoint.z) * camToPoint;
-    coord.x = int(round((interPoint.x-L)/(R-L)*size.x));
-    coord.y = int(round((interPoint.y-B)/(T-B)*size.y));
-
-    if(depth < DEPTH_LIMIT)
-    {
-      int position = coord.y*size.x+coord.x;
-      
-      if(pass > 0)
-      {
-          vec4 old = pixels[position];
-          if(abs(old.w - depth) < DEPTH_TOLERANCE)
-            pixels[position] = old*0.5 + color*0.5;
-          else if(old.w > depth || old.w < 0)
-            pixels[position] = vec4(color.xyz, depth);
-            //pixels[position] = vec4(1.0,0.0,0.0, depth);
-      }
-      else
-        pixels[position] = vec4(color.xyz, depth);
+        vec3 camToPoint = point-interCam;
+        vec3 interPoint = (-near/camToPoint.z) * camToPoint;
+        ivec2 newCoord;
+        newCoord.x = int(round((interPoint.x-L)/(R-L)*size.x));
+        newCoord.y = int(round((interPoint.y-B)/(T-B)*size.y));
+        return newCoord;
     }
+      
+    vec4 color;
+    float depth = DEPTH_LIMIT; 
+    ivec2 coord = ivec2(int(gl_GlobalInvocationID.x), int(gl_GlobalInvocationID.y));
+    
+    void findBestPixel(int colorIndex, int depthIndex, bool leftCam)
+    {
+        for(int x=0; x<size.x; x++)
+        {
+            ivec2 sampleCoord = coord;
+            sampleCoord.x = x;
+            float sampleDepth = texelFetch(images[depthIndex],sampleCoord,0).x;
+            ivec2 newCoord = projectPixel(sampleDepth, sampleCoord, leftCam);
+            if(newCoord == coord && sampleDepth < depth)
+            {
+                color = texelFetch(images[colorIndex], sampleCoord, 0);   
+                depth = sampleDepth;
+            }
+        }
+    }
+
+  void main(){ 
+    int position = coord.y*size.x+coord.x;
+
+    findBestPixel(0,2,true); 
+    findBestPixel(1,3,false); 
+    
+    pixels[position] = color;
     }
   ).";
 
@@ -185,7 +195,6 @@ void createProgram(vars::Vars&vars){
       layout(location=0)out vec4 fragColor;
       layout(binding=0)uniform sampler2D image;
       in vec2 texCoords;
-      int KERNEL = 2;
 
       layout(std430, binding=2) buffer pixelLayout
       {
@@ -200,16 +209,6 @@ void createProgram(vars::Vars&vars){
           fragColor = vec4(pixels[position].xyz, 1.0);
           if(pixels[position].w  == -1.0)
             fragColor = vec4(1.0,0.0,0.0,1.0);
-/*
-            if(pixels[position].w  < 0.0)
-                for(int x=-KERNEL; x<KERNEL; x++)
-                    for(int y=-KERNEL; y<KERNEL; y++)
-                    {
-                        ivec2 newCoords = coords+ivec2(x,y);
-                        vec4 color = pixels[newCoords.y*size.x+newCoords.x];
-                        if(color.w > 0.0)
-                            fragColor = vec4(color.xyz, 1.0);
-                    }*/
       }
       ).";
 
@@ -228,11 +227,17 @@ void createProgram(vars::Vars&vars){
 
 void drawFrameInterpolation(vars::Vars&vars){ 
     auto textures = vars.getVector<std::shared_ptr<ge::gl::Texture>>("textures");
+    int i=0; 
+    for(auto const &texture : vars.getVector<std::shared_ptr<ge::gl::Texture>>("textures")) 
+    {
+        texture->bind(i);
+        i++;
+    }
+
     auto computeProgram = vars.get<ge::gl::Program>("computeProgram");
     computeProgram->setNonexistingUniformWarning(false);
     computeProgram->set1f("baseline", vars.getFloat("baseline"));
     computeProgram->set1f("step", vars.getFloat("step"));
-    computeProgram->set1i("pass", 0);
     computeProgram->use();
 
     int width = textures[0]->getWidth(0);
@@ -241,19 +246,13 @@ void drawFrameInterpolation(vars::Vars&vars){
     GLfloat clearVal[4]{0.0,0.0,0.0,-1.0};
     vars.get<ge::gl::Buffer>("result")->clear(GL_RGBA32F, GL_RGBA, GL_FLOAT, clearVal);
 
-    textures[0]->bind(0);
-    textures[2]->bind(1);
-    ge::gl::glDispatchCompute(width,height,1);	
+    //must be multiple for now
+    constexpr int LOCAL_SIZE_X = 8; 
+    constexpr int LOCAL_SIZE_Y = 8; 
+    ge::gl::glDispatchCompute(width/LOCAL_SIZE_X,height/LOCAL_SIZE_Y,1);	
     ge::gl::glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
     //ge::gl::glFinish();
     
-    computeProgram->set1i("pass", 1);
-    textures[1]->bind(0);
-    textures[3]->bind(1);
-    ge::gl::glDispatchCompute(width,height,1);
-    ge::gl::glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
-    //ge::gl::glFinish();
-
     auto program = vars.get<ge::gl::Program>("program");
     program->setNonexistingUniformWarning(false);
     program->use();
