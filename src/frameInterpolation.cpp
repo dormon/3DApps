@@ -116,7 +116,7 @@ void createProgram(vars::Vars&vars){
   uniform float baseline = 0.5;
   uniform float step = 0.5;
 
-  float DEPTH_TOLERANCE = 0.001;
+  float DEPTH_TOLERANCE = 1.0;
   float DEPTH_LIMIT = 1000000.0;
 
   layout(std430, binding=2) buffer pixelLayout
@@ -149,12 +149,12 @@ void createProgram(vars::Vars&vars){
         return newCoord;
     }
       
-    vec4 color;
-    float depth = DEPTH_LIMIT; 
     ivec2 coord = ivec2(int(gl_GlobalInvocationID.x), int(gl_GlobalInvocationID.y));
     
-    void findBestPixel(int colorIndex, int depthIndex, bool leftCam)
+    vec4 findBestPixel(int colorIndex, int depthIndex, bool leftCam)
     {
+        vec4 color;
+        float depth = DEPTH_LIMIT; 
         for(int x=0; x<size.x; x++)
         {
             ivec2 sampleCoord = coord;
@@ -167,14 +167,22 @@ void createProgram(vars::Vars&vars){
                 depth = sampleDepth;
             }
         }
+        return vec4(color.xyz, depth);
     }
 
   void main(){ 
     int position = coord.y*size.x+coord.x;
 
-    findBestPixel(0,2,true); 
-    findBestPixel(1,3,false); 
-    
+    vec4 color1 = findBestPixel(0,2,true);
+    vec4 color2 = findBestPixel(1,3,false);
+    vec4 color = color2;
+    if(abs(color1.w-color2.w) < DEPTH_TOLERANCE)
+        color = (color1 + color2)/2.0f;
+    else if(color1.w < color2.w)
+        color = color1;
+ 
+    if(color.w >= DEPTH_LIMIT)
+        color.w = 0;
     pixels[position] = color;
     }
   ).";
@@ -195,6 +203,7 @@ void createProgram(vars::Vars&vars){
       layout(location=0)out vec4 fragColor;
       layout(binding=0)uniform sampler2D image;
       in vec2 texCoords;
+      int FILL_KERNEL = 2;
 
       layout(std430, binding=2) buffer pixelLayout
       {
@@ -207,8 +216,15 @@ void createProgram(vars::Vars&vars){
           ivec2 coords = ivec2(round(texCoords*size));
           int position = coords.y*size.x+coords.x;
           fragColor = vec4(pixels[position].xyz, 1.0);
-          if(pixels[position].w  == -1.0)
-            fragColor = vec4(1.0,0.0,0.0,1.0);
+        
+          if(pixels[position].w == 0.0)
+                for(int x=-FILL_KERNEL; x<FILL_KERNEL; x++)
+                {
+                    ivec2 newCoords = coords+ivec2(x,0);
+                    vec4 color = pixels[newCoords.y*size.x+newCoords.x];
+                    if(color.w > 0.0)
+                        fragColor = vec4(color.xyz, 1.0);
+                }
       }
       ).";
 
