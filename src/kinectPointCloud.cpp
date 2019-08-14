@@ -29,6 +29,9 @@ class KinectPointCloud: public simple3DApp::Application{
   virtual void                resize(uint32_t x,uint32_t y) override;
 };
 
+const k4a_color_resolution_t colorModes[]{K4A_COLOR_RESOLUTION_720P, K4A_COLOR_RESOLUTION_2160P, K4A_COLOR_RESOLUTION_1440P, K4A_COLOR_RESOLUTION_1080P, K4A_COLOR_RESOLUTION_3072P, K4A_COLOR_RESOLUTION_1536P};
+const k4a_depth_mode_t depthModes[]{K4A_DEPTH_MODE_NFOV_UNBINNED, K4A_DEPTH_MODE_WFOV_UNBINNED, K4A_DEPTH_MODE_NFOV_2X2BINNED, K4A_DEPTH_MODE_WFOV_2X2BINNED};
+
 void createView(vars::Vars&vars){
   if(notChanged(vars,"all",__FUNCTION__,{"useOrbitCamera"}))return;
 
@@ -193,7 +196,31 @@ glm::ivec2 getDepthRange(const k4a_depth_mode_t depthMode)
     }
 }
 
+void initKinect(int colorModeIndex, int depthModeIndex, vars::Vars&vars){
+  const uint32_t deviceCount = k4a::device::get_installed_count();
+  if (deviceCount == 0)
+    throw std::runtime_error("No Azure Kinect connected");
 
+  k4a_device_configuration_t config = K4A_DEVICE_CONFIG_INIT_DISABLE_ALL;
+  config.depth_mode = (depthModeIndex == -1) ? K4A_DEPTH_MODE_WFOV_UNBINNED : depthModes[depthModeIndex];
+  config.color_format = K4A_IMAGE_FORMAT_COLOR_BGRA32;
+  config.color_resolution = (colorModeIndex == -1) ? K4A_COLOR_RESOLUTION_2160P : colorModes[colorModeIndex];
+  config.camera_fps = (config.color_resolution == K4A_COLOR_RESOLUTION_3072P || config.depth_mode == K4A_DEPTH_MODE_WFOV_UNBINNED) ? K4A_FRAMES_PER_SECOND_15 : K4A_FRAMES_PER_SECOND_30;
+  config.synchronized_images_only = true;
+  auto size = vars.reCreate<glm::ivec2>("colorSize"); 
+  *size = getColorResolution(config.color_resolution);
+  vars.reCreate<glm::vec2>("range", getDepthRange(config.depth_mode));
+  auto dev = vars.reCreate<k4a::device>("kinectDevice");
+  *dev = k4a::device::open(K4A_DEVICE_DEFAULT);
+  dev->start_cameras(&config); 
+  auto depthImageTrans = vars.reCreate<k4a::image>("depthImageTrans");
+  *depthImageTrans = k4a::image::create(K4A_IMAGE_FORMAT_DEPTH16, size->x, size->y, size->x * (int)sizeof(uint16_t));
+  //auto pcImage = vars.add<k4a::image>("pcImage");
+  //*pcImage = k4a::image::create(K4A_IMAGE_FORMAT_CUSTOM, size->x, size->y, 3*size->x * (int)sizeof(uint16_t));
+  auto trans = vars.reCreate<k4a::transformation>("transformation",dev->get_calibration(config.depth_mode, config.color_resolution)); 
+  vars.reCreate<ge::gl::Texture>("colorTexture",GL_TEXTURE_2D,GL_RGBA32F,1,size->x,size->y); 
+  vars.reCreate<ge::gl::Texture>("depthTexture",GL_TEXTURE_2D,GL_R16UI,1,size->x,size->y); 
+}
 
 void KinectPointCloud::init(){
   auto args = vars.add<argumentViewer::ArgumentViewer>("args",argc,argv);
@@ -215,32 +242,10 @@ void KinectPointCloud::init(){
   vars.addFloat("image.near"     ,6.f                  );
   vars.addFloat("image.far"      ,1000.f               );
   vars.addFloat("image.fovy"     ,glm::half_pi<float>());
-  vars.addFloat("image.pointSize",5                    );
+  vars.addFloat("image.pointSize",2                    );
   createCamera(vars);
-
-  const uint32_t deviceCount = k4a::device::get_installed_count();
-  if (deviceCount == 0)
-    throw std::runtime_error("No Azure Kinect connected");
-
-  k4a_device_configuration_t config = K4A_DEVICE_CONFIG_INIT_DISABLE_ALL;
-  config.depth_mode = K4A_DEPTH_MODE_WFOV_UNBINNED;
-  config.color_format = K4A_IMAGE_FORMAT_COLOR_BGRA32;
-  config.color_resolution = K4A_COLOR_RESOLUTION_2160P;
-  config.camera_fps = (config.color_resolution == K4A_COLOR_RESOLUTION_2160P) ? K4A_FRAMES_PER_SECOND_15 : K4A_FRAMES_PER_SECOND_30;
-  config.synchronized_images_only = true;
-  auto size = vars.add<glm::ivec2>("colorSize"); 
-  *size = getColorResolution(config.color_resolution);
-  vars.add<glm::vec2>("range", getDepthRange(config.depth_mode));
-  auto dev = vars.add<k4a::device>("kinectDevice");
-  *dev = k4a::device::open(K4A_DEVICE_DEFAULT);
-  dev->start_cameras(&config); 
-  auto depthImageTrans = vars.add<k4a::image>("depthImageTrans");
-  *depthImageTrans = k4a::image::create(K4A_IMAGE_FORMAT_DEPTH16, size->x, size->y, size->x * (int)sizeof(uint16_t));
-  //auto pcImage = vars.add<k4a::image>("pcImage");
-  //*pcImage = k4a::image::create(K4A_IMAGE_FORMAT_CUSTOM, size->x, size->y, 3*size->x * (int)sizeof(uint16_t));
-  auto trans = vars.add<k4a::transformation>("transformation",dev->get_calibration(config.depth_mode, config.color_resolution)); 
-  vars.reCreate<ge::gl::Texture>("colorTexture",GL_TEXTURE_2D,GL_RGBA32F,1,size->x,size->y); 
-  vars.reCreate<ge::gl::Texture>("depthTexture",GL_TEXTURE_2D,GL_R16UI,1,size->x,size->y); 
+  
+  initKinect(-1, -1 ,vars);
 }
 
 void KinectPointCloud::draw(){
@@ -289,6 +294,21 @@ void KinectPointCloud::draw(){
   vars.get<ge::gl::VertexArray>("emptyVao")->unbind();
 
   drawImguiVars(vars);
+
+  ImGui::Begin("vars");
+  std::vector<const char*> colorModeList = { "720p", "2160p", "1440p", "1080p", "3072p", "1536p" };
+  static int currentColor = 1;
+  int colorModeIndex = -1;
+  if(ImGui::ListBox("Color mode", &currentColor, colorModeList.data(), colorModeList.size(), 4))
+    colorModeIndex = currentColor;
+  std::vector<const char*> depthModeList = { "NFOV unbinned", "WFOV unbinned", "NFOV binned", "WFOV unbinned" };
+  static int currentDepth = 1;
+  int depthModeIndex = -1;
+  if(ImGui::ListBox("Depth mode", &currentDepth, depthModeList.data(), depthModeList.size(), 4))
+    depthModeIndex = currentDepth;
+  ImGui::End();   
+  if(colorModeIndex + depthModeIndex >= 0)
+    initKinect(colorModeIndex, depthModeIndex, vars);
 
   swap();
 }
