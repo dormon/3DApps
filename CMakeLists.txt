@@ -25,6 +25,7 @@ find_package(glm CONFIG)
 
 find_package(FreeImage)
 find_package(FreeImagePlus)
+find_package(k4a)
 
 set(SOURCES
   )
@@ -83,6 +84,7 @@ addApp2(linearInterpolationOfHomogenousCoords "src/linearInterpolationOfHomogeno
 addApp2(infiniteInterpolation                 "src/infiniteInterpolation.cpp"                 "DrawGrid;imguiVars")
 addApp2(csCompiler                            "src/csCompiler.cpp"                            "ArgumentViewer::ArgumentViewer")
 addApp2(imagePointCloud                       "src/imagePointCloud.cpp"                       "ArgumentViewer::ArgumentViewer;DrawGrid;imguiVars;FreeImage;FreeImagePlus")
+addApp2(kinectPointCloud                       "src/kinectPointCloud.cpp"                       "ArgumentViewer::ArgumentViewer;DrawGrid;imguiVars;FreeImage;FreeImagePlus;k4a::k4a")
 addApp2(holo                                  "src/holo.cpp"                                  "ArgumentViewer::ArgumentViewer;barrier;imguiVars;FreeImage;FreeImagePlus")
 addApp2(fragmentPlay                           "src/fragmentPlay.cpp"                           "ArgumentViewer::ArgumentViewer;barrier;imguiVars;FreeImage;FreeImagePlus")
 addApp2(frameInterpolation                           "src/frameInterpolation.cpp"                           "ArgumentViewer::ArgumentViewer;barrier;imguiVars;FreeImage;FreeImagePlus")

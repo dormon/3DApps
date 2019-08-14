@@ -116,7 +116,7 @@ void createProgram(vars::Vars&vars){
   uniform float baseline = 0.5;
   uniform float step = 0.5;
 
-  float DEPTH_TOLERANCE = 1.0;
+  float DEPTH_TOLERANCE = 0.1;
   float DEPTH_LIMIT = 1000000.0;
 
   layout(std430, binding=2) buffer pixelLayout
@@ -203,7 +203,7 @@ void createProgram(vars::Vars&vars){
       layout(location=0)out vec4 fragColor;
       layout(binding=0)uniform sampler2D image;
       in vec2 texCoords;
-      int FILL_KERNEL = 2;
+      int FILL_KERNEL = 5;
 
       layout(std430, binding=2) buffer pixelLayout
       {
@@ -225,6 +225,7 @@ void createProgram(vars::Vars&vars){
                     if(color.w > 0.0)
                         fragColor = vec4(color.xyz, 1.0);
                 }
+
       }
       ).";
 
