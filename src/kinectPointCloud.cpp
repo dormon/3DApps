@@ -83,8 +83,9 @@ void createPointCloudProgram(vars::Vars&vars){
     vColor = texelFetch(colorTexture,coord,0).xyz;
     float depth = texelFetch(depthTexture,coord,0).x;
     if(depth == 0)
-        depth = 2500;
-    depth = (clamp(depth, range.s, range.t)-range.s)/(range.t-range.s);
+        depth = range.t;
+    //depth = (clamp(depth, range.s, range.t)-range.s)/(range.t-range.s);
+    depth = (depth-range.s)/1000;
     float z = -depth;
     vec2 ndc = vec2(coord)/vec2(size)*2-1;
     gl_Position = projection * view * vec4(-ndc,z,1);
