@@ -92,6 +92,7 @@ addApp2(renderHolo                            "src/renderHolo.cpp"              
 addApp2(memoryBandwidth                       "src/memoryBandwidth.cpp"                       "barrier;imguiVars")
 addApp2(draw2d                                "src/draw2d.cpp"                                "barrier;imguiVars")
 addApp2(triangle                              "src/triangle.cpp"                              "")
+addApp2(killGPU                               "src/killGPU.cpp"                               "ArgumentViewer::ArgumentViewer;Vars::Vars")
 
 function(printParam target prop)
   get_target_property(lala ${target} ${prop})
