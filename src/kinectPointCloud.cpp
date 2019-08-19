@@ -1,94 +1,52 @@
-#include <Simple3DApp/Application.h>
-#include <ArgumentViewer/ArgumentViewer.h>
-#include <Vars/Vars.h>
+#include <kinectPointCloud.h>
 #include <geGL/StaticCalls.h>
 #include <geGL/geGL.h>
-#include <BasicCamera/FreeLookCamera.h>
+#include <BasicCamera/Camera.h>
 #include <BasicCamera/PerspectiveCamera.h>
-#include <BasicCamera/OrbitCamera.h>
 #include <Barrier.h>
 #include <imguiSDL2OpenGL/imgui.h>
-#include <imguiVars.h>
-#include <DrawGrid.h>
-#include <FreeImagePlus.h>
+#include <addVarsLimits.h>
 #include <k4a/k4a.hpp>
-
-#define ___ std::cerr << __FILE__ << " " << __LINE__ << std::endl
-
-class KinectPointCloud: public simple3DApp::Application{
- public:
-  KinectPointCloud(int argc, char* argv[]) : Application(argc, argv) {}
-  virtual ~KinectPointCloud(){}
-  virtual void draw() override;
-
-  vars::Vars vars;
-
-  virtual void                init() override;
-  virtual void                mouseMove(SDL_Event const& event) override;
-  virtual void                key(SDL_Event const& e, bool down) override;
-  virtual void                resize(uint32_t x,uint32_t y) override;
-};
 
 const k4a_color_resolution_t colorModes[]{K4A_COLOR_RESOLUTION_720P, K4A_COLOR_RESOLUTION_2160P, K4A_COLOR_RESOLUTION_1440P, K4A_COLOR_RESOLUTION_1080P, K4A_COLOR_RESOLUTION_3072P, K4A_COLOR_RESOLUTION_1536P};
 const k4a_depth_mode_t depthModes[]{K4A_DEPTH_MODE_NFOV_UNBINNED, K4A_DEPTH_MODE_WFOV_UNBINNED, K4A_DEPTH_MODE_NFOV_2X2BINNED, K4A_DEPTH_MODE_WFOV_2X2BINNED};
 
-void createView(vars::Vars&vars){
-  if(notChanged(vars,"all",__FUNCTION__,{"useOrbitCamera"}))return;
-
-  if(vars.getBool("useOrbitCamera"))
-    vars.reCreate<basicCamera::OrbitCamera>("view");
-  else
-    vars.reCreate<basicCamera::FreeLookCamera>("view");
-}
-
-void createProjection(vars::Vars&vars){
-  if(notChanged(vars,"all",__FUNCTION__,{"windowSize","camera.fovy","camera.near","camera.far"}))return;
-
-  auto windowSize = vars.get<glm::uvec2>("windowSize");
-  auto width = windowSize->x;
-  auto height = windowSize->y;
-  auto aspect = (float)width/(float)height;
-  auto nearv = vars.getFloat("camera.near");
-  auto farv  = vars.getFloat("camera.far" );
-  auto fovy = vars.getFloat("camera.fovy");
-
-  vars.reCreate<basicCamera::PerspectiveCamera>("projection",fovy,aspect,nearv,farv);
-}
-
-
-void createCamera(vars::Vars&vars){
-  createProjection(vars);
-  createView(vars);
-}
-
-void createPointCloudProgram(vars::Vars&vars){
+void createKPCProgram(vars::Vars&vars){
   if(notChanged(vars,"all",__FUNCTION__,{}))return;
 
   std::string const vsSrc = R".(
-  uniform mat4 projection;
-  uniform mat4 view;
-
+  uniform mat4 projView;
   out vec3 vColor;
 
   layout(binding=0)uniform sampler2D colorTexture;
   layout(binding=1)uniform isampler2D depthTexture;
+  layout(binding=2)uniform isampler2D xyTexture;
 
   uniform vec2 range;
+  uniform vec2 clipRange;
+  uniform int lod;
 
   void main(){
     ivec2 coord;
     ivec2 size = textureSize(colorTexture,0);
-    coord.x = gl_VertexID%size.x;
-    coord.y = gl_VertexID/size.x;
-    vColor = texelFetch(colorTexture,coord,0).xyz;
+    coord.x = (lod*gl_VertexID)%size.x;
+    coord.y = (lod*gl_VertexID)/size.x;
     float depth = texelFetch(depthTexture,coord,0).x;
-    if(depth == 0)
-        depth = range.t;
-    //depth = (clamp(depth, range.s, range.t)-range.s)/(range.t-range.s);
-    depth = (depth-range.s)/1000;
-    float z = -depth;
-    vec2 ndc = vec2(coord)/vec2(size)*2-1;
-    gl_Position = projection * view * vec4(-ndc,z,1);
+    vec2 xy = texelFetch(xyTexture, coord, 0).xy;
+    //vec3 pos = vec3(depth*xy.x, depth*xy.y, depth); 
+    vec3 pos = vec3(coord,depth);
+    if(depth == 0 || depth < clipRange.s || depth > clipRange.t)// || (xy.x == 0.0 && xy.y == 0.0))
+    {
+        gl_Position = vec4(2,2,2,1);
+        return;
+    }
+
+    pos *= 0.001f;
+    pos *= -1;
+    vColor = texelFetch(colorTexture,coord,0).xyz;
+//    vec2 ndc = vec2(coord)/vec2(size)*2-1;
+//    gl_Position = projView * vec4(-ndc,-depth,1);
+    gl_Position = projView * vec4(pos+vec3(0.5,0.5,0.0),1);
   }
   ).";
 
@@ -109,31 +67,6 @@ void createPointCloudProgram(vars::Vars&vars){
       fsSrc
       );
   vars.reCreate<ge::gl::Program>("pointCloudProgram",vs,fs)->setNonexistingUniformWarning(false);
-}
-
-
-void drawPointCloud(vars::Vars&vars){
-  createPointCloudProgram(vars);
-
-  auto view = vars.getReinterpret<basicCamera::CameraTransform>("view");
-  auto projection = vars.get<basicCamera::PerspectiveCamera>("projection");
-
-  auto colorTex     = vars.get<ge::gl::Texture>("colorTexture");
-  auto depthTex     = vars.get<ge::gl::Texture>("depthTexture");
-  auto const width  = colorTex->getWidth (0);
-  auto const height = colorTex->getHeight(1);
-  colorTex->bind(0);
-  depthTex->bind(1);
-  vars.get<ge::gl::Program>("pointCloudProgram")
-    ->setMatrix4fv("view"      ,glm::value_ptr(view->getView()))
-    ->setMatrix4fv("projection",glm::value_ptr(projection->getProjection()))
-    ->set2fv("range",reinterpret_cast<float*>(vars.get<glm::vec2>("range")))
-    ->use();
-
-  ge::gl::glEnable(GL_DEPTH_TEST);
-  ge::gl::glPointSize(vars.getFloat("image.pointSize"));
-  ge::gl::glDrawArrays(GL_POINTS,0,colorTex->getWidth(0)*colorTex->getHeight(0));
-  ge::gl::glDisable(GL_DEPTH_TEST);
 }
 
 glm::ivec2 getColorResolution(const k4a_color_resolution_t resolution)
@@ -197,7 +130,42 @@ glm::ivec2 getDepthRange(const k4a_depth_mode_t depthMode)
     }
 }
 
-void initKinect(int colorModeIndex, int depthModeIndex, vars::Vars&vars){
+void createXyTable(const k4a_calibration_t *calibration, k4a::image *xyTable)
+{
+    k4a_float2_t *table_data = (k4a_float2_t *)(void *)xyTable->get_buffer();
+
+    int width = calibration->depth_camera_calibration.resolution_width;
+    int height = calibration->depth_camera_calibration.resolution_height;
+
+    k4a_float2_t p;
+    k4a_float3_t ray;
+    int valid;
+
+    for (int y = 0, idx = 0; y < height; y++)
+    {
+        p.xy.y = (float)y;
+        for (int x = 0; x < width; x++, idx++)
+        {
+            p.xy.x = (float)x;
+
+            k4a_calibration_2d_to_3d(
+                calibration, &p, 1.f, K4A_CALIBRATION_TYPE_DEPTH, K4A_CALIBRATION_TYPE_DEPTH, &ray, &valid);
+
+            if (valid)
+            {
+                table_data[idx].xy.x = ray.xyz.x;
+                table_data[idx].xy.y = ray.xyz.y;
+            }
+            else
+            {
+                table_data[idx].xy.x = nanf("");
+                table_data[idx].xy.y = nanf("");
+            }
+        }
+    }
+}
+
+void initKPCDevice(int colorModeIndex, int depthModeIndex, vars::Vars&vars){
   const uint32_t deviceCount = k4a::device::get_installed_count();
   if (deviceCount == 0)
     throw std::runtime_error("No Azure Kinect connected");
@@ -206,7 +174,7 @@ void initKinect(int colorModeIndex, int depthModeIndex, vars::Vars&vars){
   config.depth_mode = (depthModeIndex == -1) ? K4A_DEPTH_MODE_WFOV_UNBINNED : depthModes[depthModeIndex];
   config.color_format = K4A_IMAGE_FORMAT_COLOR_BGRA32;
   config.color_resolution = (colorModeIndex == -1) ? K4A_COLOR_RESOLUTION_2160P : colorModes[colorModeIndex];
-  config.camera_fps = (config.color_resolution == K4A_COLOR_RESOLUTION_3072P || config.depth_mode == K4A_DEPTH_MODE_WFOV_UNBINNED) ? K4A_FRAMES_PER_SECOND_15 : K4A_FRAMES_PER_SECOND_30;
+  config.camera_fps = (config.color_resolution == K4A_COLOR_RESOLUTION_3072P || config.depth_mode == K4A_DEPTH_MODE_WFOV_UNBINNED) ? K4A_FRAMES_PER_SECOND_15 : K4A_FRAMES_PER_SECOND_15;
   config.synchronized_images_only = true;
   auto size = vars.reCreate<glm::ivec2>("colorSize"); 
   *size = getColorResolution(config.color_resolution);
@@ -216,40 +184,33 @@ void initKinect(int colorModeIndex, int depthModeIndex, vars::Vars&vars){
   dev->start_cameras(&config); 
   auto depthImageTrans = vars.reCreate<k4a::image>("depthImageTrans");
   *depthImageTrans = k4a::image::create(K4A_IMAGE_FORMAT_DEPTH16, size->x, size->y, size->x * (int)sizeof(uint16_t));
-  //auto pcImage = vars.add<k4a::image>("pcImage");
-  //*pcImage = k4a::image::create(K4A_IMAGE_FORMAT_CUSTOM, size->x, size->y, 3*size->x * (int)sizeof(uint16_t));
-  auto trans = vars.reCreate<k4a::transformation>("transformation",dev->get_calibration(config.depth_mode, config.color_resolution)); 
+  auto cal = dev->get_calibration(config.depth_mode, config.color_resolution);
+  auto trans = vars.reCreate<k4a::transformation>("transformation",cal); 
   vars.reCreate<ge::gl::Texture>("colorTexture",GL_TEXTURE_2D,GL_RGBA32F,1,size->x,size->y); 
-  vars.reCreate<ge::gl::Texture>("depthTexture",GL_TEXTURE_2D,GL_R16UI,1,size->x,size->y); 
+  auto depthTexture = vars.reCreate<ge::gl::Texture>("depthTexture",GL_TEXTURE_2D,GL_RGB16UI,1,size->x,size->y);
+
+  /*auto pcImage = vars.reCreate<k4a::image>("pcImage");
+  *pcImage = k4a::image::create(K4A_IMAGE_FORMAT_CUSTOM, size->x, size->y, 3*size->x * (int)sizeof(uint16_t));*/
+
+  auto xyTable = vars.reCreate<k4a::image>("xyTable");
+  *xyTable = k4a::image::create(K4A_IMAGE_FORMAT_CUSTOM, size->x, size->y, size->x * (int)sizeof(k4a_float2_t));
+  createXyTable(&cal,xyTable);
+  auto xyTexture = vars.reCreate<ge::gl::Texture>("xyTexture",GL_TEXTURE_2D,GL_RG32F,1,size->x,size->y);
+  ge::gl::glTextureSubImage2D(xyTexture->getId(),0,0,0,size->x, size->y,GL_RG,GL_FLOAT,xyTable->get_buffer());
 }
 
-void KinectPointCloud::init(){
-  auto args = vars.add<argumentViewer::ArgumentViewer>("args",argc,argv);
-  auto const showHelp = args->isPresent("-h","shows help");
-  if (showHelp || !args->validate()) {
-    std::cerr << args->toStr();
-    exit(0);
-  }
+void initKPC(vars::Vars&vars){
+  vars.addFloat("image.pointSize",1);
+  addVarsLimitsF(vars,"image.pointSize",0.0f,10.0f);
+  vars.addUint32("lod", 1);
+  addVarsLimitsU(vars,"lod",1,10);
+  vars.add<glm::vec2>("clipRange", 0, 700);
   
-  vars.add<ge::gl::VertexArray>("emptyVao");
-  vars.addFloat("input.sensitivity",0.01f);
-  vars.add<glm::uvec2>("windowSize",window->getWidth(),window->getHeight());
-  vars.addFloat("camera.fovy",glm::half_pi<float>());
-  vars.addFloat("camera.near",.1f);
-  vars.addFloat("camera.far",1000.f);
-  vars.add<std::map<SDL_Keycode, bool>>("input.keyDown");
-  vars.addBool("useOrbitCamera",false);
-  
-  vars.addFloat("image.near"     ,6.f                  );
-  vars.addFloat("image.far"      ,1000.f               );
-  vars.addFloat("image.fovy"     ,glm::half_pi<float>());
-  vars.addFloat("image.pointSize",2                    );
-  createCamera(vars);
-  
-  initKinect(-1, -1 ,vars);
+  initKPCDevice(-1, -1 ,vars);
 }
 
-void KinectPointCloud::draw(){
+void updateKPC(vars::Vars&vars)
+{
     k4a::capture capture;
     auto dev = vars.get<k4a::device>("kinectDevice");
     if (dev->get_capture(&capture, std::chrono::milliseconds(0)))
@@ -259,46 +220,17 @@ void KinectPointCloud::draw(){
         auto depthImageTrans = vars.get<k4a::image>("depthImageTrans");
         auto trans = vars.get<k4a::transformation>("transformation");
         trans->depth_image_to_color_camera(depthImage, depthImageTrans);
-        //auto pcImage = vars.get<k4a::image>("pcImage");
-        //trans->depth_image_to_point_cloud(*depthImageTrans, K4A_CALIBRATION_TYPE_COLOR, pcImage);
 
         auto size = vars.get<glm::ivec2>("colorSize");
-        ge::gl::glTextureSubImage2D(vars.get<ge::gl::Texture>("depthTexture")->getId(),0,0,0,size->x, size->y,GL_RED_INTEGER,GL_UNSIGNED_SHORT,depthImageTrans->get_buffer());
+        auto depthTexture = vars.get<ge::gl::Texture>("depthTexture");
+  
         auto colorTexture = vars.get<ge::gl::Texture>("colorTexture");
-        ge::gl::glTextureSubImage2D(colorTexture->getId(),0,0,0,size->x, size->y,GL_BGRA,GL_UNSIGNED_BYTE,colorImage.get_buffer()); 
+        ge::gl::glTextureSubImage2D(depthTexture->getId(),0,0,0,size->x, size->y,GL_RED_INTEGER,GL_UNSIGNED_SHORT,depthImageTrans->get_buffer());
+        ge::gl::glTextureSubImage2D(colorTexture->getId(),0,0,0,size->x, size->y,GL_BGRA,GL_UNSIGNED_BYTE,colorImage.get_buffer());
     }
-
-  ge::gl::glClear(GL_DEPTH_BUFFER_BIT);
-  createCamera(vars);
-  basicCamera::CameraTransform*view;
-
-  if(vars.getBool("useOrbitCamera"))
-    view = vars.getReinterpret<basicCamera::CameraTransform>("view");
-  else{
-    auto freeView = vars.get<basicCamera::FreeLookCamera>("view");
-    float freeCameraSpeed = 0.01f;
-    auto keys = vars.get<std::map<SDL_Keycode, bool>>("input.keyDown");
-    for (int a = 0; a < 3; ++a)
-      freeView->move(a, float((*keys)["d s"[a]] - (*keys)["acw"[a]]) *
-                            freeCameraSpeed);
-    view = freeView;
-  }
-
-  ge::gl::glClearColor(0.1f,0.1f,0.1f,1.f);
-  ge::gl::glClear(GL_COLOR_BUFFER_BIT);
-
-  vars.get<ge::gl::VertexArray>("emptyVao")->bind();
-
-  drawGrid(vars);
-  drawPointCloud(vars);
-
-  vars.get<ge::gl::VertexArray>("emptyVao")->unbind();
-
-  drawImguiVars(vars);
-
   ImGui::Begin("vars");
   std::vector<const char*> colorModeList = { "720p", "2160p", "1440p", "1080p", "3072p", "1536p" };
-  static int currentColor = 1;
+  static int currentColor = 0;
   int colorModeIndex = -1;
   if(ImGui::ListBox("Color mode", &currentColor, colorModeList.data(), colorModeList.size(), 4))
     colorModeIndex = currentColor;
@@ -309,67 +241,44 @@ void KinectPointCloud::draw(){
     depthModeIndex = currentDepth;
   ImGui::End();   
   if(colorModeIndex + depthModeIndex >= 0)
-    initKinect(colorModeIndex, depthModeIndex, vars);
-
-  swap();
+    initKPCDevice(colorModeIndex, depthModeIndex, vars);
 }
 
-void KinectPointCloud::key(SDL_Event const& event, bool DOWN) {
-  auto keys = vars.get<std::map<SDL_Keycode, bool>>("input.keyDown");
-  (*keys)[event.key.keysym.sym] = DOWN;
+void drawKPC(vars::Vars&vars,glm::mat4 const&view,glm::mat4 const&proj){
+
+  createKPCProgram(vars);
+  vars.get<ge::gl::VertexArray>("emptyVao")->bind();
+
+  auto colorTex     = vars.get<ge::gl::Texture>("colorTexture");
+  auto depthTex     = vars.get<ge::gl::Texture>("depthTexture");
+  auto xyTexture     = vars.get<ge::gl::Texture>("xyTexture");
+  auto const width  = colorTex->getWidth (0);
+  auto const height = colorTex->getHeight(1);
+  auto lod = vars.getUint32("lod");
+  colorTex->bind(0);
+  depthTex->bind(1);
+  xyTexture->bind(2);
+  vars.get<ge::gl::Program>("pointCloudProgram")
+    ->setMatrix4fv("projView"      ,glm::value_ptr(proj*view))
+    ->set2fv("range",reinterpret_cast<float*>(vars.get<glm::vec2>("range")))
+    ->set2fv("clipRange",reinterpret_cast<float*>(vars.get<glm::vec2>("clipRange")))
+    ->set1i("lod", lod)
+    ->use();
+
+  ge::gl::glEnable(GL_DEPTH_TEST);
+  ge::gl::glPointSize(vars.getFloat("image.pointSize"));
+  ge::gl::glDrawArrays(GL_POINTS,0,colorTex->getWidth(0)*colorTex->getHeight(0)/lod);
+  ge::gl::glDisable(GL_DEPTH_TEST);
+
+  vars.get<ge::gl::VertexArray>("emptyVao")->unbind();
+  colorTex->unbind(0);
+  depthTex->unbind(1);
 }
 
-void KinectPointCloud::mouseMove(SDL_Event const& e) {
-  if(vars.getBool("useOrbitCamera")){
-    auto sensitivity = vars.getFloat("input.sensitivity");
-    auto orbitCamera =
-        vars.getReinterpret<basicCamera::OrbitCamera>("view");
-    auto const windowSize     = vars.get<glm::uvec2>("windowSize");
-    auto const orbitZoomSpeed = 0.1f;//vars.getFloat("args.camera.orbitZoomSpeed");
-    auto const xrel           = static_cast<float>(e.motion.xrel);
-    auto const yrel           = static_cast<float>(e.motion.yrel);
-    auto const mState         = e.motion.state;
-    if (mState & SDL_BUTTON_LMASK) {
-      if (orbitCamera) {
-        orbitCamera->addXAngle(yrel * sensitivity);
-        orbitCamera->addYAngle(xrel * sensitivity);
-      }
-    }
-    if (mState & SDL_BUTTON_RMASK) {
-      if (orbitCamera) orbitCamera->addDistance(yrel * orbitZoomSpeed);
-    }
-    if (mState & SDL_BUTTON_MMASK) {
-      orbitCamera->addXPosition(+orbitCamera->getDistance() * xrel /
-                                float(windowSize->x) * 2.f);
-      orbitCamera->addYPosition(-orbitCamera->getDistance() * yrel /
-                                float(windowSize->y) * 2.f);
-    }
-  }else{
-    auto const xrel           = static_cast<float>(e.motion.xrel);
-    auto const yrel           = static_cast<float>(e.motion.yrel);
-    auto view = vars.get<basicCamera::FreeLookCamera>("view");
-    auto sensitivity = vars.getFloat("input.sensitivity");
-    if (e.motion.state & SDL_BUTTON_LMASK) {
-      view->setAngle(
-          1, view->getAngle(1) + xrel * sensitivity);
-      view->setAngle(
-          0, view->getAngle(0) + yrel * sensitivity);
-    }
-  }
+void drawKPC(vars::Vars&vars)
+{
+  auto view = vars.getReinterpret<basicCamera::CameraTransform>("view");
+  auto projection = vars.get<basicCamera::PerspectiveCamera>("projection");
+  drawKPC(vars,view->getView(),projection->getProjection());
 }
 
-void KinectPointCloud::resize(uint32_t x,uint32_t y){
-  auto windowSize = vars.get<glm::uvec2>("windowSize");
-  windowSize->x = x;
-  windowSize->y = y;
-  vars.updateTicks("windowSize");
-  ge::gl::glViewport(0,0,x,y);
-}
-
-
-int main(int argc,char*argv[]){
-  SDL_GL_SetAttribute(SDL_GL_FRAMEBUFFER_SRGB_CAPABLE,1);
-  KinectPointCloud app{argc, argv};
-  app.start();
-  return EXIT_SUCCESS;
-}

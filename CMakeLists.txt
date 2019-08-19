@@ -71,7 +71,7 @@ addObjectLibrary(barrier   "src/Barrier.cpp;src/Barrier.h"     "Vars::Vars")
 addObjectLibrary(imguiVars "src/imguiVars.cpp;src/imguiVars.h;src/addVarsLimits.cpp;src/addVarsLimits.h" "Vars::Vars;imguiSDL2OpenGL::imguiSDL2OpenGL;glm")
 addObjectLibrary(DrawGrid  "src/DrawGrid.cpp;src/DrawGrid.h"   "Vars::Vars;BasicCamera::BasicCamera;barrier")
 addObjectLibrary(drawBunny "src/drawBunny.cpp;src/bunny.h;src/bunny.c" "Vars::Vars;BasicCamera::BasicCamera;barrier")
-
+addObjectLibrary(kinectPointCloud "src/kinectPointCloud.cpp" "Vars::Vars;BasicCamera::BasicCamera;barrier;k4a::k4a")
 
 
 #addApp(gameOfLife src/gameOfLife.cpp)
@@ -84,11 +84,11 @@ addApp2(linearInterpolationOfHomogenousCoords "src/linearInterpolationOfHomogeno
 addApp2(infiniteInterpolation                 "src/infiniteInterpolation.cpp"                 "DrawGrid;imguiVars")
 addApp2(csCompiler                            "src/csCompiler.cpp"                            "ArgumentViewer::ArgumentViewer")
 addApp2(imagePointCloud                       "src/imagePointCloud.cpp"                       "ArgumentViewer::ArgumentViewer;DrawGrid;imguiVars;FreeImage;FreeImagePlus")
-addApp2(kinectPointCloud                       "src/kinectPointCloud.cpp"                       "ArgumentViewer::ArgumentViewer;DrawGrid;imguiVars;FreeImage;FreeImagePlus;k4a::k4a")
-addApp2(holo                                  "src/holo.cpp"                                  "ArgumentViewer::ArgumentViewer;barrier;imguiVars;FreeImage;FreeImagePlus")
+addApp2(kinectPointCloudViewer                       "src/kinectPointCloudViewer.cpp"                       "ArgumentViewer::ArgumentViewer;DrawGrid;imguiVars;FreeImage;kinectPointCloud")
 addApp2(fragmentPlay                           "src/fragmentPlay.cpp"                           "ArgumentViewer::ArgumentViewer;barrier;imguiVars;FreeImage;FreeImagePlus")
 addApp2(frameInterpolation                           "src/frameInterpolation.cpp"                           "ArgumentViewer::ArgumentViewer;barrier;imguiVars;FreeImage;FreeImagePlus")
 addApp2(renderHolo                            "src/renderHolo.cpp"                            "ArgumentViewer::ArgumentViewer;DrawGrid;barrier;imguiVars;FreeImage;FreeImagePlus;drawBunny")
+addApp2(renderHoloApps                            "src/renderHoloApps.cpp"                            "ArgumentViewer::ArgumentViewer;DrawGrid;barrier;imguiVars;FreeImage;FreeImagePlus;drawBunny;kinectPointCloud")
 addApp2(memoryBandwidth                       "src/memoryBandwidth.cpp"                       "barrier;imguiVars")
 addApp2(draw2d                                "src/draw2d.cpp"                                "barrier;imguiVars")
 addApp2(triangle                              "src/triangle.cpp"                              "")
