@@ -8,6 +8,8 @@
 #include <addVarsLimits.h>
 #include <k4a/k4a.hpp>
 
+int colorModeIndex = 0;
+int depthModeIndex = 1;
 const k4a_color_resolution_t colorModes[]{K4A_COLOR_RESOLUTION_720P, K4A_COLOR_RESOLUTION_2160P, K4A_COLOR_RESOLUTION_1440P, K4A_COLOR_RESOLUTION_1080P, K4A_COLOR_RESOLUTION_3072P, K4A_COLOR_RESOLUTION_1536P};
 const k4a_depth_mode_t depthModes[]{K4A_DEPTH_MODE_NFOV_UNBINNED, K4A_DEPTH_MODE_WFOV_UNBINNED, K4A_DEPTH_MODE_NFOV_2X2BINNED, K4A_DEPTH_MODE_WFOV_2X2BINNED};
 
@@ -20,7 +22,7 @@ void createKPCProgram(vars::Vars&vars){
 
   layout(binding=0)uniform sampler2D colorTexture;
   layout(binding=1)uniform isampler2D depthTexture;
-  layout(binding=2)uniform isampler2D xyTexture;
+  layout(binding=2)uniform sampler2D xyTexture;
 
   uniform vec2 range;
   uniform vec2 clipRange;
@@ -28,14 +30,14 @@ void createKPCProgram(vars::Vars&vars){
 
   void main(){
     ivec2 coord;
-    ivec2 size = textureSize(colorTexture,0);
+    ivec2 size = textureSize(depthTexture,0);
     coord.x = (lod*gl_VertexID)%size.x;
     coord.y = (lod*gl_VertexID)/size.x;
-    float depth = texelFetch(depthTexture,coord,0).x;
+    float depth = float(texelFetch(depthTexture,coord,0).x);
     vec2 xy = texelFetch(xyTexture, coord, 0).xy;
-    //vec3 pos = vec3(depth*xy.x, depth*xy.y, depth); 
-    vec3 pos = vec3(coord,depth);
-    if(depth == 0 || depth < clipRange.s || depth > clipRange.t)// || (xy.x == 0.0 && xy.y == 0.0))
+    vec3 pos = vec3(depth*xy.x, depth*xy.y, depth); 
+    //vec3 pos = vec3(coord,depth);
+    if(depth == 0 || depth < clipRange.s || depth > clipRange.t || (xy.x == 0.0 && xy.y == 0.0))
     {
         gl_Position = vec4(2,2,2,1);
         return;
@@ -46,7 +48,7 @@ void createKPCProgram(vars::Vars&vars){
     vColor = texelFetch(colorTexture,coord,0).xyz;
 //    vec2 ndc = vec2(coord)/vec2(size)*2-1;
 //    gl_Position = projView * vec4(-ndc,-depth,1);
-    gl_Position = projView * vec4(pos+vec3(0.5,0.5,0.0),1);
+    gl_Position = projView * vec4(pos+vec3(0.0,0.0,0.0),1);
   }
   ).";
 
@@ -171,23 +173,21 @@ void initKPCDevice(int colorModeIndex, int depthModeIndex, vars::Vars&vars){
     throw std::runtime_error("No Azure Kinect connected");
 
   k4a_device_configuration_t config = K4A_DEVICE_CONFIG_INIT_DISABLE_ALL;
-  config.depth_mode = (depthModeIndex == -1) ? K4A_DEPTH_MODE_WFOV_UNBINNED : depthModes[depthModeIndex];
+  config.depth_mode = depthModes[depthModeIndex];
   config.color_format = K4A_IMAGE_FORMAT_COLOR_BGRA32;
-  config.color_resolution = (colorModeIndex == -1) ? K4A_COLOR_RESOLUTION_2160P : colorModes[colorModeIndex];
-  config.camera_fps = (config.color_resolution == K4A_COLOR_RESOLUTION_3072P || config.depth_mode == K4A_DEPTH_MODE_WFOV_UNBINNED) ? K4A_FRAMES_PER_SECOND_15 : K4A_FRAMES_PER_SECOND_15;
+  config.color_resolution = colorModes[colorModeIndex];
+  config.camera_fps = (config.color_resolution == K4A_COLOR_RESOLUTION_3072P || config.depth_mode == K4A_DEPTH_MODE_WFOV_UNBINNED) ? K4A_FRAMES_PER_SECOND_15 : K4A_FRAMES_PER_SECOND_30;
   config.synchronized_images_only = true;
-  auto size = vars.reCreate<glm::ivec2>("colorSize"); 
-  *size = getColorResolution(config.color_resolution);
+  auto size = vars.reCreate<glm::ivec2>("depthSize"); 
+  *size = getDepthResolution(config.depth_mode);
   vars.reCreate<glm::vec2>("range", getDepthRange(config.depth_mode));
   auto dev = vars.reCreate<k4a::device>("kinectDevice");
   *dev = k4a::device::open(K4A_DEVICE_DEFAULT);
   dev->start_cameras(&config); 
-  auto depthImageTrans = vars.reCreate<k4a::image>("depthImageTrans");
-  *depthImageTrans = k4a::image::create(K4A_IMAGE_FORMAT_DEPTH16, size->x, size->y, size->x * (int)sizeof(uint16_t));
   auto cal = dev->get_calibration(config.depth_mode, config.color_resolution);
   auto trans = vars.reCreate<k4a::transformation>("transformation",cal); 
   vars.reCreate<ge::gl::Texture>("colorTexture",GL_TEXTURE_2D,GL_RGBA32F,1,size->x,size->y); 
-  auto depthTexture = vars.reCreate<ge::gl::Texture>("depthTexture",GL_TEXTURE_2D,GL_RGB16UI,1,size->x,size->y);
+  vars.reCreate<ge::gl::Texture>("depthTexture",GL_TEXTURE_2D,GL_R16UI,1,size->x,size->y);
 
   /*auto pcImage = vars.reCreate<k4a::image>("pcImage");
   *pcImage = k4a::image::create(K4A_IMAGE_FORMAT_CUSTOM, size->x, size->y, 3*size->x * (int)sizeof(uint16_t));*/
@@ -204,9 +204,9 @@ void initKPC(vars::Vars&vars){
   addVarsLimitsF(vars,"image.pointSize",0.0f,10.0f);
   vars.addUint32("lod", 1);
   addVarsLimitsU(vars,"lod",1,10);
-  vars.add<glm::vec2>("clipRange", 0, 700);
+  vars.add<glm::vec2>("clipRange", 0, 2000);
   
-  initKPCDevice(-1, -1 ,vars);
+  initKPCDevice(colorModeIndex, depthModeIndex ,vars);
 }
 
 void updateKPC(vars::Vars&vars)
@@ -217,30 +217,35 @@ void updateKPC(vars::Vars&vars)
     {
         const k4a::image depthImage = capture.get_depth_image();
         const k4a::image colorImage = capture.get_color_image();
-        auto depthImageTrans = vars.get<k4a::image>("depthImageTrans");
-        auto trans = vars.get<k4a::transformation>("transformation");
-        trans->depth_image_to_color_camera(depthImage, depthImageTrans);
 
-        auto size = vars.get<glm::ivec2>("colorSize");
+        auto size = vars.get<glm::ivec2>("depthSize");
         auto depthTexture = vars.get<ge::gl::Texture>("depthTexture");
-  
         auto colorTexture = vars.get<ge::gl::Texture>("colorTexture");
-        ge::gl::glTextureSubImage2D(depthTexture->getId(),0,0,0,size->x, size->y,GL_RED_INTEGER,GL_UNSIGNED_SHORT,depthImageTrans->get_buffer());
-        ge::gl::glTextureSubImage2D(colorTexture->getId(),0,0,0,size->x, size->y,GL_BGRA,GL_UNSIGNED_BYTE,colorImage.get_buffer());
+
+        auto trans = vars.get<k4a::transformation>("transformation");
+        k4a::image tImage = trans->color_image_to_depth_camera(depthImage, colorImage);
+  
+        ge::gl::glTextureSubImage2D(depthTexture->getId(),0,0,0,size->x, size->y,GL_RED_INTEGER,GL_UNSIGNED_SHORT,depthImage.get_buffer());
+        ge::gl::glTextureSubImage2D(colorTexture->getId(),0,0,0,size->x, size->y,GL_BGRA,GL_UNSIGNED_BYTE,tImage.get_buffer());
     }
   ImGui::Begin("vars");
   std::vector<const char*> colorModeList = { "720p", "2160p", "1440p", "1080p", "3072p", "1536p" };
   static int currentColor = 0;
-  int colorModeIndex = -1;
+  bool changed = false;
   if(ImGui::ListBox("Color mode", &currentColor, colorModeList.data(), colorModeList.size(), 4))
-    colorModeIndex = currentColor;
+  {
+       colorModeIndex = currentColor;
+       changed = true;
+  }
   std::vector<const char*> depthModeList = { "NFOV unbinned", "WFOV unbinned", "NFOV binned", "WFOV unbinned" };
   static int currentDepth = 1;
-  int depthModeIndex = -1;
   if(ImGui::ListBox("Depth mode", &currentDepth, depthModeList.data(), depthModeList.size(), 4))
-    depthModeIndex = currentDepth;
-  ImGui::End();   
-  if(colorModeIndex + depthModeIndex >= 0)
+  {
+        depthModeIndex = currentDepth;
+        changed = true;
+  }
+  ImGui::End();  
+  if(changed)
     initKPCDevice(colorModeIndex, depthModeIndex, vars);
 }
 
