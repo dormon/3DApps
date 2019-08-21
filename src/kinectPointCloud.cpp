@@ -36,7 +36,6 @@ void createKPCProgram(vars::Vars&vars){
     float depth = float(texelFetch(depthTexture,coord,0).x);
     vec2 xy = texelFetch(xyTexture, coord, 0).xy;
     vec3 pos = vec3(depth*xy.x, depth*xy.y, depth); 
-    //vec3 pos = vec3(coord,depth);
     if(depth == 0 || depth < clipRange.s || depth > clipRange.t || (xy.x == 0.0 && xy.y == 0.0))
     {
         gl_Position = vec4(2,2,2,1);
@@ -46,9 +45,7 @@ void createKPCProgram(vars::Vars&vars){
     pos *= 0.001f;
     pos *= -1;
     vColor = texelFetch(colorTexture,coord,0).xyz;
-//    vec2 ndc = vec2(coord)/vec2(size)*2-1;
-//    gl_Position = projView * vec4(-ndc,-depth,1);
-    gl_Position = projView * vec4(pos+vec3(0.0,0.0,0.0),1);
+    gl_Position = projView * vec4(pos,1);
   }
   ).";
 
