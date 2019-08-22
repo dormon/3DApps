@@ -21,17 +21,15 @@
 
 #include <drawBunny.h>
 #include <kinectPointCloud.h>
-#include <faceDetect.h>
+#include <drawFace.h>
 
 constexpr bool MEASURE_QUILT = true;
-constexpr float FRAME_LIMIT = 1.0/60;
+constexpr float FRAME_LIMIT = 1.0/24;
 
-enum Apps{BUNNY, KPC, QUILT_VIDEO, QUILT_STATIC};
-constexpr Apps appType = BUNNY; 
+enum Apps{BUNNY, FACE, KPC, QUILT_VIDEO, QUILT_STATIC};
+constexpr Apps appType = FACE; 
 
 #define ___ std::cerr << __FILE__ << " " << __LINE__ << std::endl
-
-FaceDetector face("a");
 
 void drawDemo(vars::Vars&vars,glm::mat4 const&view,glm::mat4 const&proj)
 {
@@ -39,11 +37,15 @@ void drawDemo(vars::Vars&vars,glm::mat4 const&view,glm::mat4 const&proj)
         drawBunny(vars, view, proj);
     else if (appType == KPC)
         drawKPC(vars, view, proj);  
+    else if (appType == FACE)
+        drawFace(vars, view, proj);  
 }
 
 void initDemo(vars::Vars&vars)
 {
     if constexpr (appType == KPC)
+        initKPC(vars);
+    else if (appType == KPC)
         initKPC(vars);
 }
 
@@ -51,6 +53,8 @@ void updateDemo(vars::Vars&vars)
 {
     if constexpr (appType == KPC)
         updateKPC(vars);
+    else if (appType == FACE)
+        updateFace(vars);
 }
 
 class Holo: public simple3DApp::Application{

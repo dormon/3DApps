@@ -1,4 +1,3 @@
-#include <drawBunny.h>
 #include <Barrier.h>
 #include <geGL/StaticCalls.h>
 #include <geGL/geGL.h>
@@ -7,7 +6,6 @@
 #include <BasicCamera/PerspectiveCamera.h>
 #include <bunny.h>
 #include <faceDetect.h>
-
 
 void createFaceProgram(vars::Vars&vars){
   if(notChanged(vars,"all",__FUNCTION__,{}))return;
@@ -55,36 +53,44 @@ void createFaceProgram(vars::Vars&vars){
       "#version 450\n",
       fsSrc
       );
-  vars.reCreate<ge::gl::Program>("bunnyProgram",vs,fs);
+  vars.reCreate<ge::gl::Program>("faceProgram",vs,fs);
 
 }
+
+FaceDetectorCapture detector("/usr/share/opencv-cuda/haarcascades/haarcascade_frontalface_default.xml");
 
 void createFaceVBO(vars::Vars&vars){
   if(notChanged(vars,"all",__FUNCTION__,{}))return;
 
-  vars.reCreate<ge::gl::Buffer>("bunnyVBO",sizeof(bunnyVertices),bunnyVertices);
-  vars.reCreate<ge::gl::Buffer>("bunnyEBO",sizeof(bunnyIndices ),bunnyIndices );
+  vars.reCreate<ge::gl::Buffer>("faceVBO",sizeof(bunnyVertices),bunnyVertices);
+  vars.reCreate<ge::gl::Buffer>("faceEBO",sizeof(bunnyIndices ),bunnyIndices );
 }
 
-void createBunnyVAO(vars::Vars&vars){
+void createFaceVAO(vars::Vars&vars){
   if(notChanged(vars,"all",__FUNCTION__,{}))return;
   createFaceVBO(vars);
-  auto vao = vars.reCreate<ge::gl::VertexArray>("bunnyVAO");
-  auto vbo = vars.get<ge::gl::Buffer>("bunnyVBO");
-  auto ebo = vars.get<ge::gl::Buffer>("bunnyEBO");
+  auto vao = vars.reCreate<ge::gl::VertexArray>("faceVAO");
+  auto vbo = vars.get<ge::gl::Buffer>("faceVBO");
+  auto ebo = vars.get<ge::gl::Buffer>("faceEBO");
   vao->addAttrib(vbo,0,3,GL_FLOAT,sizeof(float)*6,0);
   vao->addAttrib(vbo,1,3,GL_FLOAT,sizeof(float)*6,sizeof(float)*3);
   vao->addElementBuffer(ebo);
 }
 
+void updateFace(vars::Vars&vars)
+{
+    vars.reCreate<glm::mat4>("rotationMat" ,glm::rotate(glm::mat4(1.0f) ,-detector.getFaceCoords(1.0).y, glm::vec3(1.0f,0.0f,0.0f)));
+    std::cerr << detector.getFaceCoords(1.0).y << std::endl;
+}
+
 void drawFace(vars::Vars&vars,glm::mat4 const&view,glm::mat4 const&proj){
   createFaceProgram(vars);
-  createBunnyVAO(vars);
+  createFaceVAO(vars);
   ge::gl::glEnable(GL_DEPTH_TEST);
-  auto vao = vars.get<ge::gl::VertexArray>("bunnyVAO");
+  auto vao = vars.get<ge::gl::VertexArray>("faceVAO");
   vao->bind();
-  vars.get<ge::gl::Program>("bunnyProgram")
-    ->setMatrix4fv("view"      ,glm::value_ptr(view))
+  vars.get<ge::gl::Program>("faceProgram")
+    ->setMatrix4fv("view"      ,glm::value_ptr(view**vars.get<glm::mat4>("rotationMat")))
     ->setMatrix4fv("projection",glm::value_ptr(proj))
     ->use();
   ge::gl::glDrawElements(GL_TRIANGLES,sizeof(bunnyIndices)/sizeof(uint32_t),GL_UNSIGNED_INT,0);
@@ -94,6 +100,6 @@ void drawFace(vars::Vars&vars,glm::mat4 const&view,glm::mat4 const&proj){
 void drawFace(vars::Vars&vars){
   auto view = vars.getReinterpret<basicCamera::CameraTransform>("view");
   auto projection = vars.get<basicCamera::PerspectiveCamera>("projection");
-  drawBunny(vars,view->getView(),projection->getProjection());
+  drawFace(vars,view->getView(),projection->getProjection());
 }
 

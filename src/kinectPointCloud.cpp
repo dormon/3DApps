@@ -221,7 +221,6 @@ void updateKPC(vars::Vars&vars)
 
         auto trans = vars.get<k4a::transformation>("transformation");
         k4a::image tImage = trans->color_image_to_depth_camera(depthImage, colorImage);
-  
         ge::gl::glTextureSubImage2D(depthTexture->getId(),0,0,0,size->x, size->y,GL_RED_INTEGER,GL_UNSIGNED_SHORT,depthImage.get_buffer());
         ge::gl::glTextureSubImage2D(colorTexture->getId(),0,0,0,size->x, size->y,GL_BGRA,GL_UNSIGNED_BYTE,tImage.get_buffer());
     }
