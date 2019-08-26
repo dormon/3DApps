@@ -79,7 +79,7 @@ addObjectLibrary(drawBunny        "src/drawBunny.cpp;src/drawBunny.h;src/bunny.h
 addObjectLibrary(azureKinectUtils "src/azureKinectUtils.cpp;src/azureKinectUtils.h" "glm;k4a::k4a")
 addObjectLibrary(kinectPointCloud "src/kinectPointCloud.cpp;src/kinectPointCloud.h"                  "Vars::Vars;BasicCamera::BasicCamera;barrier;k4a::k4a;azureKinectUtils;imguiVars")
 addObjectLibrary(faceDetect       "src/faceDetect.cpp;src/faceDetect.h"       "cv;glm")
-addObjectLibrary(drawFace         "src/drawFace.cpp;src/bunny.h;src/bunny.c"  "Vars::Vars;BasicCamera::BasicCamera;barrier;faceDetect")
+addObjectLibrary(drawFace         "src/drawFace.cpp;src/bunny.h;src/bunny.c"  "Vars::Vars;BasicCamera::BasicCamera;barrier;faceDetect;k4a::k4a")
 
 #addApp(gameOfLife src/gameOfLife.cpp)
 #addApp2(spirv "src/spirv.cpp" "")

@@ -22,11 +22,11 @@ void setVarsLimitsPostfix(vars::Vars&        vars,
                       std::string const& name = drawImguiVarsDefaultPostfix);
 void addVarsLimitsF(vars::Vars&        vars,
                std::string const& name,
-               float              mmin = -std::numeric_limits<float>::max(),
-               float              mmax = +std::numeric_limits<float>::max(),
+               float              mmin = -1e38,
+               float              mmax = +1e38,
                float              step = 1.f);
 void addVarsLimitsU(vars::Vars&        vars,
                std::string const& name,
-               uint32_t           mmin = std::numeric_limits<uint32_t>::min(),
-               uint32_t           mmax = std::numeric_limits<uint32_t>::max(),
+               uint32_t           mmin = 0,
+               uint32_t           mmax = 0xffffffff,
                uint32_t           step = 1);
