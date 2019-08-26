@@ -324,6 +324,7 @@ void createHoloProgram(vars::Vars&vars){
   uniform vec4 tile = vec4(5,9,45,45);
   uniform vec4 viewPortion = vec4(0.99976f, 0.99976f, 0.00f, 0.00f);
   uniform vec4 aspect;
+  uniform uint drawOnlyOneImage = 0;
   
   layout(binding=0)uniform sampler2D screenTex;
   
@@ -348,7 +349,14 @@ void createHoloProgram(vars::Vars&vars){
   		//nuv.z = (1.0 - invView) * nuv.z + invView * (1.0 - nuv.z);
   		nuv.z = fract(nuv.z);
   		nuv.z = (1.0 - nuv.z);
-  		rgb[i] = texture(screenTex, texArr(nuv));
+      if(drawOnlyOneImage == 1){
+        if(uint(nuv.z *tile.z) == selectedView)
+  		    rgb[i] = texture(screenTex, texArr(nuv));
+        else
+          rgb[i] = vec4(0);
+      }else{
+  		  rgb[i] = texture(screenTex, texArr(nuv));
+      }
   		//rgb[i] = vec4(nuv.z, nuv.z, nuv.z, 1.0);
   	}
   
@@ -483,19 +491,20 @@ void drawHolo(vars::Vars&vars){
     vars.get<ge::gl::Texture>("quiltTex")->bind(0);
   }
   vars.get<ge::gl::Program>("holoProgram")
-    ->set1i ("showQuilt"     ,                vars.getBool       ("showQuilt"            ))
-    ->set1i ("showAsSequence",                vars.getBool       ("showAsSequence"       ))
-    ->set1ui("selectedView"  ,                vars.getUint32     ("selectedView"         ))
-    ->set1i ("showQuilt"     ,                vars.getBool       ("showQuilt"            ))
-    ->set1f ("pitch"         ,                vars.getFloat      ("quiltView.pitch"      ))
-    ->set1f ("tilt"          ,                vars.getFloat      ("quiltView.tilt"       ))
-    ->set1f ("center"        ,                vars.getFloat      ("quiltView.center"     ))
-    ->set1f ("invView"       ,                vars.getFloat      ("quiltView.invView"    ))
-    ->set1f ("subp"          ,                vars.getFloat      ("quiltView.subp"       ))
-    ->set1i ("ri"            ,                vars.getInt32      ("quiltView.ri"         ))
-    ->set1i ("bi"            ,                vars.getInt32      ("quiltView.bi"         ))
-    ->set4fv("tile"          ,glm::value_ptr(*vars.get<glm::vec4>("quiltView.tile"       )))
-    ->set4fv("viewPortion"   ,glm::value_ptr(*vars.get<glm::vec4>("quiltView.viewPortion")))
+    ->set1i ("showQuilt"       ,                vars.getBool       ("showQuilt"            ))
+    ->set1i ("showAsSequence"  ,                vars.getBool       ("showAsSequence"       ))
+    ->set1ui("selectedView"    ,                vars.getUint32     ("selectedView"         ))
+    ->set1i ("showQuilt"       ,                vars.getBool       ("showQuilt"            ))
+    ->set1f ("pitch"           ,                vars.getFloat      ("quiltView.pitch"      ))
+    ->set1f ("tilt"            ,                vars.getFloat      ("quiltView.tilt"       ))
+    ->set1f ("center"          ,                vars.getFloat      ("quiltView.center"     ))
+    ->set1f ("invView"         ,                vars.getFloat      ("quiltView.invView"    ))
+    ->set1f ("subp"            ,                vars.getFloat      ("quiltView.subp"       ))
+    ->set1i ("ri"              ,                vars.getInt32      ("quiltView.ri"         ))
+    ->set1i ("bi"              ,                vars.getInt32      ("quiltView.bi"         ))
+    ->set4fv("tile"            ,glm::value_ptr(*vars.get<glm::vec4>("quiltView.tile"       )))
+    ->set4fv("viewPortion"     ,glm::value_ptr(*vars.get<glm::vec4>("quiltView.viewPortion")))
+    ->set1ui("drawOnlyOneImage",                vars.getBool       ("drawOnlyOneImage"     ))
     ->use();
 
   ge::gl::glDrawArrays(GL_TRIANGLE_STRIP,0,4);
@@ -603,8 +612,9 @@ void Holo::init(){
   vars.addBool ("renderQuilt");
   vars.addBool ("renderScene",false);
   vars.addBool ("showAsSequence",false);
+  vars.addBool ("drawOnlyOneImage",false);
   vars.addUint32("selectedView",0);
-  addVarsLimitsU(vars,"selectedView",0,45);
+  addVarsLimitsU(vars,"selectedView",0,44);
 
   vars.addFloat("quiltRender.size",5.f);
   vars.addFloat("quiltRender.fov",90.f);
