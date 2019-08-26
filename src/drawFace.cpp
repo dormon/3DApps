@@ -7,6 +7,42 @@
 #include <bunny.h>
 #include <faceDetect.h>
 
+#include <k4a/k4a.hpp>
+
+FaceDetector detector("/usr/share/opencv-cuda/haarcascades/haarcascade_frontalface_default.xml");
+
+void initFace(vars::Vars&vars)
+{
+  const uint32_t deviceCount = k4a::device::get_installed_count();
+  if (deviceCount == 0)
+    throw std::runtime_error("No Azure Kinect connected");
+
+  k4a_device_configuration_t config = K4A_DEVICE_CONFIG_INIT_DISABLE_ALL;
+  config.color_format = K4A_IMAGE_FORMAT_COLOR_BGRA32;
+  config.color_resolution = K4A_COLOR_RESOLUTION_720P;
+  config.camera_fps = K4A_FRAMES_PER_SECOND_30;
+  auto dev = vars.reCreate<k4a::device>("kinectDevice");
+  *dev = k4a::device::open(K4A_DEVICE_DEFAULT);
+  dev->start_cameras(&config); 
+}
+
+glm::vec3 getCoords(vars::Vars&vars)
+{ 
+    k4a::capture capture;
+    auto dev = vars.get<k4a::device>("kinectDevice");
+    if (dev->get_capture(&capture, std::chrono::milliseconds(0)))
+    {
+        const k4a::image colorImage = capture.get_color_image();
+        const uint8_t* buffer = colorImage.get_buffer();
+        int rows = colorImage.get_height_pixels();
+        int cols = colorImage.get_width_pixels();
+        cv::Mat colorMat(rows , cols, CV_8UC4, (void*)buffer, cv::Mat::AUTO_STEP);
+        return detector.FaceDetector::getFaceCoords(colorMat, 1.0);
+    }
+    return glm::vec3();
+}
+
+
 void createFaceProgram(vars::Vars&vars){
   if(notChanged(vars,"all",__FUNCTION__,{}))return;
 
@@ -57,8 +93,6 @@ void createFaceProgram(vars::Vars&vars){
 
 }
 
-FaceDetectorCapture detector("/usr/share/opencv-cuda/haarcascades/haarcascade_frontalface_default.xml");
-
 void createFaceVBO(vars::Vars&vars){
   if(notChanged(vars,"all",__FUNCTION__,{}))return;
 
@@ -79,8 +113,7 @@ void createFaceVAO(vars::Vars&vars){
 
 void updateFace(vars::Vars&vars)
 {
-    vars.reCreate<glm::mat4>("rotationMat" ,glm::rotate(glm::mat4(1.0f) ,-detector.getFaceCoords(1.0).y, glm::vec3(1.0f,0.0f,0.0f)));
-    std::cerr << detector.getFaceCoords(1.0).y << std::endl;
+    vars.reCreate<glm::mat4>("rotationMat" ,glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 2.0*(-0.5+getCoords(vars).y), 0.0f)));
 }
 
 void drawFace(vars::Vars&vars,glm::mat4 const&view,glm::mat4 const&proj){

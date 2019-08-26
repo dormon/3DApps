@@ -10,7 +10,7 @@ class FaceDetector
         FaceDetector(std::string classifierXML);
     private:
         cv::CascadeClassifier cascade;
-        constexpr static float WINDOW{20};
+        constexpr static float WINDOW{10};
         glm::vec3 avg{0.5f};
 };
 

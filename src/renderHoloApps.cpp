@@ -20,7 +20,7 @@
 #include <Timer.h>
 
 
-constexpr bool MEASURE_QUILT = true;
+constexpr bool MEASURE_QUILT = false;
 constexpr float FRAME_LIMIT = 1.0/24;
 
 enum Apps{BUNNY, FACE, KPC, QUILT_VIDEO, QUILT_STATIC};
@@ -51,6 +51,7 @@ void assignDemo()
         #include <drawFace.h>
         drawDemo = &drawFace;
         updateDemo = &updateFace;
+        initDemo = &initFace;
     }
 }
 
@@ -366,6 +367,11 @@ void createHoloProgram(vars::Vars&vars){
   uniform float pitch = 354.42108f;
   uniform float tilt = -0.1153f;
   uniform float center = 0.04239f;
+  /*  
+  uniform float pitch = 673.6839f;
+  uniform float tilt = -0.07196f;
+  uniform float center = 0.04529f;
+  */
   uniform float invView = 1.f;
   uniform float flipX;
   uniform float flipY;
