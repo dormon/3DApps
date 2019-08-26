@@ -77,7 +77,7 @@ addObjectLibrary(imguiVars "src/imguiVars.cpp;src/imguiVars.h;src/addVarsLimits.
 addObjectLibrary(DrawGrid  "src/DrawGrid.cpp;src/DrawGrid.h"   "Vars::Vars;BasicCamera::BasicCamera;barrier")
 addObjectLibrary(drawBunny "src/drawBunny.cpp;src/bunny.h;src/bunny.c" "Vars::Vars;BasicCamera::BasicCamera;barrier")
 addObjectLibrary(kinectPointCloud "src/kinectPointCloud.cpp" "Vars::Vars;BasicCamera::BasicCamera;barrier;k4a::k4a")
-addObjectLibrary(faceDetect "src/faceDetect.cpp;src/faceDetect.h" "cv")
+addObjectLibrary(faceDetect "src/faceDetect.cpp;src/faceDetect.h" "cv;glm")
 addObjectLibrary(drawFace "src/drawFace.cpp;src/bunny.h;src/bunny.c" "Vars::Vars;BasicCamera::BasicCamera;barrier;faceDetect")
 
 #addApp(gameOfLife src/gameOfLife.cpp)
