@@ -1,3 +1,4 @@
+#include <thread>
 #include <Simple3DApp/Application.h>
 #include <ArgumentViewer/ArgumentViewer.h>
 #include <Vars/Vars.h>
@@ -15,32 +16,44 @@
 #include <FreeImagePlus.h>
 #include <addVarsLimits.h>
 #include <imguiDormon/imgui.h>
-#include <drawBunny.h>
-#include <kinectPointCloud.h>
 #include <addVarsLimits.h>
 #include <Timer.h>
 
-constexpr bool MEASURE_QUILT = true;
+
+constexpr bool MEASURE_QUILT = false;
+constexpr float FRAME_LIMIT = 1.0/24;
+
+enum Apps{BUNNY, FACE, KPC, QUILT_VIDEO, QUILT_STATIC};
+constexpr Apps appType = KPC; 
 
 #define ___ std::cerr << __FILE__ << " " << __LINE__ << std::endl
 
-void drawDemo(vars::Vars&vars,glm::mat4 const&view,glm::mat4 const&proj)
+void (*drawDemo)(vars::Vars&, const glm::mat4&, const glm::mat4&) = [](vars::Vars&, const glm::mat4&, const glm::mat4&){};
+void (*initDemo)(vars::Vars&) = [](vars::Vars&){};
+void (*updateDemo)(vars::Vars&) = [](vars::Vars&){};
+
+void assignDemo()
 {
-    drawKPC(vars, view, proj);  
-    //drawBunny(vars, view, proj);
+    if constexpr (appType == BUNNY)
+    {
+        #include <drawBunny.h>
+        drawDemo = &drawBunny;
+    }
+    else if(appType == KPC)
+    {
+        #include <kinectPointCloud.h>
+        drawDemo = &drawKPC;
+        initDemo = &initKPC;
+        updateDemo = &updateKPC;
+    }
+    else if(appType == FACE)
+    {
+        #include <drawFace.h>
+        drawDemo = &drawFace;
+        updateDemo = &updateFace;
+        initDemo = &initFace;
+    }
 }
-
-void initDemo(vars::Vars&vars)
-{
-    initKPC(vars);
-}
-
-void updateDemo(vars::Vars&vars)
-{
-    updateKPC(vars);
-}
-
-
 
 class Holo: public simple3DApp::Application{
  public:
@@ -264,9 +277,25 @@ void draw3DCursor(vars::Vars&vars){
 }
 
 void loadColorTexture(vars::Vars&vars){
-  if(notChanged(vars,"all",__FUNCTION__,{"quiltFileName"}))return;
   fipImage colorImg;
-  colorImg.load(vars.getString("quiltFileName").c_str());
+  std::string fileName = vars.getString("quiltFileName");
+  
+  if constexpr (appType == QUILT_VIDEO)
+  {
+    static int counter = 0;
+    counter++;
+    if(counter >60)
+        counter = 1;
+    fileName.replace(fileName.find("#"), sizeof("#")-1, std::to_string(counter));
+  }
+  else if (appType == QUILT_STATIC)
+  {
+      if(notChanged(vars,"all",__FUNCTION__,{"quiltFileName"}))return;
+  }
+  else
+    return;
+
+  colorImg.load(fileName.c_str());
   
   auto const width   = colorImg.getWidth();
   auto const height  = colorImg.getHeight();
@@ -274,25 +303,25 @@ void loadColorTexture(vars::Vars&vars){
   auto const imgType = colorImg.getImageType();
   auto const data    = colorImg.accessPixels();
   
-  std::cerr << "color BPP : " << BPP << std::endl;
-  std::cerr << "color type: " << imgType << std::endl;
+  //std::cerr << "color BPP : " << BPP << std::endl;
+  //std::cerr << "color type: " << imgType << std::endl;
 
   GLenum format;
   GLenum type;
   if(imgType == FIT_BITMAP){
-    std::cerr << "color imgType: FIT_BITMAP" << std::endl;
+    //std::cerr << "color imgType: FIT_BITMAP" << std::endl;
     if(BPP == 24)format = GL_BGR;
     if(BPP == 32)format = GL_BGRA;
     type = GL_UNSIGNED_BYTE;
   }
   if(imgType == FIT_RGBAF){
-    std::cerr << "color imgType: FIT_RGBAF" << std::endl;
+    //std::cerr << "color imgType: FIT_RGBAF" << std::endl;
     if(BPP == 32*4)format = GL_RGBA;
     if(BPP == 32*3)format = GL_RGB;
     type = GL_FLOAT;
   }
   if(imgType == FIT_RGBA16){
-    std::cerr << "color imgType: FIT_RGBA16" << std::endl;
+    //std::cerr << "color imgType: FIT_RGBA16" << std::endl;
     if(BPP == 48)format = GL_RGB ;
     if(BPP == 64)format = GL_RGBA;
     type = GL_UNSIGNED_SHORT;
@@ -300,8 +329,8 @@ void loadColorTexture(vars::Vars&vars){
 
   auto colorTex = vars.reCreate<ge::gl::Texture>(
       "quiltTex",GL_TEXTURE_2D,GL_RGB8,1,width,height);
-  //ge::gl::glPixelStorei(GL_UNPACK_ROW_LENGTH,width);
-  //ge::gl::glPixelStorei(GL_UNPACK_ALIGNMENT ,1    );
+  ge::gl::glPixelStorei(GL_UNPACK_ROW_LENGTH,width);
+  ge::gl::glPixelStorei(GL_UNPACK_ALIGNMENT ,1    );
   ge::gl::glTextureSubImage2D(colorTex->getId(),0,0,0,width,height,format,type,data);
 }
 
@@ -338,6 +367,11 @@ void createHoloProgram(vars::Vars&vars){
   uniform float pitch = 354.42108f;
   uniform float tilt = -0.1153f;
   uniform float center = 0.04239f;
+  /*  
+  uniform float pitch = 673.6839f;
+  uniform float tilt = -0.07196f;
+  uniform float center = 0.04529f;
+  */
   uniform float invView = 1.f;
   uniform float flipX;
   uniform float flipY;
@@ -495,14 +529,15 @@ class Quilt{
 };
 
 void drawHolo(vars::Vars&vars){
-  //loadTextures(vars);
+  loadTextures(vars);
   createHoloProgram(vars);
 
   if(vars.getBool("renderQuilt")){
     vars.get<Quilt>("quilt")->color->bind(0);
-  }/*else{
-    vars.get<ge::gl::Texture>("quiltTex")->bind(0);
-  }*/
+  }else{
+    if constexpr (appType == QUILT_VIDEO || appType == QUILT_STATIC)
+        vars.get<ge::gl::Texture>("quiltTex")->bind(0);
+  }
   vars.get<ge::gl::Program>("holoProgram")
     ->set1i ("showQuilt"     ,                vars.getBool       ("showQuilt"            ))
     ->set1i ("showAsSequence",                vars.getBool       ("showAsSequence"       ))
@@ -523,6 +558,7 @@ void drawHolo(vars::Vars&vars){
 }
 
 void Holo::draw(){
+
   updateDemo(vars);
   ge::gl::glClear(GL_DEPTH_BUFFER_BIT);
   createCamera(vars);
@@ -590,6 +626,10 @@ void Holo::draw(){
         ge::gl::glFinish();
         auto time = vars.get<Timer<double>>("timer")->elapsedFromStart();
         vars.addOrGetFloat("elapsed") = time;
+        if(time > FRAME_LIMIT)
+            std::cerr << "Lag" << std::endl;
+        else
+           std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<long>((FRAME_LIMIT-time)*1000))); 
     }
 
 
@@ -610,6 +650,8 @@ void Holo::draw(){
 
 
 void Holo::init(){
+  assignDemo();
+
   auto args = vars.add<argumentViewer::ArgumentViewer>("args",argc,argv);
   auto const quiltFile = args->gets("--quilt","","quilt image 5x9");
   auto const showHelp = args->isPresent("-h","shows help");
