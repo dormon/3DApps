@@ -19,42 +19,39 @@
 #include <addVarsLimits.h>
 #include <Timer.h>
 
-#include <drawBunny.h>
-#include <kinectPointCloud.h>
-#include <drawFace.h>
 
 constexpr bool MEASURE_QUILT = true;
 constexpr float FRAME_LIMIT = 1.0/24;
 
 enum Apps{BUNNY, FACE, KPC, QUILT_VIDEO, QUILT_STATIC};
-constexpr Apps appType = FACE; 
+constexpr Apps appType = KPC; 
 
 #define ___ std::cerr << __FILE__ << " " << __LINE__ << std::endl
 
-void drawDemo(vars::Vars&vars,glm::mat4 const&view,glm::mat4 const&proj)
-{
-    if constexpr (appType == BUNNY) 
-        drawBunny(vars, view, proj);
-    else if (appType == KPC)
-        drawKPC(vars, view, proj);  
-    else if (appType == FACE)
-        drawFace(vars, view, proj);  
-}
+void (*drawDemo)(vars::Vars&, const glm::mat4&, const glm::mat4&) = [](vars::Vars&, const glm::mat4&, const glm::mat4&){};
+void (*initDemo)(vars::Vars&) = [](vars::Vars&){};
+void (*updateDemo)(vars::Vars&) = [](vars::Vars&){};
 
-void initDemo(vars::Vars&vars)
+void assignDemo()
 {
-    if constexpr (appType == KPC)
-        initKPC(vars);
-    else if (appType == KPC)
-        initKPC(vars);
-}
-
-void updateDemo(vars::Vars&vars)
-{
-    if constexpr (appType == KPC)
-        updateKPC(vars);
-    else if (appType == FACE)
-        updateFace(vars);
+    if constexpr (appType == BUNNY)
+    {
+        #include <drawBunny.h>
+        drawDemo = &drawBunny;
+    }
+    else if(appType == KPC)
+    {
+        #include <kinectPointCloud.h>
+        drawDemo = &drawKPC;
+        initDemo = &initKPC;
+        updateDemo = &updateKPC;
+    }
+    else if(appType == FACE)
+    {
+        #include <drawFace.h>
+        drawDemo = &drawFace;
+        updateDemo = &updateFace;
+    }
 }
 
 class Holo: public simple3DApp::Application{
@@ -647,6 +644,8 @@ void Holo::draw(){
 
 
 void Holo::init(){
+  assignDemo();
+
   auto args = vars.add<argumentViewer::ArgumentViewer>("args",argc,argv);
   auto const quiltFile = args->gets("--quilt","","quilt image 5x9");
   auto const showHelp = args->isPresent("-h","shows help");
