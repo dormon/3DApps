@@ -20,6 +20,10 @@
 #include <Timer.h>
 
 
+#include <drawBunny.h>
+#include <kinectPointCloud.h>
+#include <drawFace.h>
+
 constexpr bool MEASURE_QUILT = false;
 constexpr float FRAME_LIMIT = 1.0/24;
 
@@ -36,19 +40,16 @@ void assignDemo()
 {
     if constexpr (appType == BUNNY)
     {
-        #include <drawBunny.h>
         drawDemo = &drawBunny;
     }
     else if(appType == KPC)
     {
-        #include <kinectPointCloud.h>
         drawDemo = &drawKPC;
         initDemo = &initKPC;
         updateDemo = &updateKPC;
     }
     else if(appType == FACE)
     {
-        #include <drawFace.h>
         drawDemo = &drawFace;
         updateDemo = &updateFace;
         initDemo = &initFace;
