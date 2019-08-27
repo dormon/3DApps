@@ -17,23 +17,26 @@ constexpr int DEVICE_COUNT{1};
 void createKPCProgram(vars::Vars&vars){
     if(notChanged(vars,"all",__FUNCTION__,{}))return;
 
-    std::string const vsSrc = R".(
+    std::string vsSrc = R".(
   uniform mat4 projView;
   out vec3 vColor;
 
-  layout(binding=0)uniform sampler2D colorTexture;
-  layout(binding=1)uniform isampler2D depthTexture;
-  layout(binding=2)uniform sampler2D xyTexture;
+  layout(binding=DEVICE_COUNT*2)uniform sampler2D xyTexture;
+  layout(binding=0)uniform sampler2D colorTextures[DEVICE_COUNT];
+  layout(binding=DEVICE_COUNT)uniform isampler2D depthTextures[DEVICE_COUNT];
 
   uniform vec2 clipRange;
   uniform int lod;
 
   void main(){
     ivec2 coord;
-    ivec2 size = textureSize(depthTexture,0);
-    coord.x = (lod*gl_VertexID)%size.x;
-    coord.y = (lod*gl_VertexID)/size.x;
-    float depth = float(texelFetch(depthTexture,coord,0).x);
+    ivec2 size = textureSize(depthTextures[0],0);
+    int pixels = size.x*size.y;
+    int index = gl_VertexID/pixels;
+    int pixelIndex = gl_VertexID-index*pixels;
+    coord.x = (lod*pixelIndex)%size.x;
+    coord.y = (lod*pixelIndex)/size.x;
+    float depth = float(texelFetch(depthTextures[index],coord,0).x);
     vec2 xy = texelFetch(xyTexture, coord, 0).xy;
     vec3 pos = vec3(depth*xy.x, depth*xy.y, depth); 
     if(depth == 0 || depth < clipRange.s || depth > clipRange.t || (xy.x == 0.0 && xy.y == 0.0))
@@ -44,7 +47,7 @@ void createKPCProgram(vars::Vars&vars){
 
     pos *= 0.001f;
     pos *= -1;
-    vColor = texelFetch(colorTexture,coord,0).xyz;
+    vColor = texelFetch(colorTextures[index],coord,0).xyz;
     gl_Position = projView * vec4(pos,1);
   }
   ).";
@@ -56,6 +59,15 @@ void createKPCProgram(vars::Vars&vars){
     fColor = vec4(vColor,1);
   }
   ).";
+    
+    const std::string s = "DEVICE_COUNT";
+    const std::string t = std::to_string(DEVICE_COUNT);
+    std::string::size_type n = 0;
+    while ( ( n = vsSrc.find( s, n ) ) != std::string::npos )
+    {
+        vsSrc.replace( n, s.size(), t );
+        n += t.size();
+    }
 
     auto vs = std::make_shared<ge::gl::Shader>(GL_VERTEX_SHADER,
             "#version 450\n",
@@ -196,29 +208,40 @@ void drawKPC(vars::Vars&vars,glm::mat4 const&view,glm::mat4 const&proj){
     createKPCProgram(vars);
     vars.get<ge::gl::VertexArray>("emptyVao")->bind();
 
-    auto colorTex     = vars.get<ge::gl::Texture>("colorTexture0");
-    auto depthTex     = vars.get<ge::gl::Texture>("depthTexture0");
+
     auto xyTexture     = vars.get<ge::gl::Texture>("xyTexture");
-    auto const width  = colorTex->getWidth (0);
-    auto const height = colorTex->getHeight(1);
     auto lod = vars.getUint32("lod");
-    colorTex->bind(0);
-    depthTex->bind(1);
-    xyTexture->bind(2);
+    for(int i=0; i<DEVICE_COUNT; i++)
+    {
+        std::string index = std::to_string(i);
+        auto colorTex = vars.get<ge::gl::Texture>("colorTexture"+index);
+        auto depthTex = vars.get<ge::gl::Texture>("depthTexture"+index);
+        colorTex->bind(i);
+        depthTex->bind(i+DEVICE_COUNT);
+    }
+    xyTexture->bind(DEVICE_COUNT*2);
     vars.get<ge::gl::Program>("pointCloudProgram")
         ->setMatrix4fv("projView"      ,glm::value_ptr(proj*view))
         ->set2fv("clipRange",reinterpret_cast<float*>(vars.get<glm::vec2>("clipRange")))
         ->set1i("lod", lod)
         ->use();
 
+    auto size = vars.get<glm::ivec2>("depthSize");
     ge::gl::glEnable(GL_DEPTH_TEST);
     ge::gl::glPointSize(vars.getFloat("image.pointSize"));
-    ge::gl::glDrawArrays(GL_POINTS,0,colorTex->getWidth(0)*colorTex->getHeight(0)/lod);
+    ge::gl::glDrawArrays(GL_POINTS,0,DEVICE_COUNT*size->x*size->y/lod);
     ge::gl::glDisable(GL_DEPTH_TEST);
 
     vars.get<ge::gl::VertexArray>("emptyVao")->unbind();
-    colorTex->unbind(0);
-    depthTex->unbind(1);
+    for(int i=0; i<DEVICE_COUNT; i++)
+    {
+        std::string index = std::to_string(i);
+        auto colorTex = vars.get<ge::gl::Texture>("colorTexture"+index);
+        auto depthTex = vars.get<ge::gl::Texture>("depthTexture"+index);
+        colorTex->unbind(i);
+        depthTex->unbind(i+DEVICE_COUNT);
+    }
+    xyTexture->unbind(DEVICE_COUNT*2);
 }
 
 void drawKPC(vars::Vars&vars)
