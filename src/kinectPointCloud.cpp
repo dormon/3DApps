@@ -13,6 +13,7 @@ int depthModeIndex{0};
 const k4a_color_resolution_t colorModes[]{K4A_COLOR_RESOLUTION_720P, K4A_COLOR_RESOLUTION_2160P, K4A_COLOR_RESOLUTION_1440P, K4A_COLOR_RESOLUTION_1080P, K4A_COLOR_RESOLUTION_3072P, K4A_COLOR_RESOLUTION_1536P};
 const k4a_depth_mode_t depthModes[]{K4A_DEPTH_MODE_NFOV_UNBINNED, K4A_DEPTH_MODE_WFOV_UNBINNED, K4A_DEPTH_MODE_NFOV_2X2BINNED, K4A_DEPTH_MODE_WFOV_2X2BINNED};
 constexpr int DEVICE_COUNT{1};
+glm::mat4 camMatrices[DEVICE_COUNT]; 
 
 void createKPCProgram(vars::Vars&vars){
     if(notChanged(vars,"all",__FUNCTION__,{}))return;
@@ -27,6 +28,7 @@ void createKPCProgram(vars::Vars&vars){
 
   uniform vec2 clipRange;
   uniform float sampleRate;
+  uniform mat4 camMatrices[DEVICE_COUNT];
 
   void main(){
     vec2 coord;
@@ -55,7 +57,8 @@ void createKPCProgram(vars::Vars&vars){
         gl_Position = vec4(2,2,2,1);
         return;
     }
-    gl_Position = projView * vec4(pos,1);
+
+    gl_Position = projView * camMatrices[index] * vec4(pos,1);
   }
   ).";
 
@@ -164,10 +167,19 @@ void initKPC(vars::Vars&vars){
     vars.add<glm::vec2>("clipRange", 0, 2000);
 
     initKPCDevice(colorModeIndex, depthModeIndex ,vars);
+    for(int i=0; i<DEVICE_COUNT; i++)
+    {
+        camMatrices[i] = glm::mat4(1.0);
+    }
+    /*vars.addFloat("translate");
+    addVarsLimitsF(vars,"translate",-50.0f,50.0f, 0.01);
+    vars.addFloat("rotate");
+    addVarsLimitsF(vars,"rotate",-50.0f,50.0f, 0.001);*/
 }
 
 void updateKPC(vars::Vars&vars)
 {
+    //camMatrices[1] = glm::translate(glm::mat4(1.0), glm::vec3(vars.getFloat("translate"),0.0,0.0)) * glm::rotate(glm::mat4(1.0), vars.getFloat("rotate"), glm::vec3(0.0,1.0,0.0));
     for(int i=0; i<DEVICE_COUNT; i++)
     {
         std::string index = std::to_string(i);
@@ -231,6 +243,7 @@ void drawKPC(vars::Vars&vars,glm::mat4 const&view,glm::mat4 const&proj){
         ->setMatrix4fv("projView"      ,glm::value_ptr(proj*view))
         ->set2fv("clipRange",reinterpret_cast<float*>(vars.get<glm::vec2>("clipRange")))
         ->set1f("sampleRate", sampleRate)
+        ->setMatrix4fv("camMatrices", glm::value_ptr(camMatrices[0]), DEVICE_COUNT) 
         ->use();
 
     auto size = vars.get<glm::ivec2>("depthSize");
