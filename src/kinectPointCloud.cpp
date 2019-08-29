@@ -9,7 +9,7 @@
 #include <azureKinectUtils.h>
 
 int colorModeIndex{0};
-int depthModeIndex{1};
+int depthModeIndex{0};
 const k4a_color_resolution_t colorModes[]{K4A_COLOR_RESOLUTION_720P, K4A_COLOR_RESOLUTION_2160P, K4A_COLOR_RESOLUTION_1440P, K4A_COLOR_RESOLUTION_1080P, K4A_COLOR_RESOLUTION_3072P, K4A_COLOR_RESOLUTION_1536P};
 const k4a_depth_mode_t depthModes[]{K4A_DEPTH_MODE_NFOV_UNBINNED, K4A_DEPTH_MODE_WFOV_UNBINNED, K4A_DEPTH_MODE_NFOV_2X2BINNED, K4A_DEPTH_MODE_WFOV_2X2BINNED};
 constexpr int DEVICE_COUNT{1};
@@ -26,20 +26,22 @@ void createKPCProgram(vars::Vars&vars){
   layout(binding=DEVICE_COUNT)uniform isampler2D depthTextures[DEVICE_COUNT];
 
   uniform vec2 clipRange;
-  uniform int lod;
+  uniform float sampleRate;
 
   void main(){
-    ivec2 coord;
-    ivec2 size = textureSize(depthTextures[0],0);
-    int pixels = size.x*size.y;
+    vec2 coord;
+    vec2 size = textureSize(depthTextures[0],0)*sampleRate;
+    int pixels = int(size.x*size.y);
     int index = gl_VertexID/pixels;
     int pixelIndex = gl_VertexID-index*pixels;
-    coord.x = (lod*pixelIndex)%size.x;
-    coord.y = (lod*pixelIndex)/size.x;
-    float depth = float(texelFetch(depthTextures[index],coord,0).x);
-    vec2 xy = texelFetch(xyTexture, coord, 0).xy;
+    coord.x = mod(pixelIndex,size.x)/size.x;
+    coord.y = (pixelIndex/size.x)/size.y;
+    coord = clamp(coord,0.0,1.0);
+    float depth = float(texture(depthTextures[index],coord).x);
+    //float depth = float(texelFetch(depthTextures[index],coord,0).x);
+    vec2 xy = texture(xyTexture, coord, 0).xy;
     vec3 pos = vec3(depth*xy.x, depth*xy.y, depth); 
-    if(depth == 0 || depth < clipRange.s || depth > clipRange.t || (xy.x == 0.0 && xy.y == 0.0))
+    if(depth == 0 || depth < clipRange.s || depth > clipRange.t || (xy.x == 0.0 && xy.y == 0.0)) 
     {
         gl_Position = vec4(2,2,2,1);
         return;
@@ -47,7 +49,7 @@ void createKPCProgram(vars::Vars&vars){
 
     pos *= 0.001f;
     pos *= -1;
-    vColor = texelFetch(colorTextures[index],coord,0).xyz;
+    vColor = texture(colorTextures[index],coord).xyz;
     gl_Position = projView * vec4(pos,1);
   }
   ).";
@@ -152,8 +154,8 @@ void initKPCDevice(int colorModeIndex, int depthModeIndex, vars::Vars&vars){
 void initKPC(vars::Vars&vars){
     vars.addFloat("image.pointSize",1);
     addVarsLimitsF(vars,"image.pointSize",0.0f,10.0f);
-    vars.addUint32("lod", 1);
-    addVarsLimitsU(vars,"lod",1,10);
+    vars.addFloat("sampleRate", 1);
+    addVarsLimitsF(vars,"sampleRate",0.1f,50.0f, 0.1);
     vars.add<glm::vec2>("clipRange", 0, 2000);
 
     initKPCDevice(colorModeIndex, depthModeIndex ,vars);
@@ -210,7 +212,7 @@ void drawKPC(vars::Vars&vars,glm::mat4 const&view,glm::mat4 const&proj){
 
 
     auto xyTexture     = vars.get<ge::gl::Texture>("xyTexture");
-    auto lod = vars.getUint32("lod");
+    auto sampleRate = vars.getFloat("sampleRate");
     for(int i=0; i<DEVICE_COUNT; i++)
     {
         std::string index = std::to_string(i);
@@ -223,13 +225,13 @@ void drawKPC(vars::Vars&vars,glm::mat4 const&view,glm::mat4 const&proj){
     vars.get<ge::gl::Program>("pointCloudProgram")
         ->setMatrix4fv("projView"      ,glm::value_ptr(proj*view))
         ->set2fv("clipRange",reinterpret_cast<float*>(vars.get<glm::vec2>("clipRange")))
-        ->set1i("lod", lod)
+        ->set1f("sampleRate", sampleRate)
         ->use();
 
     auto size = vars.get<glm::ivec2>("depthSize");
     ge::gl::glEnable(GL_DEPTH_TEST);
     ge::gl::glPointSize(vars.getFloat("image.pointSize"));
-    ge::gl::glDrawArrays(GL_POINTS,0,DEVICE_COUNT*size->x*size->y/lod);
+    ge::gl::glDrawArrays(GL_POINTS,0,static_cast<int>(DEVICE_COUNT*size->x*size->y*sampleRate*sampleRate));
     ge::gl::glDisable(GL_DEPTH_TEST);
 
     vars.get<ge::gl::VertexArray>("emptyVao")->unbind();
