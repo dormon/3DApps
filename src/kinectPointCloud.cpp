@@ -50,6 +50,11 @@ void createKPCProgram(vars::Vars&vars){
     pos *= 0.001f;
     pos *= -1;
     vColor = texture(colorTextures[index],coord).xyz;
+    if(length(vColor) < 0.1) 
+    {
+        gl_Position = vec4(2,2,2,1);
+        return;
+    }
     gl_Position = projView * vec4(pos,1);
   }
   ).";
@@ -231,7 +236,7 @@ void drawKPC(vars::Vars&vars,glm::mat4 const&view,glm::mat4 const&proj){
     auto size = vars.get<glm::ivec2>("depthSize");
     ge::gl::glEnable(GL_DEPTH_TEST);
     ge::gl::glPointSize(vars.getFloat("image.pointSize"));
-    ge::gl::glDrawArrays(GL_POINTS,0,static_cast<int>(DEVICE_COUNT*size->x*size->y*sampleRate*sampleRate));
+    ge::gl::glDrawArrays(GL_POINTS,0,static_cast<int>(DEVICE_COUNT*size->x*size->y*sampleRate*sampleRate-1000));
     ge::gl::glDisable(GL_DEPTH_TEST);
 
     vars.get<ge::gl::VertexArray>("emptyVao")->unbind();
