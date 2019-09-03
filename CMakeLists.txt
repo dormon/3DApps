@@ -95,6 +95,7 @@ addApp2(kinectPointCloudViewer                "src/kinectPointCloudViewer.cpp"  
 addApp2(fragmentPlay                          "src/fragmentPlay.cpp"                          "ArgumentViewer::ArgumentViewer;barrier;imguiVars;FreeImage;FreeImagePlus")
 addApp2(frameInterpolation                    "src/frameInterpolation.cpp"                    "ArgumentViewer::ArgumentViewer;barrier;imguiVars;FreeImage;FreeImagePlus")
 addApp2(renderHolo                            "src/renderHolo.cpp"                            "ArgumentViewer::ArgumentViewer;DrawGrid;barrier;imguiVars;FreeImage;FreeImagePlus;drawBunny")
+addApp2(renderHoloFocus                       "src/renderHoloFocus.cpp"                       "ArgumentViewer::ArgumentViewer;DrawGrid;barrier;imguiVars;FreeImage;FreeImagePlus;drawBunny")
 addApp2(renderHoloApps                        "src/renderHoloApps.cpp"                        "ArgumentViewer::ArgumentViewer;DrawGrid;barrier;FreeImage;FreeImagePlus;drawBunny;kinectPointCloud;drawFace")
 addApp2(memoryBandwidth                       "src/memoryBandwidth.cpp"                       "barrier;imguiVars")
 addApp2(draw2d                                "src/draw2d.cpp"                                "barrier;imguiVars")
