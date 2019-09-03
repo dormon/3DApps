@@ -27,6 +27,7 @@ find_package(FreeImage)
 find_package(FreeImagePlus)
 find_package(k4a)
 find_package(OpenCV)
+find_package(PCL)
 
 set(SOURCES
   )
@@ -72,12 +73,16 @@ add_library(cv INTERFACE)
 target_link_libraries(cv INTERFACE ${OpenCV_LIBS})
 target_include_directories(cv INTERFACE $<BUILD_INTERFACE:${OpenCV_INCLUDE_DIRS}>)
 
+add_library(pcl INTERFACE)
+target_link_libraries(pcl INTERFACE ${PCL_LIBRARIES})
+target_include_directories(pcl INTERFACE $<BUILD_INTERFACE:${PCL_INCLUDE_DIRS})
+
 addObjectLibrary(barrier          "src/Barrier.cpp;src/Barrier.h"     "Vars::Vars")
 addObjectLibrary(imguiVars        "src/imguiVars.cpp;src/imguiVars.h;src/addVarsLimits.cpp;src/addVarsLimits.h" "Vars::Vars;imguiSDL2OpenGL::imguiSDL2OpenGL;glm")
 addObjectLibrary(DrawGrid         "src/DrawGrid.cpp;src/DrawGrid.h"           "Vars::Vars;BasicCamera::BasicCamera;barrier")
 addObjectLibrary(drawBunny        "src/drawBunny.cpp;src/drawBunny.h;src/bunny.h;src/bunny.c" "Vars::Vars;BasicCamera::BasicCamera;barrier")
 addObjectLibrary(azureKinectUtils "src/azureKinectUtils.cpp;src/azureKinectUtils.h" "glm;k4a::k4a")
-addObjectLibrary(kinectPointCloud "src/kinectPointCloud.cpp;src/kinectPointCloud.h"                  "Vars::Vars;BasicCamera::BasicCamera;barrier;k4a::k4a;azureKinectUtils;imguiVars")
+addObjectLibrary(kinectPointCloud "src/kinectPointCloud.cpp;src/kinectPointCloud.h"                  "Vars::Vars;BasicCamera::BasicCamera;barrier;k4a::k4a;azureKinectUtils;imguiVars;pcl")
 addObjectLibrary(faceDetect       "src/faceDetect.cpp;src/faceDetect.h"       "cv;glm")
 addObjectLibrary(drawFace         "src/drawFace.cpp;src/bunny.h;src/bunny.c"  "Vars::Vars;BasicCamera::BasicCamera;barrier;faceDetect;k4a::k4a")
 
