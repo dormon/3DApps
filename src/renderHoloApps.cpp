@@ -24,11 +24,11 @@
 #include <kinectPointCloud.h>
 #include <drawFace.h>
 
-constexpr bool MEASURE_QUILT = false;
-constexpr float FRAME_LIMIT = 1.0/24;
+constexpr bool MEASURE_QUILT = true;
+constexpr float FRAME_LIMIT = 1.0/30;
 
 enum Apps{BUNNY, FACE, KPC, QUILT_VIDEO, QUILT_STATIC};
-constexpr Apps appType = KPC; 
+constexpr Apps appType = QUILT_VIDEO; 
 
 #define ___ std::cerr << __FILE__ << " " << __LINE__ << std::endl
 
@@ -285,7 +285,7 @@ void loadColorTexture(vars::Vars&vars){
   {
     static int counter = 0;
     counter++;
-    if(counter >60)
+    if(counter >300)
         counter = 1;
     fileName.replace(fileName.find("#"), sizeof("#")-1, std::to_string(counter));
   }
@@ -368,11 +368,6 @@ void createHoloProgram(vars::Vars&vars){
   uniform float pitch = 354.42108f;
   uniform float tilt = -0.1153f;
   uniform float center = 0.04239f;
-  /*  
-  uniform float pitch = 673.6839f;
-  uniform float tilt = -0.07196f;
-  uniform float center = 0.04529f;
-  */
   uniform float invView = 1.f;
   uniform float flipX;
   uniform float flipY;
@@ -382,14 +377,17 @@ void createHoloProgram(vars::Vars&vars){
   uniform vec4 tile = vec4(5,9,45,45);
   uniform vec4 viewPortion = vec4(0.99976f, 0.99976f, 0.00f, 0.00f);
   uniform vec4 aspect;
-  
+  uniform float focus = 0.f;
+
   layout(binding=0)uniform sampler2D screenTex;
   
   vec2 texArr(vec3 uvz)
   {
       // decide which section to take from based on the z.
       float z = floor(uvz.z * tile.z);
-      float x = (mod(z, tile.x) + uvz.x) / tile.x;
+      float focusMod = focus*(1-2*clamp(uvz.z,0,1));
+      float x = (mod(z, tile.x) + clamp(uvz.x+focusMod,0,1)) / tile.x;
+      //float x = (mod(z, tile.x) + uvz.x) / tile.x;
       float y = (floor(z / tile.x) + uvz.y) / tile.y;
       return vec2(x, y) * viewPortion.xy;
   }
@@ -402,8 +400,8 @@ void createHoloProgram(vars::Vars&vars){
   	for (int i=0; i < 3; i++) 
   	{
   		nuv.z = (texCoords.x + i * subp + texCoords.y * tilt) * pitch - center;
-  		//nuv.z = mod(nuv.z + ceil(abs(nuv.z)), 1.0);
-  		//nuv.z = (1.0 - invView) * nuv.z + invView * (1.0 - nuv.z);
+  		nuv.z = mod(nuv.z + ceil(abs(nuv.z)), 1.0);
+  		nuv.z = (1.0 - invView) * nuv.z + invView * (1.0 - nuv.z);
   		nuv.z = fract(nuv.z);
   		nuv.z = (1.0 - nuv.z);
   		rgb[i] = texture(screenTex, texArr(nuv));
@@ -553,6 +551,7 @@ void drawHolo(vars::Vars&vars){
     ->set1i ("bi"            ,                vars.getInt32      ("quiltView.bi"         ))
     ->set4fv("tile"          ,glm::value_ptr(*vars.get<glm::vec4>("quiltView.tile"       )))
     ->set4fv("viewPortion"   ,glm::value_ptr(*vars.get<glm::vec4>("quiltView.viewPortion")))
+    ->set1f ("focus"           ,                vars.getFloat      ("quiltView.focus"      ))
     ->use();
 
   ge::gl::glDrawArrays(GL_TRIANGLE_STRIP,0,4);
@@ -675,7 +674,10 @@ void Holo::init(){
   vars.addFloat("input.speed", 0.01f);
   addVarsLimitsF(vars,"input.speed",0.0,2.0,0.001);
 
-  vars.addFloat      ("quiltView.pitch"      ,354.42108f);
+/*  vars.addFloat      ("quiltView.pitch"      ,673.6839f);
+  vars.addFloat      ("quiltView.tilt"       ,-0.07196f);
+  vars.addFloat      ("quiltView.center"     ,0.04529f);*/
+ vars.addFloat      ("quiltView.pitch"      ,354.42108f);
   vars.addFloat      ("quiltView.tilt"       ,-0.1153f);
   vars.addFloat      ("quiltView.center"     ,0.04239f);
   vars.addFloat      ("quiltView.invView"    ,1.00f);
@@ -690,6 +692,8 @@ void Holo::init(){
   vars.addBool ("showAsSequence",false);
   vars.addUint32("selectedView",0);
   addVarsLimitsU(vars,"selectedView",0,45);
+  vars.addFloat      ("quiltView.focus"      ,0.00f);
+  addVarsLimitsF(vars,"quiltView.focus",-1,+1,0.001f);
 
   vars.addFloat("quiltRender.size",5.f);
   vars.addFloat("quiltRender.fov",90.f);
@@ -708,8 +712,8 @@ void Holo::init(){
   ge::gl::glGetIntegerv(GL_MAX_VIEWPORT_DIMS, dims);
   std::cerr << "maxFramebuffer: " << dims[0] << " x " << dims[1] << std::endl;
 
-  //ImGui::GetStyle().ScaleAllSizes(4.f);
-  //ImGui::GetIO().FontGlobalScale = 4.f;
+  ImGui::GetStyle().ScaleAllSizes(4.f);
+  ImGui::GetIO().FontGlobalScale = 4.f;
 
   initDemo(vars);
 }
