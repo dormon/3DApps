@@ -110,6 +110,7 @@ addApp2(memoryBandwidth                       "src/memoryBandwidth.cpp"         
 addApp2(draw2d                                "src/draw2d.cpp"                                "barrier;imguiVars")
 addApp2(triangle                              "src/triangle.cpp"                              "")
 addApp2(killGPU                               "src/killGPU.cpp"                               "ArgumentViewer::ArgumentViewer;Vars::Vars")
+addApp2(quiltToNativeCPU                      "src/quiltToNative.cpp"                         "ArgumentViewer::ArgumentViewer;FreeImagePlus")
 
 function(printParam target prop)
   get_target_property(lala ${target} ${prop})
