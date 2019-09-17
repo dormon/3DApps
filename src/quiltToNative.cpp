@@ -1,5 +1,6 @@
 #include <ArgumentViewer/ArgumentViewer.h>
 #include <FreeImagePlus.h>
+#include <glm/glm.hpp>
 
 bool checkInputName(std::string const&n){
   if(n == "")return false;
@@ -37,20 +38,99 @@ std::string fixOutputFileName(std::string const&out,std::string const&in,std::st
   return base+suffix+ext;
 }
 
+struct Params{
+  uint32_t columns    ;
+  uint32_t rows       ;
+  uint32_t width      ;
+  uint32_t height     ;
+  float    tilt       ;
+  float    pitch      ;
+  float    center     ;
+  float    viewPortion;
+};
+
+void transform(fipImage &output,fipImage const&input,Params const&params){
+  auto texelFetch = [&](int32_t x,int32_t y,uint32_t c){
+    RGBQUAD v;
+    if(x>=params.width )x = input.getWidth ()-1;
+    if(y>=params.height)y = input.getHeight()-1;
+    if(x< 0            )x = 0                  ;
+    if(y< 0            )y = 0                  ;
+    input.getPixelColor(x,y,&v);
+    if(c==0)return v.rgbRed  /255.f;
+    if(c==1)return v.rgbGreen/255.f;
+            return v.rgbBlue /255.f;
+  };
+
+  auto texture = [&](glm::vec2 const&cc,uint32_t c){
+    auto xx = cc.x*input.getWidth();
+    auto yy = cc.y*input.getHeight();
+    auto xt = glm::fract(xx);
+    auto yt = glm::fract(yy);
+    auto xi = glm::floor(xx);
+    auto yi = glm::floor(yy);
+    auto m = texelFetch(xi,yi  ,c)*(1-xt) + texelFetch(xi+1,yi  ,c)*xt;
+    auto n = texelFetch(xi,yi+1,c)*(1-xt) + texelFetch(xi+1,yi+1,c)*xt;
+    return m*(1-yt) + n*yt;
+  };
+
+  auto const texArr = [&](glm::vec3 const&uvz){
+    auto const nofImages         = 45;//params.rows*params.columns;
+    auto const selectedImage     = (uint32_t)glm::floor(uvz.z * nofImages);
+    auto const col               = selectedImage%params.columns;
+    auto const row               = selectedImage/params.rows   ;
+    return glm::vec2(
+        (((float)col + uvz.x) / (float)params.columns),
+        (((float)row + uvz.y) / (float)params.rows   )
+        ) * params.viewPortion;
+
+    //float x = (glm::mod(z, (float)params.columns) + uvz.x) / params.columns;
+    //float y = (glm::floor(z / (float)params.columns) + uvz.y) / params.rows;
+    //return glm::vec2(x, y) * params.viewPortion;
+  };
+
+  float subp = 1.f/(3*params.width);
+
+  for(uint32_t y=0;y<params.height;++y){
+    std::cerr << y << "/" << params.height << std::endl;
+    for(uint32_t x=0;x<params.width;++x){
+      float c[3];
+      auto xx = (float)x/params.width;
+      auto yy = (float)y/params.height;
+
+      for(uint32_t i=0;i<3;++i){
+        float z = (xx + i*subp + yy*params.tilt)*params.pitch - params.center;
+        z = 1.f - glm::fract(z);
+        c[i] = texture(texArr(glm::vec3(xx,yy,z)),i);
+        //if(glm::floor(z*45)!=0 && glm::floor(z*45)!=10)
+        //if(glm::floor(z*45)!=10)
+        if(glm::floor(z*45)!=30)
+          c[i] = 0;
+      }
+      RGBQUAD col;
+      col.rgbRed   = c[0]*255;
+      col.rgbGreen = c[1]*255;
+      col.rgbBlue  = c[2]*255;
+      output.setPixelColor(x,y,&col);
+    }
+  }
+}
+
 int main(int argc,char*argv[]){
   auto args = std::make_shared<argumentViewer::ArgumentViewer>(argc,argv);
+  Params params;
 
   auto suffix         = args->gets  ("--suffix"      ,"_h"      ,"suffix of output file if the output file is not specified"                                            );
   auto inputFileName  = args->gets  ("--input"       ,""        ,"input quilt image"                                                                                    );
   auto outputFileName = args->gets  ("--output"      ,""        ,"output quilt image. if --input is: \"/a/b/name.ext\" then the default output is \"name${SUFFIX}.ext\"");
-  auto columns        = args->getu32("--columns"     ,5         ,"number of quilt columns"                                                                              );
-  auto rows           = args->getu32("--rows"        ,9         ,"number of quilt rows"                                                                                 );
-  auto width          = args->getu32("--width"       ,2560      ,"width of holographics display in pixels"                                                              );
-  auto height         = args->getu32("--height"      ,1600      ,"height of holographic display in pixels"                                                              );
-  auto tilt           = args->getf32("--tilt"        ,-0.1153f  ,"tilt of the holographics display"                                                                     );
-  auto pitch          = args->getf32("--pitch"       ,354.42108f,"pitch of the holographics display"                                                                    );
-  auto center         = args->getf32("--center"      ,0.04239f  ,"center of the holographics display"                                                                   );
-  auto viewPortion    = args->getf32("--viewPortion" ,0.99976f  ,"viewPortion of the holographics display"                                                              );
+  params.columns      = args->getu32("--columns"     ,5         ,"number of quilt columns"                                                                              );
+  params.rows         = args->getu32("--rows"        ,9         ,"number of quilt rows"                                                                                 );
+  params.width        = args->getu32("--width"       ,2560      ,"width of holographics display in pixels"                                                              );
+  params.height       = args->getu32("--height"      ,1600      ,"height of holographic display in pixels"                                                              );
+  params.tilt         = args->getf32("--tilt"        ,-0.1153f  ,"tilt of the holographics display"                                                                     );
+  params.pitch        = args->getf32("--pitch"       ,354.42108f,"pitch of the holographics display"                                                                    );
+  params.center       = args->getf32("--center"      ,0.04239f  ,"center of the holographics display"                                                                   );
+  params.viewPortion  = args->getf32("--viewPortion" ,0.99976f  ,"viewPortion of the holographics display"                                                              );
   auto printHelp      = args->isPresent("--help","print help");
 
   auto const validated = args->validate();
@@ -83,7 +163,10 @@ int main(int argc,char*argv[]){
   inputImg.load(inputFileName.c_str());
 
 
-  auto outputImg = fipImage(FIT_BITMAP,width,height,24);
+  auto outputImg = fipImage(FIT_BITMAP,params.width,params.height,24);
+
+  transform(outputImg,inputImg,params);
+
   outputImg.save(outputFileName.c_str());
 
   return 0;
