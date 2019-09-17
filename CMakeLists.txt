@@ -93,6 +93,7 @@ addObjectLibrary(drawFace         "src/drawFace.cpp;src/bunny.h;src/bunny.c"  "V
 #addApp(gameOfLife src/gameOfLife.cpp)
 #addApp2(spirv "src/spirv.cpp" "")
 addApp2(emptyProject                          "src/emptyProject.cpp"                          "DrawGrid;imguiVars")
+addApp2(pathTracing                           "src/pathTracing.cpp"                          "DrawGrid;imguiVars")
 addApp2(rasterizationOrder                    "src/rasterizationOrder.cpp"                    "barrier;imguiVars")
 addApp2(noise                                 "src/noise.cpp"                                 "barrier;imguiVars")
 addApp2(sort                                  "src/Sort.cpp"                                  "ArgumentViewer::ArgumentViewer;StringAligner::StringAligner;imguiVars")
