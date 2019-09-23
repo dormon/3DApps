@@ -47,13 +47,14 @@ struct Params{
   float    pitch      ;
   float    center     ;
   float    viewPortion;
+  bool     progress   ;
 };
 
 void transform(fipImage &output,fipImage const&input,Params const&params){
   auto texelFetch = [&](int32_t x,int32_t y,uint32_t c){
     RGBQUAD v;
-    if(x>=params.width )x = input.getWidth ()-1;
-    if(y>=params.height)y = input.getHeight()-1;
+    if(x>=input.getWidth ())x = input.getWidth ()-1;
+    if(y>=input.getHeight())y = input.getHeight()-1;
     if(x< 0            )x = 0                  ;
     if(y< 0            )y = 0                  ;
     input.getPixelColor(x,y,&v);
@@ -75,37 +76,30 @@ void transform(fipImage &output,fipImage const&input,Params const&params){
   };
 
   auto const texArr = [&](glm::vec3 const&uvz){
-    auto const nofImages         = 45;//params.rows*params.columns;
-    auto const selectedImage     = (uint32_t)glm::floor(uvz.z * nofImages);
-    auto const col               = selectedImage%params.columns;
-    auto const row               = selectedImage/params.rows   ;
-    return glm::vec2(
-        (((float)col + uvz.x) / (float)params.columns),
-        (((float)row + uvz.y) / (float)params.rows   )
-        ) * params.viewPortion;
-
-    //float x = (glm::mod(z, (float)params.columns) + uvz.x) / params.columns;
-    //float y = (glm::floor(z / (float)params.columns) + uvz.y) / params.rows;
-    //return glm::vec2(x, y) * params.viewPortion;
+    auto const nofImages     = params.rows*params.columns;
+    auto const selectedImage = (uint32_t)glm::floor(uvz.z * nofImages);
+    auto const col           = selectedImage%params.columns;
+    auto const row           = selectedImage/params.columns;
+    float x = (float)(col + uvz.x) / (float)params.columns;
+    float y = (float)(row + uvz.y) / params.rows;
+    return glm::vec2(x, y) * params.viewPortion;
   };
 
   float subp = 1.f/(3*params.width);
 
   for(uint32_t y=0;y<params.height;++y){
-    std::cerr << y << "/" << params.height << std::endl;
+    if(params.progress)
+      std::cerr << y << "/" << params.height << std::endl;
     for(uint32_t x=0;x<params.width;++x){
       float c[3];
-      auto xx = (float)x/params.width;
-      auto yy = (float)y/params.height;
+      auto const xx = (float)x/params.width;
+      auto const yy = (float)y/params.height;
 
       for(uint32_t i=0;i<3;++i){
         float z = (xx + i*subp + yy*params.tilt)*params.pitch - params.center;
         z = 1.f - glm::fract(z);
+        z = glm::abs(z);
         c[i] = texture(texArr(glm::vec3(xx,yy,z)),i);
-        //if(glm::floor(z*45)!=0 && glm::floor(z*45)!=10)
-        //if(glm::floor(z*45)!=10)
-        if(glm::floor(z*45)!=30)
-          c[i] = 0;
       }
       RGBQUAD col;
       col.rgbRed   = c[0]*255;
@@ -131,6 +125,7 @@ int main(int argc,char*argv[]){
   params.pitch        = args->getf32("--pitch"       ,354.42108f,"pitch of the holographics display"                                                                    );
   params.center       = args->getf32("--center"      ,0.04239f  ,"center of the holographics display"                                                                   );
   params.viewPortion  = args->getf32("--viewPortion" ,0.99976f  ,"viewPortion of the holographics display"                                                              );
+  params.progress     = args->isPresent("--progress","print progress");
   auto printHelp      = args->isPresent("--help","print help");
 
   auto const validated = args->validate();
@@ -157,11 +152,9 @@ int main(int argc,char*argv[]){
   }
   
   outputFileName = fixOutputFileName(outputFileName,inputFileName,suffix);
-  std::cerr << outputFileName << std::endl;
 
   fipImage inputImg;
   inputImg.load(inputFileName.c_str());
-
 
   auto outputImg = fipImage(FIT_BITMAP,params.width,params.height,24);
 
