@@ -128,7 +128,12 @@ int main(int argc,char*argv[]){
   params.progress     = args->isPresent("--progress","print progress");
   auto printHelp      = args->isPresent("--help","print help");
 
-  auto const validated = args->validate();
+  bool validated;
+  try{
+    validated = args->validate();
+  }catch(std::exception&e){
+    std::cerr << e.what() << std::endl;
+  }
 
 
   if(!validated){
