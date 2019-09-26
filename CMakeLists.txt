@@ -112,6 +112,7 @@ addApp2(draw2d                                "src/draw2d.cpp"                  
 addApp2(triangle                              "src/triangle.cpp"                              "")
 addApp2(killGPU                               "src/killGPU.cpp"                               "ArgumentViewer::ArgumentViewer;Vars::Vars")
 addApp2(quiltToNative                         "src/quiltToNative.cpp"                         "ArgumentViewer::ArgumentViewer;FreeImagePlus;glm")
+addApp2(stupidCompiler                        "src/stupidCompiler.cpp"                        "barrier;imguiVars;ArgumentViewer::ArgumentViewer")
 
 function(printParam target prop)
   get_target_property(lala ${target} ${prop})
