@@ -13,22 +13,18 @@ class CSCompiler: public simple3DApp::Application{
 
 using namespace ge::gl;
 
-class Prg{
-  public:
-    Prg(std::string n,std::string const&src){
-      prg = std::make_shared<ge::gl::Program>(std::make_shared<ge::gl::Shader>(GL_COMPUTE_SHADER,src));
-      name = n;
-    }
-  protected:
-    std::shared_ptr<Program>prg;
-    std::string name;
-};
-
 int main(int argc,char*argv[]){
   CSCompiler app{argc, argv};
 
+  auto args = std::make_shared<argumentViewer::ArgumentViewer>(argc,argv);
+  auto N = args->getu64("-N",10,"how many times are tests executed");
+  bool printHelp = args->isPresent("-h", "prints this help");
+  if (printHelp || !args->validate()) {
+    std::cerr << args->toStr();
+    exit(0);
+  }
+
   size_t const DATA = 1024*1024*4;
-  size_t const N = 10;
   auto buf = std::make_shared<ge::gl::Buffer>(sizeof(uint32_t)*DATA);
   buf->bindBase(GL_SHADER_STORAGE_BUFFER,0);
 
@@ -38,6 +34,7 @@ int main(int argc,char*argv[]){
     auto timer = Timer<float>();
     glFinish();
     timer.reset();
+    prg->use();
     for(size_t i=0;i<N;++i)
       prg->dispatch(DATA/256);
     glFinish();
@@ -56,6 +53,10 @@ int main(int argc,char*argv[]){
     data[gl_GlobalInvocationID.x] = 32;
   }
   ).");
+  //std::vector<uint32_t>d(10);
+  //buf->getData(d);
+  //for(auto x:d)
+  //  std::cerr << x << std::endl;
 
   measure("simple",R".(
   #version 450
@@ -78,7 +79,7 @@ int main(int argc,char*argv[]){
 
   void main(){
     uint a  = 32;
-    for(uint i=0;i<1000;++i)
+    for(uint i=0;i<10000;++i)
       a = uint(32*sin(a*32));
       
     data[gl_GlobalInvocationID.x] = a;
@@ -111,7 +112,7 @@ int main(int argc,char*argv[]){
   void main(){
     uint a  = 32;
     for(uint i=0;i<1000;++i)
-      a += sin(i*32)*32;
+      a += uint(sin(i*32)*32);
       
     data[gl_GlobalInvocationID.x] = a;
   }
