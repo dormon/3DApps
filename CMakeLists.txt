@@ -109,6 +109,7 @@ addApp2(renderHoloFocus                       "src/renderHoloFocus.cpp"         
 addApp2(renderHoloApps                        "src/renderHoloApps.cpp"                        "ArgumentViewer::ArgumentViewer;DrawGrid;barrier;FreeImage;FreeImagePlus;drawBunny;kinectPointCloud;drawFace")
 addApp2(memoryBandwidth                       "src/memoryBandwidth.cpp"                       "barrier;imguiVars")
 addApp2(draw2d                                "src/draw2d.cpp"                                "barrier;imguiVars")
+addApp2(morton2d                              "src/morton2d.cpp"                              "barrier;imguiVars;assimp::assimp")
 addApp2(triangle                              "src/triangle.cpp"                              "")
 addApp2(killGPU                               "src/killGPU.cpp"                               "ArgumentViewer::ArgumentViewer;Vars::Vars")
 addApp2(quiltToNative                         "src/quiltToNative.cpp"                         "ArgumentViewer::ArgumentViewer;FreeImagePlus;glm")
