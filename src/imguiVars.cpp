@@ -122,6 +122,9 @@ void drawGroup(std::unique_ptr<Group>const&group,vars::Vars &vars){
     if(vars.getType(fn) == typeid(glm::vec2)){
       change = ImGui::DragFloat2(n.c_str(),(float*)vars.get(fn));
     }
+    if(vars.getType(fn) == typeid(glm::uvec2)){
+      change = ImGui::DragInt2(n.c_str(),(int*)vars.get(fn));
+    }
     if(vars.getType(fn) == typeid(std::string)){
       auto&str = vars.getString(fn);
       auto const maxV = [](size_t i,size_t j){if(i>j)return i;return j;};

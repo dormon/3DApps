@@ -622,6 +622,7 @@ void Holo::init(){
   vars.addBool ("drawOnlyOneImage",false);
   vars.addUint32("selectedView",0);
   addVarsLimitsU(vars,"selectedView",0,44);
+  addVarsLimitsF(vars,"quiltView.tilt",-10,10,0.01);
 
   vars.addFloat("quiltRender.size",5.f);
   vars.addFloat("quiltRender.fov",90.f);
