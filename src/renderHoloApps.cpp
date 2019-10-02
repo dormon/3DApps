@@ -18,7 +18,8 @@
 #include <imguiDormon/imgui.h>
 #include <addVarsLimits.h>
 #include <Timer.h>
-
+#include <holoCalibration.h>
+#include <math.h>  
 
 #include <drawBunny.h>
 #include <kinectPointCloud.h>
@@ -28,7 +29,7 @@ constexpr bool MEASURE_QUILT = true;
 constexpr float FRAME_LIMIT = 1.0/30;
 
 enum Apps{BUNNY, FACE, KPC, QUILT_VIDEO, QUILT_STATIC};
-constexpr Apps appType = QUILT_VIDEO; 
+constexpr Apps appType = BUNNY; 
 
 #define ___ std::cerr << __FILE__ << " " << __LINE__ << std::endl
 
@@ -397,6 +398,8 @@ void createHoloProgram(vars::Vars&vars){
   	vec3 nuv = vec3(texCoords.xy, 0.0);
   
   	vec4 rgb[3];
+    nuv.x = (1.0 - flipX) * nuv.x + flipX * (1.0 - nuv.x);
+    nuv.y = (1.0 - flipY) * nuv.y + flipY * (1.0 - nuv.y);
   	for (int i=0; i < 3; i++) 
   	{
   		nuv.z = (texCoords.x + i * subp + texCoords.y * tilt) * pitch - center;
@@ -662,7 +665,7 @@ void Holo::init(){
 
   vars.addString("quiltFileName",quiltFile);
 
-  
+  std::cerr << window->getWidth() <<std::endl;
   vars.add<ge::gl::VertexArray>("emptyVao");
   vars.add<glm::uvec2>("windowSize",window->getWidth(),window->getHeight());
   vars.addFloat("input.sensitivity",0.01f);
@@ -674,14 +677,16 @@ void Holo::init(){
   vars.addFloat("input.speed", 0.01f);
   addVarsLimitsF(vars,"input.speed",0.0,2.0,0.001);
 
-/*  vars.addFloat      ("quiltView.pitch"      ,673.6839f);
-  vars.addFloat      ("quiltView.tilt"       ,-0.07196f);
-  vars.addFloat      ("quiltView.center"     ,0.04529f);*/
- vars.addFloat      ("quiltView.pitch"      ,354.42108f);
-  vars.addFloat      ("quiltView.tilt"       ,-0.1153f);
-  vars.addFloat      ("quiltView.center"     ,0.04239f);
-  vars.addFloat      ("quiltView.invView"    ,1.00f);
-  vars.addFloat      ("quiltView.subp"       ,0.00013f);
+  vars.addFloat      ("quiltView.invView"    ,0.0f);
+  HoloCalibration::Calibration cal = HoloCalibration::getCalibration();
+   std::cerr<< cal.dpi;
+  vars.addFloat      ("quiltView.pitch"      ,cal.pitch*(cal.screenWidth/cal.dpi)*cos(atan(1.0/cal.slope)));
+  vars.addFloat      ("quiltView.tilt"       ,(cal.screenHeight/(cal.screenWidth*cal.slope))*((cal.flipImageX == 1.0) ? -1 : 1));
+  vars.addFloat      ("quiltView.center"     ,cal.center);
+  //vars.addFloat      ("quiltView.invView"    ,cal.invView);
+  vars.addFloat      ("quiltView.subp"       ,1.0/(cal.screenWidth*3));
+  vars.addFloat      ("quiltView.flipX"      ,cal.flipImageX);
+  vars.addFloat      ("quiltView.flipY"      ,cal.flipImageY);
   vars.addInt32      ("quiltView.ri"         ,0);
   vars.addInt32      ("quiltView.bi"         ,2);
   vars.add<glm::vec4>("quiltView.tile"       ,5.00f, 9.00f, 45.00f, 45.00f);
@@ -777,6 +782,11 @@ void Holo::resize(uint32_t x,uint32_t y){
   vars.updateTicks("windowSize");
   ge::gl::glViewport(0,0,x,y);
   std::cerr << "resize(" << x << "," << y << ")" << std::endl;
+  HoloCalibration::Calibration cal = HoloCalibration::getCalibration();
+  vars.reCreate<float>      ("quiltView.pitch"      ,cal.pitch*(x/cal.dpi)*cos(atan(1.0/cal.slope)));
+  vars.reCreate<float>      ("quiltView.tilt"       ,(y/(x*cal.slope))*((cal.flipImageX == 1.0) ? -1 : 1));
+  vars.reCreate<float>      ("quiltView.center"     ,cal.center);
+  vars.reCreate<float>      ("quiltView.subp"       ,1.0/(x*3));
 }
 
 
