@@ -18,7 +18,7 @@ class AABB{
       for(auto const&x:p)
         add(x);
     }
-    AABB():minPoint(std::numeric_limits<float>::max()),maxPoint(-std::numeric_limits<float>::max()){}
+    AABB(){reset();}
     void add(glm::vec2 const&p){
       minPoint = glm::min(minPoint,p);
       maxPoint = glm::max(maxPoint,p);
@@ -31,10 +31,149 @@ class AABB{
       auto d = maxPoint-minPoint;
       return glm::abs(d.x*d.y);
     }
+    void reset(){
+      minPoint = glm::vec2(std::numeric_limits<float>::max());
+      maxPoint = glm::vec2(-std::numeric_limits<float>::max());
+    }
+    glm::vec4 bake()const{
+      return glm::vec4(minPoint,maxPoint);
+    }
     glm::vec2 minPoint;
     glm::vec2 maxPoint;
 };
 
+class Node{
+  public:
+    Node(uint32_t o,uint32_t n,AABB const&a,uint32_t m,uint32_t l):offset(o),n(n),aabb(a),morton(m),level(l){}
+    std::vector<std::shared_ptr<Node>>childs;
+    uint32_t offset;
+    uint32_t n;
+    AABB aabb;
+    uint32_t morton;
+    uint32_t level;
+    std::vector<glm::vec4>linearizeAABB()const{
+      std::vector<glm::vec4>res;
+      res.push_back(aabb.bake());
+      uint32_t offset = 0;
+      uint32_t n = childs.size();
+      std::vector<std::shared_ptr<Node>>l = childs;
+      bool running = true;
+      while(running){
+        running = false;
+        for(size_t i=offset;i<offset+n;++i){
+          for(auto const&c:l.at(i)->childs)
+            l.push_back(c);
+          running |= l.at(i)->childs.size() != 0;
+        }
+        offset += n;
+        n = l.size()-n;
+      }
+      return res;
+    }
+};
+
+uint32_t requiredBits(uint32_t a){
+  return (uint32_t)glm::ceil(glm::log2((float)a));
+}
+
+glm::uvec2 requiredBits(glm::uvec2 const&a){
+  return glm::uvec2(requiredBits(a.x),requiredBits(a.y));
+}
+
+uint32_t morton(glm::vec2 const&p,AABB const&aabb,glm::uvec2 const& div){
+  auto np = (p-aabb.minPoint) / (aabb.maxPoint - aabb.minPoint);
+  auto inp = glm::clamp(glm::uvec2(np*glm::vec2(div)),glm::uvec2(0),div-glm::uvec2(1));
+  uint32_t res = 0;
+  auto const bits = requiredBits(div);
+  for(size_t d=0;d<2;++d)
+    for(size_t b=0;b<bits[d];++b){
+      res |= ((inp[d]>>b)&1)<<(b*2+d);
+    }
+  return res;
+}
+
+class Morton{
+  public:
+    Morton(std::vector<glm::vec2>const&p,glm::uvec2 const&div):points(p){
+      auto aabb = AABB(p);
+      for(size_t i=0;i<points.size();++i){
+        auto mor = morton(points.at(i),aabb,div);
+        mortons.push_back(mor);
+        morton2Id[mor] = i;
+      }
+      std::sort(std::begin(mortons),std::end(mortons));
+      for(auto const&m:mortons)
+        sortedIds.push_back(morton2Id.at(m));
+    }
+    std::vector<uint32_t>mortons;
+    std::vector<uint32_t>sortedIds;
+    std::map<uint32_t,uint32_t>morton2Id;
+    std::vector<glm::vec2>points;
+};
+
+std::vector<std::shared_ptr<Node>>createLevel0(Morton const& mor){
+  uint32_t const mask = 0xfffffffc;
+  uint32_t key = mor.mortons.front()&mask;
+  uint32_t offset = 0;
+  uint32_t n      = 0;
+  AABB aabb;
+  std::vector<std::shared_ptr<Node>>res;
+  for(auto const&m:mor.mortons){
+    if((m&mask) == key){
+      n++;
+      aabb.add(mor.points[mor.morton2Id.at(m)]);
+    }else{
+      res.push_back(std::make_shared<Node>(offset,n,aabb,m,0));
+      //store
+      offset +=n;
+      n=1;
+      aabb.reset();
+      aabb.add(mor.points[mor.morton2Id.at(m)]);
+      key = m&mask;
+    }
+  }
+  return res;
+}
+
+std::vector<std::shared_ptr<Node>>compact(std::vector<std::shared_ptr<Node>>const&nodes){
+  std::vector<std::shared_ptr<Node>>res;
+  uint32_t level = nodes.front()->level+1;
+  uint32_t const mask = ~((1<<(level)*2)-1);
+  uint32_t key = nodes.front()->morton&mask;
+  uint32_t offset = 0;
+  uint32_t n      = 0;
+  AABB aabb;
+  std::vector<std::shared_ptr<Node>>childs;
+  for(auto const&node:nodes){
+    if((node->morton&mask) == key){
+      n++;
+      aabb.add(node->aabb);
+      childs.push_back(node);
+    }else{
+      auto newNode = std::make_shared<Node>(offset,n,aabb,node->morton,level);
+      newNode->childs = childs;
+      res.push_back(newNode);
+      childs.clear();
+      childs.push_back(node);
+      offset +=n;
+      n=1;
+      aabb.reset();
+      aabb.add(node->aabb);
+      key = node->morton&mask;
+    }
+  }
+  return res;
+}
+
+std::shared_ptr<Node>createHierarchy(Morton const&mor){
+  auto nodes = createLevel0(mor);
+  while(nodes.size()>1){
+    nodes = compact(nodes);
+  }
+  return nodes.front();
+}
+
+  
 std::vector<glm::vec2>getModelPoints(std::string const&n){
   auto model = aiImportFile(n.c_str(),aiProcess_Triangulate|aiProcess_GenNormals|aiProcess_SortByPType);
   std::vector<glm::vec2>vertices;
@@ -78,27 +217,6 @@ std::vector<glm::vec2>normalize(std::vector<glm::vec2>const&p){
   return r;
 }
 
-
-
-uint32_t requiredBits(uint32_t a){
-  return (uint32_t)glm::ceil(glm::log2((float)a));
-}
-
-glm::uvec2 requiredBits(glm::uvec2 const&a){
-  return glm::uvec2(requiredBits(a.x),requiredBits(a.y));
-}
-
-uint32_t morton(glm::vec2 const&p,AABB const&aabb,glm::uvec2 const& div){
-  auto np = (p-aabb.minPoint) / (aabb.maxPoint - aabb.minPoint);
-  auto inp = glm::clamp(glm::uvec2(np*glm::vec2(div)),glm::uvec2(0),div-glm::uvec2(1));
-  uint32_t res = 0;
-  auto const bits = requiredBits(div);
-  for(size_t d=0;d<2;++d)
-    for(size_t b=0;b<bits[d];++b){
-      res |= ((inp[d]>>b)&1)<<(b*2+d);
-    }
-  return res;
-}
 
 class Space{
   public:
