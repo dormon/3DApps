@@ -1,26 +1,18 @@
 #include <Simple3DApp/Application.h>
-#include <ArgumentViewer/ArgumentViewer.h>
-#include <TxtUtils/TxtUtils.h>
 #include <geGL/StaticCalls.h>
 #include <geGL/geGL.h>
 #include <Timer.h>
 
-class CSCompiler: public simple3DApp::Application{
+class GMU: public simple3DApp::Application{
  public:
-  CSCompiler(int argc, char* argv[]) : Application(argc, argv) {}
-  virtual ~CSCompiler(){}
+  GMU(int argc, char* argv[]) : Application(argc, argv) {}
+  virtual ~GMU(){}
 };
 
 using namespace ge::gl;
 
 int main(int argc,char*argv[]){
-  CSCompiler app{argc, argv};
-
-
-  //size_t const DATA = 1024*1024*4;
-  //auto buf = std::make_shared<ge::gl::Buffer>(sizeof(uint32_t)*DATA);
-  //buf->bindBase(GL_SHADER_STORAGE_BUFFER,0);
-
+  GMU app{argc, argv};
 
   std::string const src = R".(
   #version 450
@@ -30,8 +22,12 @@ int main(int argc,char*argv[]){
   layout(binding=0)buffer A{float a[];};
   layout(binding=1)buffer B{float b[];};
   layout(binding=2)buffer C{float c[];};
+  
+  uniform uint vectorSize = 256;
 
   void main(){
+    if(gl_GlobalInvocationID.x >= vectorSize)return;
+
     c[gl_GlobalInvocationID.x] = a[gl_GlobalInvocationID.x] + b[gl_GlobalInvocationID.x];
   }
 
@@ -39,7 +35,7 @@ int main(int argc,char*argv[]){
 
   auto prg = std::make_shared<ge::gl::Program>(std::make_shared<ge::gl::Shader>(GL_COMPUTE_SHADER,src));
 
-  size_t N = 1024*1024;
+  size_t N = 300;
 
   auto aData = std::vector<float>(N);
   auto bData = std::vector<float>(N);
@@ -67,8 +63,14 @@ int main(int argc,char*argv[]){
 
   size_t M=100;
 
+  auto divRoundUp = [](uint32_t x, uint32_t y){
+    return (uint32_t)(x/y) + (uint32_t)((x%y) > 0);
+  };
+
+  prg->set1ui("vectorSize",N);
+
   for(size_t i=0;i<M;++i)
-    prg->dispatch(N/256,1,1);
+    prg->dispatch(divRoundUp(N,256),1,1);
   glFinish();
 
   auto time = timer.elapsedFromStart();
@@ -82,24 +84,6 @@ int main(int argc,char*argv[]){
     cData[i] = aData[i] + bData[i];
   auto cpuTime = timer.elapsedFromStart();
   std::cerr << "cpu: " << cpuTime << std::endl;
-
-
-
-  /*
-  size_t N= 10;
-
-  glFinish();
-  auto timer = Timer<float>();
-  timer.reset();
-  prg->use();
-  for(size_t i=0;i<N;++i)
-    prg->dispatch(DATA/256);
-  glFinish();
-  auto time = timer.elapsedFromStart()/N;
-  std::cerr << "cas: " << time << std::endl;
-
-
-  */
 
   return EXIT_SUCCESS;
 }
