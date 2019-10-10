@@ -106,7 +106,6 @@ addApp2(linearInterpolationOfHomogenousCoords "src/linearInterpolationOfHomogeno
 addApp2(infiniteInterpolation                 "src/infiniteInterpolation.cpp"                 "DrawGrid;imguiVars")
 addApp2(csCompiler                            "src/csCompiler.cpp"                            "ArgumentViewer::ArgumentViewer")
 addApp2(imagePointCloud                       "src/imagePointCloud.cpp"                       "ArgumentViewer::ArgumentViewer;DrawGrid;imguiVars;FreeImage;FreeImagePlus")
-addApp2(kinectPointCloudViewer                "src/kinectPointCloudViewer.cpp"                "ArgumentViewer::ArgumentViewer;DrawGrid;FreeImage;kinectPointCloud")
 addApp2(fragmentPlay                          "src/fragmentPlay.cpp"                          "ArgumentViewer::ArgumentViewer;barrier;imguiVars;FreeImage;FreeImagePlus")
 addApp2(frameInterpolation                    "src/frameInterpolation.cpp"                    "ArgumentViewer::ArgumentViewer;barrier;imguiVars;FreeImage;FreeImagePlus")
 addApp2(renderHolo                            "src/renderHolo.cpp"                            "ArgumentViewer::ArgumentViewer;DrawGrid;barrier;imguiVars;FreeImage;FreeImagePlus;drawBunny")

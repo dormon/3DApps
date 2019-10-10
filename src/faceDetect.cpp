@@ -18,6 +18,8 @@ glm::vec3 FaceDetector::getFaceCoords(cv::Mat& img, double scale)
     {
         cv::Rect r = faces[0];
         cv::Point center = (r.br()+r.tl())*0.5;
+        if(glm::abs(static_cast<float>(center.y)/img.size().height-avg.y) > THRESHOLD)
+            return avg;
         avg -= avg/WINDOW;
         avg += glm::vec3(static_cast<float>(center.x)/img.size().width, static_cast<float>(center.y)/img.size().height, static_cast<float>(r.width)/img.size().width)/WINDOW;
      }

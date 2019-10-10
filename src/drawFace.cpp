@@ -21,6 +21,7 @@ void initFace(vars::Vars&vars)
   config.color_format = K4A_IMAGE_FORMAT_COLOR_BGRA32;
   config.color_resolution = K4A_COLOR_RESOLUTION_720P;
   config.camera_fps = K4A_FRAMES_PER_SECOND_30;
+
   auto dev = vars.reCreate<k4a::device>("kinectDevice");
   *dev = k4a::device::open(K4A_DEVICE_DEFAULT);
   dev->start_cameras(&config); 
@@ -37,6 +38,8 @@ glm::vec3 getCoords(vars::Vars&vars)
         int rows = colorImage.get_height_pixels();
         int cols = colorImage.get_width_pixels();
         cv::Mat colorMat(rows , cols, CV_8UC4, (void*)buffer, cv::Mat::AUTO_STEP);
+
+
         return detector.FaceDetector::getFaceCoords(colorMat, 1.0);
     }
     return glm::vec3();
@@ -113,7 +116,7 @@ void createFaceVAO(vars::Vars&vars){
 
 void updateFace(vars::Vars&vars)
 {
-    vars.reCreate<glm::mat4>("rotationMat" ,glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 2.0*(-0.5+getCoords(vars).y), 0.0f)));
+    vars.reCreate<glm::mat4>("translationMat" ,glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 2.0*(-0.5+getCoords(vars).y), 0.0f)));
 }
 
 void drawFace(vars::Vars&vars,glm::mat4 const&view,glm::mat4 const&proj){
@@ -123,7 +126,7 @@ void drawFace(vars::Vars&vars,glm::mat4 const&view,glm::mat4 const&proj){
   auto vao = vars.get<ge::gl::VertexArray>("faceVAO");
   vao->bind();
   vars.get<ge::gl::Program>("faceProgram")
-    ->setMatrix4fv("view"      ,glm::value_ptr(view**vars.get<glm::mat4>("rotationMat")))
+    ->setMatrix4fv("view"      ,glm::value_ptr(view**vars.get<glm::mat4>("translationMat")))
     ->setMatrix4fv("projection",glm::value_ptr(proj))
     ->use();
   ge::gl::glDrawElements(GL_TRIANGLES,sizeof(bunnyIndices)/sizeof(uint32_t),GL_UNSIGNED_INT,0);

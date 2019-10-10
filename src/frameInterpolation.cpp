@@ -86,6 +86,12 @@ void loadColorTexture(vars::Vars&vars){
             type = GL_FLOAT;
             internatFormat = GL_RGB32F;
         }     
+        if(imgType == FIT_UINT16){
+            std::cerr << "color imgType: FIT_UINT16" << std::endl;
+            format = GL_RED;
+            type = GL_UNSIGNED_SHORT;
+            internatFormat = GL_R16;
+        }     
         auto texture = std::make_shared<ge::gl::Texture>(GL_TEXTURE_2D,internatFormat,1,width,height);
         ge::gl::glPixelStorei(GL_UNPACK_ROW_LENGTH,width);
         ge::gl::glPixelStorei(GL_UNPACK_ALIGNMENT ,1);
@@ -106,9 +112,6 @@ void createProgram(vars::Vars&vars){
   #version 450 core
   layout(local_size_x=8, local_size_y=8)in;
   layout(binding=0)uniform sampler2D images[4];
-  /*layout(binding=1)uniform sampler2D image2;
-  layout(binding=2)uniform sampler2D image1Depth;
-  layout(binding=3)uniform sampler2D image2Depth;*/
   
   uniform float near = 0.1f;
   uniform float far  = 25.f;
@@ -170,6 +173,32 @@ void createProgram(vars::Vars&vars){
         return vec4(color.xyz, depth);
     }
 
+
+/*
+    vec4 findBestPixel(int colorIndex, int depthIndex, bool leftCam)
+    {
+        vec4 color;
+        float depth = DEPTH_LIMIT; 
+        for(int x=0; x<size.x; x++)
+        {
+            ivec2 sampleCoord = coord;
+            sampleCoord.x = x;
+            float sampleDepth = texelFetch(images[depthIndex],sampleCoord,0).x;
+            ivec2 newCoord = sampleCoord;
+            if(leftCam)
+                newCoord.x = int(round(sampleCoord.x+baseline*step*sampleDepth));
+            else 
+                newCoord.x = int(round(sampleCoord.x-baseline*(1.0-step)*sampleDepth));
+            if(newCoord == coord && sampleDepth < depth)
+            {
+                color = texelFetch(images[colorIndex], sampleCoord, 0);   
+                depth = sampleDepth;
+            }
+        }
+        return vec4(color.xyz, depth);
+    }
+*/
+
   void main(){ 
     int position = coord.y*size.x+coord.x;
 
@@ -183,6 +212,7 @@ void createProgram(vars::Vars&vars){
  
     if(color.w >= DEPTH_LIMIT)
         color.w = 0;
+    
     pixels[position] = color;
     }
   ).";
@@ -280,8 +310,13 @@ void drawFrameInterpolation(vars::Vars&vars){
 }
 
 void FrameInterpolation::init(){
+    auto &textureFiles = vars.addVector<std::string>("textureFiles");
+
     auto args = vars.add<argumentViewer::ArgumentViewer>("args",argc,argv);
-    //auto const shaderFile = args->gets("--quilt","","quilt image 5x9");
+    textureFiles.push_back(args->gets("--image1","","Left image"));
+    textureFiles.push_back(args->gets("--image2","","Right image"));
+    textureFiles.push_back(args->gets("--depth1","","Left depth map"));
+    textureFiles.push_back(args->gets("--depth2","","Right depth map"));
     auto const showHelp = args->isPresent("-h","shows help");
     if (showHelp || !args->validate()) {
         std::cerr << args->toStr();
@@ -289,14 +324,9 @@ void FrameInterpolation::init(){
     }
     vars.add<ge::gl::VertexArray>("emptyVao");
     vars.addVector<std::shared_ptr<ge::gl::Texture>>("textures");
-    auto &textureFiles = vars.addVector<std::string>("textureFiles");
-    textureFiles.push_back("../data/0001.png");
-    textureFiles.push_back("../data/0002.png");
-    textureFiles.push_back("../data/0001.exr");
-    textureFiles.push_back("../data/0002.exr");
     vars.addFloat("baseline");
     vars.addFloat("step");
-    addVarsLimitsF(vars,"baseline",-10,10,0.01f);
+    //addVarsLimitsF(vars,"baseline",-100,100,0.01f);
     addVarsLimitsF(vars,"step",0.0f,1.0f,0.01f);
     vars.add<glm::uvec2>("windowSize",window->getWidth(),window->getHeight());
 
