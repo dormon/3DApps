@@ -23,6 +23,7 @@ find_package(assimp CONFIG)
 find_package(StringAligner CONFIG)
 find_package(glm CONFIG)
 
+find_package(FFMPEG)
 find_package(FreeImage)
 find_package(FreeImagePlus)
 find_package(k4a)
@@ -105,6 +106,12 @@ if(NOT "${PCL_LIBRARIES}" STREQUAL "")
   target_include_directories(pcl INTERFACE $<BUILD_INTERFACE:${PCL_INCLUDE_DIRS})
 endif()
 
+if(NOT "${FFMPEG_LIBRARIES}" STREQUAL "")
+  add_library(ffmpeg INTERFACE)
+  target_link_libraries(ffmpeg INTERFACE ${FFMPEG_LIBRARIES})
+  target_include_directories(ffmpeg INTERFACE $<BUILD_INTERFACE:${FFMPEG_INCLUDE_DIRS})
+endif()
+
 add_library(libusb INTERFACE)
 target_link_libraries(libusb INTERFACE ${LIBUSB_1_LIBRARY})
 target_include_directories(libusb INTERFACE $<BUILD_INTERFACE:${LIBUSB_1_INCLUDE_DIRS})
@@ -118,6 +125,7 @@ addObjectLibrary(azureKinectUtils "src/azureKinectUtils.cpp;src/azureKinectUtils
 addObjectLibrary(kinectPointCloud "src/kinectPointCloud.cpp;src/kinectPointCloud.h"                  "Vars::Vars;BasicCamera::BasicCamera;barrier;k4a::k4a;azureKinectUtils;imguiVars;pcl;cv")
 addObjectLibrary(faceDetect       "src/faceDetect.cpp;src/faceDetect.h"       "cv;glm")
 addObjectLibrary(drawFace         "src/drawFace.cpp;src/bunny.h;src/bunny.c"  "Vars::Vars;BasicCamera::BasicCamera;barrier;faceDetect;k4a::k4a")
+addObjectLibrary(gpuDecoder       "src/gpuDecoder.h;src/gpuDecoder.cpp"  "ffmpeg;Simple3DApp::Simple3DApp")
 
 #addApp(gameOfLife src/gameOfLife.cpp)
 #addApp2(spirv "src/spirv.cpp" "")
@@ -142,6 +150,7 @@ addApp2(triangle                              "src/triangle.cpp"                
 addApp2(killGPU                               "src/killGPU.cpp"                               "ArgumentViewer::ArgumentViewer;Vars::Vars")
 addApp2(quiltToNative                         "src/quiltToNative.cpp"                         "ArgumentViewer::ArgumentViewer;FreeImagePlus;glm")
 addApp2(stupidCompiler                        "src/stupidCompiler.cpp"                        "barrier;imguiVars;ArgumentViewer::ArgumentViewer")
+addApp2(lightfieldPlayer                      "src/lightfieldPlayer.cpp"                      "barrier;imguiVars;ArgumentViewer::ArgumentViewer;gpuDecoder;Vars::Vars;DrawGrid;BasicCamera::BasicCamera")
 
 add_subdirectory(src/GMU)
 
