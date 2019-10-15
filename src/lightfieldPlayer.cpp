@@ -59,23 +59,34 @@ void createProgram(vars::Vars&vars)
     //#################################################################
 
     std::string const fsSrc = R".(
+    #extension GL_ARB_gpu_shader_int64 : enable
+    #extension GL_ARB_bindless_texture : require
+    uniform uint64_t lightfield;
     out vec4 fColor;
     in vec2 vCoord;
     in vec3 position;
     
     void main()
     {
-        fColor = vec4(1.0);
+        sampler2D s = sampler2D(lightfield);
+        fColor = texture(s, vCoord*textureSize(s,0));
     }
     ).";
     
     //#################################################################
 
     std::string const csSrc = R".(  
+    #extension GL_ARB_gpu_shader_int64 : enable
+    #extension GL_ARB_bindless_texture : require
+    #define LF_SIZE 64
     layout(local_size_x=8, local_size_y=8)in;
+    uniform uint64_t lfTextures[LF_SIZE];
+    layout(bindless_image)uniform layout(rgba8) writeonly image2D lightfield;
     void main()
     {
-    //TODO: create final texture, write the result to it, subsampling
+        sampler2D s = sampler2D(lfTextures[5]);
+        vec4 color = texelFetch(s, ivec2(gl_GlobalInvocationID.xy),0);
+        imageStore(lightfield, ivec2(gl_GlobalInvocationID.xy), color);
     }
     ).";
 
@@ -84,7 +95,6 @@ void createProgram(vars::Vars&vars)
     auto cs = std::make_shared<ge::gl::Shader>(GL_COMPUTE_SHADER, "#version 450\n", csSrc);
 
     auto program = vars.reCreate<ge::gl::Program>("lfProgram",vs,fs);
-    program->setNonexistingUniformWarning(false);
     if(program->getLinkStatus() == GL_FALSE)
         throw std::runtime_error("Cannot link shader program.");
     
@@ -133,15 +143,19 @@ void asyncVideoLoading(vars::Vars &vars)
     vars.reCreate<unsigned int>("lf.height", decoder->getHeight());
     vars.reCreate<float>("texture.aspect",decoder->getAspect());
     auto length = vars.addUint32("length",static_cast<int>(decoder->getLength()/64000000.0*25));
+    
+    //Must be here since all textures are created in this context and handles might overlap
+    auto lightfieldTexture = ge::gl::Texture(GL_TEXTURE_2D,GL_RGBA8,1,vars.getUint32("lf.width"),vars.getUint32("lf.height"));
+    auto lightfield = vars.add<GLuint64>("lightfield",ge::gl::glGetImageHandleARB(lightfieldTexture.getId(), 0, GL_FALSE, 0, GL_RGBA8));
+    //vars.add<ge::gl::Texture>("disparity",GL_TEXTURE_2D,GL_R32,1,vars.getUint32("lf.width"),vars.getUint32("lf.height"));
   
     auto rdyMutex = vars.get<std::mutex>("rdyMutex");
     auto rdyCv = vars.get<std::condition_variable>("rdyCv");
     auto mainRuns = vars.get<bool>("mainRuns");
     int frameNum = 1;   
- 
+int a = 0; 
     while(mainRuns)
-    {
-    
+    {    
         int seekFrame = *vars.get<int>("seekFrame");
         if(seekFrame > -1)
         {
@@ -156,7 +170,7 @@ void asyncVideoLoading(vars::Vars &vars)
         {
             int index = decoder->getActiveBufferIndex();
             std::string nextTexturesName = "lfTextures" + std::to_string(index);
-            //TODO id this copy deep?
+            //TODO is this copy deep?
             vars.reCreateVector<GLuint64>(nextTexturesName, decoder->getFrames(64));
             GLsync fence = ge::gl::glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE,0);
             ge::gl::glClientWaitSync(fence, GL_SYNC_FLUSH_COMMANDS_BIT, 9999999);
@@ -167,10 +181,10 @@ void asyncVideoLoading(vars::Vars &vars)
             frameNum++;
             vars.reCreate<int>("frameNum", frameNum);
         
-            vars.getBool("pause") = true;
+            //vars.getBool("pause") = true;
         }
         //TODO sleep according to FPS
-        vars.getBool("loaded") = true; 
+        vars.getBool("loaded") = true;
         rdyCv->notify_all();   
     }
 }
@@ -207,14 +221,8 @@ void LightFields::init()
         std::unique_lock<std::mutex> lck(*rdyMutex);
         rdyCv->wait(lck, [this]{return vars.getBool("loaded");});
     }
-    //TODO recheck if really loaded the width height etc...(the async above)    
+    ge::gl::glMakeImageHandleResidentARB(*vars.get<GLuint64>("lightfield"), GL_READ_WRITE);
 
-    //TODO remove?
-    std::string currentTexturesName = "lfTextures" + std::to_string(vars.getUint32("lfTexturesIndex"));
-    std::vector<GLuint64> t = vars.getVector<GLuint64>(currentTexturesName);
-    for(auto a : t)
-       	ge::gl::glMakeTextureHandleResidentARB(a);
- 
     SDL_GL_MakeCurrent(*vars.get<SDL_Window*>("mainWindow"),window->getContext("rendering"));
 
     vars.add<ge::gl::VertexArray>("emptyVao");
@@ -230,9 +238,6 @@ void LightFields::init()
     createCamera(vars);
 
     ge::gl::glEnable(GL_DEPTH_TEST);
-
-    vars.add<ge::gl::Texture>("lightfield",GL_TEXTURE_2D,GL_RGB8,1,vars.getUint32("lf.width"),vars.getUint32("lf.height"));
-    //vars.add<ge::gl::Texture>("disparity",GL_TEXTURE_2D,GL_R32,1,vars.getUint32("lf.width"),vars.getUint32("lf.height"));
 }
 
 SDL_Surface* flipSurface(SDL_Surface* sfc) {
@@ -274,15 +279,15 @@ void screenShot(std::string filename, int w, int h)
 
 void LightFields::draw()
 {
-    ge::gl::glFinish();
     auto timer = vars.addOrGet<Timer<double>>("timer");
     timer->reset();
     
     std::string currentTexturesName = "lfTextures" + std::to_string(vars.getUint32("lfTexturesIndex"));
-    
+
+    //TODO just once for both buffers    
     std::vector<GLuint64> t = vars.getVector<GLuint64>(currentTexturesName);
     for(auto a : t)
-       	ge::gl::glMakeTextureHandleResidentARB(a);
+    	ge::gl::glMakeTextureHandleResidentARB(a);
 
     createCamera(vars);
     auto view = vars.getReinterpret<basicCamera::CameraTransform>("view");
@@ -294,16 +299,27 @@ void LightFields::draw()
 
     drawGrid(vars);
  
+    auto csProgram = vars.get<ge::gl::Program>("csProgram");
+    csProgram
+    //->set2uiv("gridSize",glm::value_ptr(*vars.get<glm::uvec2>("gridSize")))
+    //->set1i("focus",vars.getFloat("focus"))
+    ->use();
+    ge::gl::glProgramUniformHandleui64vARB(csProgram->getId(), csProgram->getUniformLocation("lfTextures"), 64, vars.getVector<GLuint64>(currentTexturesName).data());
+    ge::gl::glProgramUniformHandleui64vARB(csProgram->getId(), csProgram->getUniformLocation("lightfield"), 1, vars.get<GLuint64>("lightfield"));
+    //TODO not multiple of 8 resolution cases
+    constexpr int LOCAL_SIZE_X = 8; 
+    constexpr int LOCAL_SIZE_Y = 8; 
+    ge::gl::glDispatchCompute(*vars.get<unsigned int>("lf.width")/LOCAL_SIZE_X,*vars.get<unsigned int>("lf.height")/LOCAL_SIZE_Y,1);    
+    ge::gl::glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
+    ge::gl::glFinish();
+
     auto program = vars.get<ge::gl::Program>("lfProgram");
     program
     ->setMatrix4fv("mvp",glm::value_ptr(projection->getProjection()*view->getView()))
     ->set1f("aspect",vars.getFloat("texture.aspect"))
-    ->set1i("frame",vars.getUint32("frame"))
-    ->set1i("focus",vars.getFloat("focus"))
-    ->set2uiv("gridSize",glm::value_ptr(*vars.get<glm::uvec2>("gridSize")))
-    ->setMatrix4fv("view",glm::value_ptr(view->getView()))
     ->use();
-
+    ge::gl::glProgramUniformHandleui64vARB(program->getId(), program->getUniformLocation("lfTextures"), 64, vars.getVector<GLuint64>(currentTexturesName).data());
+    ge::gl::glProgramUniformHandleui64vARB(program->getId(), program->getUniformLocation("lightfield"), 1, vars.get<GLuint64>("lightfield"));
     ge::gl::glDrawArrays(GL_TRIANGLE_STRIP,0,4);
     vars.get<ge::gl::VertexArray>("emptyVao")->unbind();
  

@@ -18,6 +18,11 @@ void GpuDecoder::recreateBuffer(size_t number)
     currentBuffer->textures.clear();
     currentBuffer->textures.resize(number);
     ge::gl::glCreateTextures(GL_TEXTURE_2D, number, currentBuffer->textures.data());
+    /*for(int i=0; i<number; i++)
+    {
+        currentBuffer->textureHandles[i] = ge::gl::glGetTextureHandleARB(currentBuffer->textures[i]);
+        //ge::gl::glMakeTextureHandleResidentARB(currentBuffer->textureHandles[i]);
+    }*/
     for(auto &surface : currentBuffer->vdpSurfaces)
         if(vdp_output_surface_create(vdpauContext->device, VDP_RGBA_FORMAT_B8G8R8A8, codecContext->width, codecContext->height, &surface) != VDP_STATUS_OK)
             throw std::runtime_error("Cannot create VDPAU output surface.");
@@ -37,10 +42,15 @@ void GpuDecoder::recreateBufferLite(size_t number)
           currentBuffer->vdpSurfaces.resize(number);*/
     //    currentBuffer->textureHandles.clear();
     //    currentBuffer->textureHandles.resize(number);
-    //  ge::gl::glDeleteTextures(currentBuffer->textures.size(), currentBuffer->textures.data());
+    ge::gl::glDeleteTextures(currentBuffer->textures.size(), currentBuffer->textures.data());
     //currentBuffer->textures.clear();
     //currentBuffer->textures.resize(number);
     ge::gl::glCreateTextures(GL_TEXTURE_2D, number, currentBuffer->textures.data());
+    /*for(int i=0; i<number; i++)
+    {
+        currentBuffer->textureHandles[i] = ge::gl::glGetTextureHandleARB(currentBuffer->textures[i]);
+        //ge::gl::glMakeTextureHandleResidentARB(currentBuffer->textureHandles[i]);
+    }*/
 }
 
 void GpuDecoder::seek(int frameNum)
@@ -57,8 +67,6 @@ void GpuDecoder::seek(int frameNum)
 std::vector<uint64_t> GpuDecoder::getFrames(size_t number)
 { 
     swapBuffers();
-    //the clearing can be avoided if we specify a fixed amount for getframes when constructing
-    //recreateBuffer(number);
     if(number != lastFrameCount)
     {
         recreateBuffer(number);
@@ -131,8 +139,6 @@ std::vector<uint64_t> GpuDecoder::getFrames(size_t number)
                 ge::gl::glVDPAUMapSurfacesNV (1, &currentBuffer->nvSurfaces[i]);
 
                 currentBuffer->textureHandles[i] = ge::gl::glGetTextureHandleARB(currentBuffer->textures[i]);
-                //ge::gl::glMakeTextureHandleResidentARB(currentBuffer->textureHandles[i]);
-
                 waitForFrame = false;
                 //std::cerr << i << " ";
             } 
