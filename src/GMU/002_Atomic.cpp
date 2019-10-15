@@ -35,6 +35,9 @@ int main(int argc,char*argv[]){
 
   auto nonAtomicPrg = std::make_shared<Program>(std::make_shared<Shader>(GL_COMPUTE_SHADER,nonAtomicSrc));
 
+  data[0] = 0;
+  buffer->setData(data);
+  glFinish();
 
   nonAtomicPrg->use();
   nonAtomicPrg->dispatch(1,1,1);
@@ -65,6 +68,8 @@ int main(int argc,char*argv[]){
   auto atomicPrg = std::make_shared<Program>(std::make_shared<Shader>(GL_COMPUTE_SHADER,atomicSrc));
 
   data[0] = 0;
+  buffer->setData(data);
+  glFinish();
 
   atomicPrg->use();
   atomicPrg->dispatch(1,1,1);
