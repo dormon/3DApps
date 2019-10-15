@@ -11,6 +11,7 @@ class FaceDetector
     private:
         cv::CascadeClassifier cascade;
         constexpr static float WINDOW{10};
+        constexpr static float THRESHOLD{0.2};
         glm::vec3 avg{0.5f};
 };
 

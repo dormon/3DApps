@@ -7,12 +7,24 @@
 #include <imguiSDL2OpenGL/imgui.h>
 #include <addVarsLimits.h>
 #include <azureKinectUtils.h>
-#include <pcl-1.9/pcl/io/pcd_io.h>
-#include <pcl-1.9/pcl/point_types.h>
-#include <pcl-1.9/pcl/registration/icp.h>
+#include <pcl/io/pcd_io.h>
+#include <pcl/point_types.h>
+#include <pcl/registration/icp.h>
+#include <pcl/point_representation.h>
+
+#include <pcl/filters/voxel_grid.h>
+#include <pcl/filters/filter.h>
+#include <pcl/features/normal_3d.h>
 
 #define GLM_ENABLE_EXPERIMENTAL
 #include <glm/gtx/string_cast.hpp>
+#include <pcl/io/ply_io.h>
+#include <pcl/filters/filter.h>
+
+
+#include <opencv2/objdetect.hpp> 
+#include <opencv2/imgproc.hpp> 
+#include <opencv2/highgui.hpp>
 
 int colorModeIndex{0};
 int depthModeIndex{0};
@@ -33,6 +45,18 @@ inline glm::mat<m, n, float, glm::precision::highp> E2GLM(const Eigen::Matrix<T,
         }
     }
     return mat;
+}
+inline Eigen::Matrix4f GLM2E(glm::mat4& mat)
+{
+    Eigen::Matrix4f em;
+    for (int i = 0; i < 4; ++i)
+    {
+        for (int j = 0; j < 4; ++j)
+        {
+            em(j,i) = mat[i][j];
+        }
+    }
+    return em;
 }
 
 void createKPCProgram(vars::Vars&vars){
@@ -60,6 +84,11 @@ void createKPCProgram(vars::Vars&vars){
     coord.y = (pixelIndex/size.x)/size.y;
     coord = clamp(coord,0.0,1.0);
     float depth = float(texture(depthTextures[index],coord).x);
+    /*depth += float(texture(depthTextures[index],coord+0.001).x);
+    depth += float(texture(depthTextures[index],coord-0.001).x);
+    depth += float(texture(depthTextures[index],coord+vec2(0.001,-0.001)).x);
+    depth += float(texture(depthTextures[index],coord+vec2(-0.001,0.001)).x);
+    depth /=4.0;*/
     //float depth = float(texelFetch(depthTextures[index],coord,0).x);
     vec2 xy = texture(xyTexture, coord, 0).xy;
     vec3 pos = vec3(depth*xy.x, depth*xy.y, depth); 
@@ -145,6 +174,175 @@ void createXyTable(const k4a_calibration_t *calibration, k4a::image *xyTable)
     }
 }
 
+void alignClouds(vars::Vars&vars)
+{
+    pcl::PointCloud<pcl::PointXYZ>::Ptr refCloud (new pcl::PointCloud<pcl::PointXYZ>);
+    auto xyTable = vars.get<k4a::image>("xyTable");
+    k4a_float2_t *xyData = reinterpret_cast<k4a_float2_t*>(xyTable->get_buffer());
+    auto size = vars.get<glm::ivec2>("depthSize"); 
+    for(int i=0; i<DEVICE_COUNT; i++)
+    {
+        k4a::capture capture;
+        std::string index = std::to_string(i);
+        auto dev = vars.get<k4a::device>("kinectDevice"+index);
+        if (dev->get_capture(&capture, std::chrono::milliseconds(0)))
+        {
+            const k4a::image depthImage = capture.get_depth_image();
+            const uint16_t *depthData = reinterpret_cast<const uint16_t*>(depthImage.get_buffer());
+            
+            pcl::PointCloud<pcl::PointXYZ>::Ptr cloud (new pcl::PointCloud<pcl::PointXYZ>);
+            constexpr int D = 1;
+            cloud->width = size->x/D; 
+            cloud->height = size->y/D; 
+            cloud->is_dense = false;
+            cloud->points.resize(cloud->width*cloud->height);
+            constexpr int M = D*D; 
+            for (size_t j=0; j<cloud->points.size(); j++)
+            {   if(depthData[j*M] > 1000)
+                {    
+                cloud->points[j].x = std::numeric_limits<float>::quiet_NaN();
+                cloud->points[j].y = 0;
+                cloud->points[j].z = 0;
+                }
+                else
+                {
+            /*    glm::vec4 p(1.0);
+                p.x = xyData[j*M].xy.x * depthData[j*M]*0.001;
+                p.y = xyData[j*M].xy.y * depthData[j*M]*0.001;
+                p.z = depthData[j*M]*0.001;
+
+                p = camMatrices[i]*p;
+
+                cloud->points[j].x = p.x;
+                cloud->points[j].y = p.y;
+                cloud->points[j].z = p.z;*/
+                cloud->points[j].x = xyData[j*M].xy.x * depthData[j*M]*-0.001;
+                cloud->points[j].y = xyData[j*M].xy.y * depthData[j*M]*-0.001;
+                cloud->points[j].z = depthData[j*M]*-0.001;
+                }
+            }
+
+//XXXXX
+class MyPointRepresentation : public pcl::PointRepresentation <pcl::PointNormal>
+{
+  using pcl::PointRepresentation<pcl::PointNormal>::nr_dimensions_;
+public:
+  MyPointRepresentation ()
+  {
+    // Define the number of dimensions
+    nr_dimensions_ = 4;
+  }
+
+  // Override the copyToFloatArray method to define our feature vector
+  virtual void copyToFloatArray (const pcl::PointNormal &p, float * out) const
+  {
+    // < x, y, z, curvature >
+    out[0] = p.x;
+    out[1] = p.y;
+    out[2] = p.z;
+    out[3] = p.curvature;
+  }
+};
+
+     pcl::PointCloud<pcl::PointXYZ>::Ptr b (new pcl::PointCloud<pcl::PointXYZ>);
+     pcl::copyPointCloud(*cloud,*b);
+     pcl::PointCloud<pcl::PointXYZ>::Ptr tgt (new pcl::PointCloud<pcl::PointXYZ>);
+     pcl::VoxelGrid<pcl::PointXYZ> grid;
+     grid.setLeafSize (0.01, 0.01, 0.01);
+     grid.setInputCloud (cloud);
+     grid.filter(*tgt);
+
+    pcl::PointCloud<pcl::PointNormal>::Ptr npc (new pcl::PointCloud<pcl::PointNormal>);
+pcl::NormalEstimation<pcl::PointXYZ, pcl::PointNormal> norm_est;
+  pcl::search::KdTree<pcl::PointXYZ>::Ptr tree (new pcl::search::KdTree<pcl::PointXYZ> ());
+  norm_est.setSearchMethod (tree);
+  norm_est.setKSearch (30);
+  
+
+  norm_est.setInputCloud (tgt);
+  norm_est.compute (*npc);
+  pcl::copyPointCloud (*tgt, *npc);
+  cloud = tgt;
+//XXXXX
+
+
+const k4a::image colorImage = capture.get_color_image();
+const uint8_t* buffer = colorImage.get_buffer();
+int rows = colorImage.get_height_pixels();
+int cols = colorImage.get_width_pixels();
+cv::Mat colorMat(rows , cols, CV_8UC4, (void*)buffer, cv::Mat::AUTO_STEP);
+auto trans = vars.get<k4a::transformation>("transformation");
+k4a::image tImage = trans->depth_image_to_color_camera(depthImage);
+if(!colorMat.empty())
+cv::imwrite("c"+std::to_string(i)+".png",colorMat);
+const uint8_t* bufferd = tImage.get_buffer();
+cv::Mat depthMat(rows , cols, CV_16UC1, (void*)bufferd, cv::Mat::AUTO_STEP);
+if(!colorMat.empty())
+cv::imwrite("d"+std::to_string(i)+".exr",depthMat);
+
+
+std::vector<int> indices;
+pcl::removeNaNFromPointCloud(*cloud, *cloud, indices);
+            if(i>0)
+            {
+                pcl::PointCloud<pcl::PointXYZ>::Ptr preAligned (new pcl::PointCloud<pcl::PointXYZ> ());
+                pcl::transformPointCloud (*cloud, *preAligned, GLM2E(camMatrices[i]));
+                pcl::IterativeClosestPoint<pcl::PointXYZ, pcl::PointXYZ> icp;
+                icp.setInputSource(preAligned);
+                icp.setInputTarget(refCloud);
+                icp.setMaxCorrespondenceDistance (0.2);
+                icp.setMaximumIterations (200);
+                icp.setTransformationEpsilon (1e-12);
+                icp.setEuclideanFitnessEpsilon (1e-5);
+                icp.setRANSACOutlierRejectionThreshold (0.001);
+                pcl::PointCloud<pcl::PointXYZ> res;
+                icp.align(res);
+if (icp.hasConverged())
+  {
+      std::cout << "ICP converged." << std::endl
+                << "The score is " << icp.getFitnessScore() << std::endl;
+      std::cout << "Transformation matrix:" << std::endl;
+      std::cout << icp.getFinalTransformation() << std::endl;
+  }
+  else std::cout << "ICP did not converge." << std::endl;
+
+                auto m = icp.getFinalTransformation();
+                pcl::PointCloud<pcl::PointXYZ>::Ptr transformed_cloud (new pcl::PointCloud<pcl::PointXYZ> ());
+                pcl::transformPointCloud (*preAligned, *transformed_cloud, m);
+pcl::io::savePLYFileBinary("cloud.ply", *b);
+pcl::io::savePLYFileBinary("preCloud.ply", *preAligned);
+pcl::io::savePLYFileBinary("ref.ply", *refCloud);
+
+//XXX
+ Eigen::Matrix4f prev;
+  icp.setMaximumIterations (2);
+  for (int j = 0; j < 30; ++j)
+  {
+    PCL_INFO ("Iteration No. %d.\n", j);
+
+    icp.setInputSource (transformed_cloud);
+    icp.align (res);
+    m = icp.getFinalTransformation () * m;
+    if (std::abs ((icp.getLastIncrementalTransformation () - prev).sum ()) < icp.getTransformationEpsilon ())
+      icp.setMaxCorrespondenceDistance (icp.getMaxCorrespondenceDistance () - 0.001);
+    
+    prev = icp.getLastIncrementalTransformation ();
+  }
+                pcl::transformPointCloud (*b, *transformed_cloud, GLM2E(camMatrices[i])*m);
+                pcl::io::savePLYFileBinary("cloudTF.ply", *transformed_cloud);
+                camMatrices[i] = (camMatrices[i]*E2GLM(m));
+//XXX
+
+            }
+            else
+            {
+                pcl::copyPointCloud(*cloud, *refCloud);
+                camMatrices[i] = glm::mat4(1.0f);
+            }
+        }
+     }
+}
+
 void initKPCDevice(int colorModeIndex, int depthModeIndex, vars::Vars&vars){
     const uint32_t deviceCount = k4a::device::get_installed_count();
     if (deviceCount < DEVICE_COUNT)
@@ -167,6 +365,7 @@ void initKPCDevice(int colorModeIndex, int depthModeIndex, vars::Vars&vars){
         dev->start_cameras(&config);
         vars.reCreate<ge::gl::Texture>("colorTexture"+index,GL_TEXTURE_2D,GL_RGBA32F,1,size->x,size->y); 
         vars.reCreate<ge::gl::Texture>("depthTexture"+index,GL_TEXTURE_2D,GL_R16UI,1,size->x,size->y);
+        camMatrices[i] = glm::mat4(1.0);
     }
 
     auto cal = vars.get<k4a::device>("kinectDevice0")->get_calibration(config.depth_mode, config.color_resolution);
@@ -177,56 +376,6 @@ void initKPCDevice(int colorModeIndex, int depthModeIndex, vars::Vars&vars){
     createXyTable(&cal,xyTable);
     auto xyTexture = vars.reCreate<ge::gl::Texture>("xyTexture",GL_TEXTURE_2D,GL_RG32F,1,size->x,size->y);
     ge::gl::glTextureSubImage2D(xyTexture->getId(),0,0,0,size->x, size->y,GL_RG,GL_FLOAT,xyTable->get_buffer());
-
-    pcl::PointCloud<pcl::PointXYZ>::Ptr refCloud (new pcl::PointCloud<pcl::PointXYZ>);
-    k4a_float2_t *xyData = reinterpret_cast<k4a_float2_t*>(xyTable->get_buffer());
-    for(int i=0; i<DEVICE_COUNT; i++)
-    {
-        k4a::capture capture;
-        std::string index = std::to_string(i);
-        auto dev = vars.get<k4a::device>("kinectDevice"+index);
-        if (dev->get_capture(&capture, std::chrono::milliseconds(0)))
-        {
-            const k4a::image depthImage = capture.get_depth_image();
-            const uint16_t *depthData = reinterpret_cast<const uint16_t*>(depthImage.get_buffer());
-            
-            pcl::PointCloud<pcl::PointXYZ>::Ptr cloud (new pcl::PointCloud<pcl::PointXYZ>);
-            cloud->width = size->x; 
-            cloud->height = size->y; 
-            cloud->is_dense = false;
-            cloud->points.resize(size->x*size->y); 
-            for (size_t j=0; j<cloud->points.size(); j++)
-            {
-                cloud->points[j].x = xyData[j].xy.x * depthData[j];
-                cloud->points[j].y = xyData[j].xy.y * depthData[j];
-                cloud->points[j].z = depthData[j];
-            }
-            
-            if(i>0)
-            {
-                pcl::IterativeClosestPoint<pcl::PointXYZ, pcl::PointXYZ> icp;
-                icp.setInputSource(cloud);
-                icp.setInputTarget(refCloud);                 
-                icp.setMaxCorrespondenceDistance (0.05);
-                icp.setMaximumIterations (10);
-                icp.setTransformationEpsilon (1e-8);
-                icp.setEuclideanFitnessEpsilon (1);
-                pcl::PointCloud<pcl::PointXYZ> res;
-                icp.align(res);
-pcl::io::savePCDFileBinary("f.pcd", res);
-                auto m = icp.getFinalTransformation();
-                std::cerr << m << std::endl << std::endl;
-                std::cerr << glm::to_string(E2GLM(m)) << std::endl;
-                //camMatrices[i] = E2GLM(icp.getFinalTransformation());
-//std::cerr << "has converged:" << icp.hasConverged() << " score: " << icp.getFitnessScore() << std::endl;
-            }
-            else
-            {
-                refCloud = cloud;
-                camMatrices[i] = glm::mat4(1.0);
-            }
-        }
-     }
 }
 
 void initKPC(vars::Vars&vars){
@@ -236,15 +385,20 @@ void initKPC(vars::Vars&vars){
     addVarsLimitsF(vars,"sampleRate",0.1f,50.0f, 0.1);
     vars.add<glm::vec2>("clipRange", 0, 2000);
     initKPCDevice(colorModeIndex, depthModeIndex ,vars);
-    /*vars.addFloat("translate");
+    vars.add<glm::vec3>("translate");
     addVarsLimitsF(vars,"translate",-50.0f,50.0f, 0.01);
-    vars.addFloat("rotate");
-    addVarsLimitsF(vars,"rotate",-50.0f,50.0f, 0.001);*/
+    vars.add<glm::vec3>("rotate");
+    addVarsLimitsF(vars,"rotate",-50.0f,50.0f, 0.001);
+    vars.addBool("manual");
 }
 
 void updateKPC(vars::Vars&vars)
 {
-    //camMatrices[1] = glm::translate(glm::mat4(1.0), glm::vec3(vars.getFloat("translate"),0.0,0.0)) * glm::rotate(glm::mat4(1.0), vars.getFloat("rotate"), glm::vec3(0.0,1.0,0.0));
+    if(vars.getBool("manual"))
+    camMatrices[1] = glm::translate(glm::mat4(1.0), *vars.get<glm::vec3>("translate")) *
+                     glm::rotate(glm::mat4(1.0), vars.get<glm::vec3>("rotate")->x, glm::vec3(1.0,0.0,0.0))*
+                     glm::rotate(glm::mat4(1.0), vars.get<glm::vec3>("rotate")->y, glm::vec3(0.0,1.0,0.0))*
+                     glm::rotate(glm::mat4(1.0), vars.get<glm::vec3>("rotate")->z, glm::vec3(0.0,0.0,1.0));
     for(int i=0; i<DEVICE_COUNT; i++)
     {
         std::string index = std::to_string(i);
@@ -282,6 +436,9 @@ void updateKPC(vars::Vars&vars)
         depthModeIndex = currentDepth;
         changed = true;
     }
+    if(ImGui::Button("Align"))
+        alignClouds(vars);
+
     ImGui::End();  
     if(changed)
         initKPCDevice(colorModeIndex, depthModeIndex, vars);
@@ -291,7 +448,6 @@ void drawKPC(vars::Vars&vars,glm::mat4 const&view,glm::mat4 const&proj){
 
     createKPCProgram(vars);
     vars.get<ge::gl::VertexArray>("emptyVao")->bind();
-
 
     auto xyTexture     = vars.get<ge::gl::Texture>("xyTexture");
     auto sampleRate = vars.getFloat("sampleRate");
