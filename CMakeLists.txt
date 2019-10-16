@@ -71,7 +71,7 @@ addApp2(fragmentPlay                          "src/fragmentPlay.cpp"            
 addApp2(frameInterpolation                    "src/frameInterpolation.cpp"                    "Simple3DApp::Simple3DApp;ArgumentViewer::ArgumentViewer;barrier;imguiVars;FreeImage;FreeImagePlus")
 addApp2(renderHolo                            "src/renderHolo.cpp"                            "Simple3DApp::Simple3DApp;ArgumentViewer::ArgumentViewer;DrawGrid;barrier;imguiVars;FreeImage;FreeImagePlus;drawBunny")
 addApp2(renderHoloFocus                       "src/renderHoloFocus.cpp"                       "Simple3DApp::Simple3DApp;ArgumentViewer::ArgumentViewer;DrawGrid;barrier;imguiVars;FreeImage;FreeImagePlus;drawBunny")
-addApp2(renderHoloApps                        "src/renderHoloApps.cpp;src/holoCalibration.h;srcSimple3DApp::Simple3DApp;/holoCalibration.cpp;src/json.hpp"                        "ArgumentViewer::ArgumentViewer;DrawGrid;barrier;FreeImage;FreeImagePlus;drawBunny;kinectPointCloud;drawFace;libusb")
+addApp2(renderHoloApps                        "src/renderHoloApps.cpp;src/holoCalibration.h;src/holoCalibration.cpp;src/json.hpp"                        "Simple3DApp::Simple3DApp;ArgumentViewer::ArgumentViewer;DrawGrid;barrier;FreeImage;FreeImagePlus;drawBunny;kinectPointCloud;drawFace;libusb")
 addApp2(memoryBandwidth                       "src/memoryBandwidth.cpp"                       "Simple3DApp::Simple3DApp;barrier;imguiVars")
 addApp2(draw2d                                "src/draw2d.cpp"                                "Simple3DApp::Simple3DApp;barrier;imguiVars")
 addApp2(morton2d                              "src/morton2d.cpp"                              "Simple3DApp::Simple3DApp;barrier;imguiVars;assimp::assimp")
