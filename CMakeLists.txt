@@ -79,6 +79,7 @@ addApp2(triangle                              "src/triangle.cpp"                
 addApp2(killGPU                               "src/killGPU.cpp"                               "Simple3DApp::Simple3DApp;ArgumentViewer::ArgumentViewer;Vars::Vars")
 addApp2(quiltToNative                         "src/quiltToNative.cpp"                         "Simple3DApp::Simple3DApp;ArgumentViewer::ArgumentViewer;FreeImagePlus;glm")
 addApp2(stupidCompiler                        "src/stupidCompiler.cpp"                        "Simple3DApp::Simple3DApp;barrier;imguiVars;ArgumentViewer::ArgumentViewer")
+addApp2(stupidScheduler                       "src/stupidScheduler.cpp"                       "Simple3DApp::Simple3DApp;barrier;imguiVars;ArgumentViewer::ArgumentViewer")
 addApp2(lightfieldPlayer                      "src/lightfieldPlayer.cpp"                      "Simple3DApp::Simple3DApp;barrier;imguiVars;ArgumentViewer::ArgumentViewer;gpuDecoder;Vars::Vars;DrawGrid;BasicCamera::BasicCamera")
 
 add_subdirectory(src/GMU)

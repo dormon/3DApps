@@ -5,6 +5,7 @@
 #include <geGL/GLSLNoise.h>
 #include <Barrier.h>
 #include <imguiVars.h>
+#include <addVarsLimits.h>
 #include <glm/glm.hpp>
 #include <glm/gtc/type_ptr.hpp>
 
@@ -16,9 +17,6 @@ class Noise: public simple3DApp::Application{
   virtual void                mouseMove(SDL_Event const& event) override;
   virtual void resize(uint32_t x,uint32_t y) override;
   vars::Vars vars;
-  int32_t M=8;
-  int32_t N=8;
-  float   p=2.f;
   glm::ivec2 offset = glm::ivec2(0,0);
 
   virtual void                init() override;
@@ -34,6 +32,30 @@ void createDrawProgram(vars::Vars&vars){
   }
   ).";
   std::string const fsSrc = R".(
+  #line 35
+  const uint randomTable[] = {
+    1945727213u, 1784552535u, 41943905u, 1798153196u, 2127711793u, 1383241286u, 1091391988u, 1847409030u,
+    1038705170u, 1187509214u, 209365311u, 104644057u, 1851780687u, 459376088u, 182898471u, 1239991444u,
+    1347046528u, 498436117u, 455220822u, 705817406u, 1689529107u, 2062940353u, 1904830352u, 70547598u,
+    564582963u, 1409962186u, 1179142285u, 1261607965u, 383116697u, 1605873696u, 220879512u, 745942922u,
+    14249494u, 1580084801u, 426577606u, 1300856708u, 1537819200u, 1774801760u, 1056013051u, 1442713539u,
+    375737785u, 779320848u, 2018351003u, 55250055u, 696510849u, 1454634923u, 1757192185u, 1405839594u,
+    1543672241u, 521349144u, 1751893281u, 1634712163u, 413503478u, 1475429616u, 304022636u, 857439716u,
+    1363205923u, 1416809528u, 83877344u, 608089758u, 1735907325u, 849492852u, 895296994u, 1801143577u
+  };
+
+  uint getOneRandom(uint x){
+    return (randomTable[x>>2u]>>((x&0x3u)<<0x3u))&0xffu;
+  }
+
+  uint getFromRandomTable(uint a){
+    uint result = 0;
+    result |= getOneRandom((a>> 0u)&0xffu)<< 0u;
+    result |= getOneRandom((a>> 8u)&0xffu)<< 8u;
+    result |= getOneRandom((a>>16u)&0xffu)<<16u;
+    result |= getOneRandom((a>>24u)&0xffu)<<24u;
+    return result;
+  }
 
 #define JOIN1(x,y) x##y
 #define JOIN0(x,y) JOIN1(x,y)
@@ -86,9 +108,10 @@ const uint UINT_MAX     = 0xffffffffu;
 uint poly(in uint x,in uint c){
   //return x;
   //return x*(x+c);
-  return x*(x*(x+c)+c);
+  //return x*(x*(x+c)+c);
   //return x*(x*(x*(x+c)+c)+c);
   //return x*(x*(x*(x*(x+c)+c)+c)+c);
+  return getFromRandomTable(x+c);
   //return x*(x*(x*(x*(x*(x+c)+c)+c)+c)+c);
   //return x*(x*(x*(x*(x*(x*(x+c)+c)+c)+c)+c)+c);
   //return x*(x*(x*(x*(x*(x*(x*(x+c)+c)+c)+c)+c)+c)+c);
@@ -457,34 +480,18 @@ vec4 name(float t){        \
 
 
 
-  BEGINGRADIENT(terrain)
-  vec4(0,0,.5,1),
-  vec4(0,0,1,1),
-  vec4(0,1,1,1),
-  vec4(1,1,0,1),
-  vec4(0,1,0,1),
-  vec4(0,.5,0,1),
-  vec4(0.3,.5,0.1,1),
-  vec4(1,1,1,1),
-  ENDGRADIENT
-  #line 56
   out vec4 fColor;
   uniform uint M=8;
   uniform uint N=8;
   uniform float p=2.f;
   uniform ivec2 offset = ivec2(0);
+  uniform int useSimplex = 0;
   void main(){
-    fColor = vec4(terrain(noise(ivec2(gl_FragCoord.xy+offset),M,N,p)*.5f+.5f));
-    fColor = vec4(noise(ivec2(gl_FragCoord.xy+offset),M,N,p));
     uvec2 cc = uvec2(gl_FragCoord.xy + offset);
-    //fColor = vec4(simplexNoise(cc+uvec2(1/sqrt(3)*length(cc/100)),M,N,p));
-    //fColor = vec4(noise(uvec4(cc*10,0,0),M,N,p));
-    //fColor = vec4(1-pow(abs(sin(100*noise(cc,M,N,p))),20));
-    fColor = vec4(noise(cc,M,N,p));
-    //fColor = vec4(noise2(cc*10,M,N));
-    //fColor = vec4(noise3(cc*10));
-    //if((M+N)!=100)fColor = vec4(smoothNoise(5,cc));
-    //if(M!=100||N!=100)fColor = vec4(baseIntegerNoise(cc>>5));
+    if(useSimplex != 0)
+      fColor = vec4(simplexNoise(cc,M,N,p));
+    else
+      fColor = vec4(noise(cc,M,N,p));
   }
   ).";
 
@@ -503,6 +510,14 @@ void Noise::init(){
   vars.add<ge::gl::VertexArray>("emptyVao");
   vars.add<glm::uvec2>("windowSize",window->getWidth(),window->getHeight());
 
+  vars.addUint32("M",8);
+  vars.addUint32("N",8);
+  vars.addFloat("p",2.f);
+  vars.addBool("useSimplex");
+  addVarsLimitsU(vars,"M",1,32,1);
+  addVarsLimitsU(vars,"N",1,32,1);
+  addVarsLimitsF(vars,"p",0.f,10.f,0.01f);
+
   createDrawProgram(vars);
 }
 
@@ -513,20 +528,20 @@ void Noise::draw(){
   vars.get<ge::gl::VertexArray>("emptyVao")->bind();
 
   vars.get<ge::gl::Program>("drawProgram")
-    ->set1ui("M",M)
-    ->set1ui("N",N)
-    ->set1f ("p",p)
+    ->set1ui("M",vars.getUint32("M"))
+    ->set1ui("N",vars.getUint32("N"))
+    ->set1f ("p",vars.getFloat("p"))
     ->set2iv("offset",glm::value_ptr(offset))
+    ->set1i ("useSimplex",vars.getBool("useSimplex"))
     ->use();
+  
 
   ge::gl::glDrawArrays(GL_TRIANGLE_STRIP,0,4);
 
   vars.get<ge::gl::VertexArray>("emptyVao")->unbind();
 
-  ImGui::DragFloat("p",&p,0.01f,0.f,10.f);
-  ImGui::DragInt("M",&M,1,1,32);
-  ImGui::DragInt("N",&N,1,1,32);
 
+  drawImguiVars(vars);
   ImGui::ShowMetricsWindow();
 
   swap();

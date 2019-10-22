@@ -37,11 +37,11 @@ void createGridProgram(vars::Vars&vars){
   ).";
 
   auto vs = std::make_shared<ge::gl::Shader>(GL_VERTEX_SHADER,
-      "#version 450\n",
+      "#version 330\n",
       vsSrc
       );
   auto fs = std::make_shared<ge::gl::Shader>(GL_FRAGMENT_SHADER,
-      "#version 450\n",
+      "#version 330\n",
       fsSrc
       );
   vars.reCreate<ge::gl::Program>("gridProgram",vs,fs);

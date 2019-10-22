@@ -12,7 +12,7 @@
 
 class EmptyProject: public simple3DApp::Application{
  public:
-  EmptyProject(int argc, char* argv[]) : Application(argc, argv) {}
+  EmptyProject(int argc, char* argv[]) : Application(argc, argv,330) {}
   virtual ~EmptyProject(){}
   virtual void draw() override;
 
