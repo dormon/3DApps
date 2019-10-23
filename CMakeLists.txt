@@ -81,6 +81,7 @@ addApp2(quiltToNative                         "src/quiltToNative.cpp"           
 addApp2(stupidCompiler                        "src/stupidCompiler.cpp"                        "Simple3DApp::Simple3DApp;barrier;imguiVars;ArgumentViewer::ArgumentViewer")
 addApp2(stupidScheduler                       "src/stupidScheduler.cpp"                       "Simple3DApp::Simple3DApp;barrier;imguiVars;ArgumentViewer::ArgumentViewer")
 addApp2(lightfieldPlayer                      "src/lightfieldPlayer.cpp"                      "Simple3DApp::Simple3DApp;barrier;imguiVars;ArgumentViewer::ArgumentViewer;gpuDecoder;Vars::Vars;DrawGrid;BasicCamera::BasicCamera")
+addApp2(tessellationLevels                    "src/tessellationLevels.cpp"                    "Simple3DApp::Simple3DApp;barrier;imguiVars;Vars::Vars")
 
 add_subdirectory(src/GMU)
 
