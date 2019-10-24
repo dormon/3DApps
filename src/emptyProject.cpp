@@ -9,6 +9,13 @@
 #include <imguiSDL2OpenGL/imgui.h>
 #include <imguiVars.h>
 #include <DrawGrid.h>
+#include <addVarsLimits.h>
+
+enum TestEnum{
+  A_VALUE = 13,
+  B_VALUE = 7 ,
+  C_VALUE = 9 ,
+};
 
 class EmptyProject: public simple3DApp::Application{
  public:
@@ -62,11 +69,17 @@ void EmptyProject::init(){
   vars.add<std::map<SDL_Keycode, bool>>("input.keyDown");
   vars.addBool("useOrbitCamera",false);
   createCamera(vars);
+
+  vars.addEnum<TestEnum>("testEnum",A_VALUE);
+  addEnumValues<TestEnum>(vars,{A_VALUE,B_VALUE,C_VALUE},{"A_VALUE","B_VALUE","C_VALUE"});
+  
 }
 
 void EmptyProject::draw(){
   createCamera(vars);
   basicCamera::CameraTransform*view;
+
+  std::cerr << (int32_t)vars.getEnum<TestEnum>("testEnum") << std::endl;;
 
   if(vars.getBool("useOrbitCamera"))
     view = vars.getReinterpret<basicCamera::CameraTransform>("view");

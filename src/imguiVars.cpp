@@ -75,6 +75,15 @@ void drawGroup(std::unique_ptr<Group>const&group,vars::Vars &vars){
         limitsName = fn + postfix;
     }
 
+    if(vars.getKind(fn) == vars::ResourceKind::ENUM){
+      if(vars.has(imguiLimitsVariable)){
+        auto lims = vars.get<ImguiLimits>(imguiLimitsVariable);
+        auto const&names = lims->enums.at(vars.getType(fn))->names;
+        ImGui::ListBox(n.c_str(), (int32_t*)vars.get(fn), names.data(), names.size(), 4);
+      }else{
+        change = ImGui::DragScalar(n.c_str(),ImGuiDataType_S32,(int32_t*)vars.get(fn),1);
+      }
+    }
     if(vars.getType(fn) == typeid(float)){
       if(limitsName != ""){
         auto lims = vars.get<VarsLimits<float>>(limitsName);

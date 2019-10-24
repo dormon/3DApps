@@ -487,8 +487,6 @@ void drawHolo(vars::Vars&vars){
   loadTextures(vars);
   createHoloProgram(vars);
 
-
-
   if(vars.getBool("renderQuilt")){
     vars.get<Quilt>("quilt")->color->bind(0);
   }else{
@@ -582,7 +580,6 @@ void Holo::draw(){
   swap();
 }
 
-
 void Holo::init(){
   auto args = vars.add<argumentViewer::ArgumentViewer>("args",argc,argv);
   auto const quiltFile = args->gets("--quilt","","quilt image 5x9");
@@ -593,7 +590,6 @@ void Holo::init(){
   }
 
   vars.addString("quiltFileName",quiltFile);
-
   
   vars.add<ge::gl::VertexArray>("emptyVao");
   vars.add<glm::uvec2>("windowSize",window->getWidth(),window->getHeight());

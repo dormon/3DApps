@@ -10,10 +10,14 @@ void setVarsLimitsPostfix(vars::Vars& vars,std::string const&name){
 void addVarsLimitsF(vars::Vars& vars,std::string const&name,float mmin,float mmax,float step){
   auto const postfix = vars.addOrGetString(limitsPostfixVariable,drawImguiVarsDefaultPostfix);
   vars.reCreate<VarsLimits<float>>(name+postfix,mmin,mmax,step);
+  auto lim = vars.addOrGet<ImguiLimits>(imguiLimitsVariable);
+  lim->setLimit<float>(name,mmin,mmax,step);
 }
 
 void addVarsLimitsU(vars::Vars& vars,std::string const&name,uint32_t mmin,uint32_t mmax,uint32_t step){
   auto const postfix = vars.addOrGetString(limitsPostfixVariable,drawImguiVarsDefaultPostfix);
   vars.reCreate<VarsLimits<uint32_t>>(name+postfix,mmin,mmax,step);
+  auto lim = vars.addOrGet<ImguiLimits>(imguiLimitsVariable);
+  lim->setLimit<uint32_t>(name,mmin,mmax,step);
 }
  
