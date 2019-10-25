@@ -8,8 +8,6 @@
 #include <set>
 #include <typeindex>
 
-static constexpr char const* drawImguiVarsDefaultPostfix = "___limits";
-static constexpr char const* limitsPostfixVariable = "___imguiVarsPostfix";
 static constexpr char const* imguiLimitsVariable = "___varsLimits";
 
 class VarLimit{
@@ -42,14 +40,13 @@ class EnumLimits{
   std::vector<const char*>names;
 };
 
-
 class ImguiLimits{
   public:
     template<typename T>
     void setLimit(std::string const&n,T mmin,T mmax,T step){
       auto it = limits.find(n);
       if(it == std::end(limits)){
-        limits[n] = std::make_shared<VarsLimits<T>>();
+        limits[n] = std::make_shared<VarsLimits<T>>(mmin,mmax,step);
         it = limits.find(n);
       }else{
         auto l = std::dynamic_pointer_cast<VarsLimits<T>>(it->second);
@@ -57,6 +54,14 @@ class ImguiLimits{
         l->minValue = mmin;
         l->step     = step;
       }
+    }
+    template<typename T>
+    std::shared_ptr<VarsLimits<T>>getLimit(std::string const&n)const{
+      auto it = limits.find(n);
+      if(it == std::end(limits))
+        return nullptr;
+      auto x = std::dynamic_pointer_cast<VarsLimits<T>>(it->second); 
+      return x;
     }
     template<typename T>
     void setEnum(
@@ -73,15 +78,13 @@ class ImguiLimits{
     }
     void hide(std::string const&n){hidden.insert(n);}
     void show(std::string const&n){hidden.erase(n);}
-    bool isHidden(std::string const&n){return hidden.count(n)!=0;}
+    bool isHidden(std::string const&n)const{return hidden.count(n)!=0;}
     std::map<std::string,std::shared_ptr<VarLimit>>limits;
     std::set<std::string>hidden;
     std::map<std::type_index const,std::shared_ptr<EnumLimits>>enums;
 };
 
 
-void setVarsLimitsPostfix(vars::Vars&        vars,
-                      std::string const& name = drawImguiVarsDefaultPostfix);
 void addVarsLimitsF(vars::Vars&        vars,
                std::string const& name,
                float              mmin = -1e38,
@@ -101,3 +104,6 @@ void addEnumValues(
   auto lim = vars.addOrGet<ImguiLimits>(imguiLimitsVariable);
   lim->setEnum<ENUM>(values,names);
 }
+
+void hide(vars::Vars&vars,std::string const&n);
+void show(vars::Vars&vars,std::string const&n);

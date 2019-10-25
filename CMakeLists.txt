@@ -59,6 +59,7 @@ addObjectLibrary(gpuDecoder       "src/gpuDecoder.h;src/gpuDecoder.cpp"         
 #addApp(gameOfLife src/gameOfLife.cpp)
 #addApp2(spirv "src/spirv.cpp" "")
 addApp2(emptyProject                          "src/emptyProject.cpp"                          "Simple3DApp::Simple3DApp;DrawGrid;imguiVars")
+addApp2(drawVars                              "src/drawVars.cpp"                              "Simple3DApp::Simple3DApp;imguiVars")
 addApp2(pathTracing                           "src/pathTracing.cpp"                           "Simple3DApp::Simple3DApp;DrawGrid;imguiVars")
 addApp2(rasterizationOrder                    "src/rasterizationOrder.cpp"                    "Simple3DApp::Simple3DApp;barrier;imguiVars")
 addApp2(noise                                 "src/noise.cpp"                                 "Simple3DApp::Simple3DApp;barrier;imguiVars")

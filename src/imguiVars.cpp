@@ -10,9 +10,6 @@
 #include<glm/glm.hpp>
 #include<cstring>
 
-#define ___ std::cerr << __FILE__ << ": " << __LINE__ << std::endl
-
-
 std::string getHead(std::string const&n){
   return n.substr(0,n.find("."));
 }
@@ -62,97 +59,100 @@ class VarNamesHierarchy{
 };
 
 
-void drawGroup(std::unique_ptr<Group>const&group,vars::Vars &vars){
-  if(group->isVariable){
-    auto const n = group->name;
-    auto const fn = group->fullName;
-    bool change = false;
+void drawVariable(std::unique_ptr<Group>const&group,vars::Vars &vars,ImguiLimits const*const lims){
+  auto const n = group->name;
+  auto const fn = group->fullName;
+  bool change = false;
+  auto const& type = vars.getType(fn);
 
-    std::string limitsName = "";
-    if(vars.has(limitsPostfixVariable)){
-      auto const postfix = vars.getString(limitsPostfixVariable);
-      if(vars.has(fn + postfix))
-        limitsName = fn + postfix;
-    }
+  if(lims&&lims->isHidden(fn))
+    return;
 
-    if(vars.getKind(fn) == vars::ResourceKind::ENUM){
-      if(vars.has(imguiLimitsVariable)){
-        auto lims = vars.get<ImguiLimits>(imguiLimitsVariable);
-        auto const&names = lims->enums.at(vars.getType(fn))->names;
-        ImGui::ListBox(n.c_str(), (int32_t*)vars.get(fn), names.data(), names.size(), 4);
-      }else{
-        change = ImGui::DragScalar(n.c_str(),ImGuiDataType_S32,(int32_t*)vars.get(fn),1);
-      }
+  if(vars.getKind(fn) == vars::ResourceKind::ENUM){
+    if(lims){
+      auto e = lims->enums.at(vars.getType(fn));
+      auto const&names = e->names;
+      auto&val = vars.getInt32(fn);
+      auto it = e->valueToIndex.find(val);
+      int32_t idx = 0;
+      if(it != std::end(e->valueToIndex))
+        idx = e->valueToIndex.at(val);
+
+      change = ImGui::ListBox(n.c_str(), (int32_t*)&idx, names.data(), names.size(), 4);
+      val = e->values.at(idx);
+    }else{
+      change = ImGui::DragScalar(n.c_str(),ImGuiDataType_S32,(int32_t*)vars.get(fn),1);
     }
-    if(vars.getType(fn) == typeid(float)){
-      if(limitsName != ""){
-        auto lims = vars.get<VarsLimits<float>>(limitsName);
-        change = ImGui::DragFloat(n.c_str(),(float*)vars.get(fn),lims->step,lims->minValue,lims->maxValue);
-      }else
-        change = ImGui::DragFloat(n.c_str(),(float*)vars.get(fn));
-    }
-    if(vars.getType(fn) == typeid(uint64_t)){
-      if(limitsName != ""){
-        auto lims = vars.get<VarsLimits<uint64_t>>(limitsName);
-        change = ImGui::DragScalar(n.c_str(),ImGuiDataType_U64,(uint64_t*)vars.get(fn),lims->step,&lims->minValue,&lims->maxValue);
-      }else
-        change = ImGui::DragScalar(n.c_str(),ImGuiDataType_U64,(uint64_t*)vars.get(fn),1);
-    }
-    if(vars.getType(fn) == typeid(uint32_t)){
-      if(limitsName != ""){
-        auto lims = vars.get<VarsLimits<uint32_t>>(limitsName);
-        change = ImGui::DragScalar(n.c_str(),ImGuiDataType_U32,(uint32_t*)vars.get(fn),lims->step,&lims->minValue,&lims->maxValue);
-      }else
-        change = ImGui::DragScalar(n.c_str(),ImGuiDataType_U32,(uint32_t*)vars.get(fn),1);
-    }
-    if(vars.getType(fn) == typeid(int64_t)){
-      if(limitsName != ""){
-        auto lims = vars.get<VarsLimits<int64_t>>(limitsName);
-        change = ImGui::DragScalar(n.c_str(),ImGuiDataType_S64,(int64_t*)vars.get(fn),lims->step,&lims->minValue,&lims->maxValue);
-      }else
-        change = ImGui::DragScalar(n.c_str(),ImGuiDataType_S64,(int64_t*)vars.get(fn),1);
-    }
-    if(vars.getType(fn) == typeid(int32_t)){
-      if(limitsName != ""){
-        auto lims = vars.get<VarsLimits<int32_t>>(limitsName);
-        change = ImGui::DragScalar(n.c_str(),ImGuiDataType_S32,(int32_t*)vars.get(fn),lims->step,&lims->minValue,&lims->maxValue);
-      }else
-        change = ImGui::DragScalar(n.c_str(),ImGuiDataType_S32,(int32_t*)vars.get(fn),1);
-    }
-    if(vars.getType(fn) == typeid(bool)){
-      change = ImGui::Checkbox(n.c_str(),(bool*)vars.get(fn));
-    }
-    if(vars.getType(fn) == typeid(glm::vec4)){
-      change = ImGui::DragFloat4(n.c_str(),(float*)vars.get(fn));
-    }
-    if(vars.getType(fn) == typeid(glm::vec3)){
-      change = ImGui::DragFloat3(n.c_str(),(float*)vars.get(fn));
-    }
-    if(vars.getType(fn) == typeid(glm::vec2)){
-      change = ImGui::DragFloat2(n.c_str(),(float*)vars.get(fn));
-    }
-    if(vars.getType(fn) == typeid(glm::uvec2)){
-      change = ImGui::DragInt2(n.c_str(),(int*)vars.get(fn));
-    }
-    if(vars.getType(fn) == typeid(std::string)){
-      auto&str = vars.getString(fn);
-      auto const maxV = [](size_t i,size_t j){if(i>j)return i;return j;};
-      auto const size = maxV(str.length()*2,256);
-      auto buf = new char[size];
-      std::strcpy(buf,str.c_str());
-      change = ImGui::InputText(n.c_str(),buf,size);
-      str = buf;
-      delete[]buf;
-    }
-    if(change)
-      vars.updateTicks(fn);
   }
+#define DRAG_SCALAR(TYPE,ENUM)\
+    if(lim){\
+      change = ImGui::DragScalar(n.c_str(),ENUM,(TYPE*)vars.get(fn),lim->step,&lim->minValue,&lim->maxValue);\
+    }else\
+      change = ImGui::DragScalar(n.c_str(),ENUM,(TYPE*)vars.get(fn),1)
+
+  if(type == typeid(float)){
+    auto lim = lims?lims->getLimit<float>(fn):nullptr;
+    if(lim){
+      change = ImGui::DragFloat(n.c_str(),(float*)vars.get(fn),lim->step,lim->minValue,lim->maxValue);
+    }else
+      change = ImGui::DragFloat(n.c_str(),(float*)vars.get(fn));
+  }
+  else if(type == typeid(uint64_t)){
+    auto lim = lims?lims->getLimit<uint64_t>(fn):nullptr;
+    DRAG_SCALAR(uint64_t,ImGuiDataType_U64);
+  }
+  else if(type == typeid(uint32_t)){
+    auto lim = lims?lims->getLimit<uint32_t>(fn):nullptr;
+    DRAG_SCALAR(uint32_t,ImGuiDataType_U32);
+  }
+  else if(type == typeid(int64_t)){
+    auto lim = lims?lims->getLimit<int64_t>(fn):nullptr;
+    DRAG_SCALAR(int64_t,ImGuiDataType_S64);
+  }
+  else if(type == typeid(int32_t)){
+    auto lim = lims?lims->getLimit<int32_t>(fn):nullptr;
+    DRAG_SCALAR(int32_t,ImGuiDataType_S32);
+  }
+  else if(type == typeid(bool)){
+    change = ImGui::Checkbox(n.c_str(),(bool*)vars.get(fn));
+  }
+  else if(type == typeid(glm::vec4)){
+    change = ImGui::DragFloat4(n.c_str(),(float*)vars.get(fn));
+  }
+  else if(type == typeid(glm::vec3)){
+    change = ImGui::DragFloat3(n.c_str(),(float*)vars.get(fn));
+  }
+  else if(type == typeid(glm::vec2)){
+    change = ImGui::DragFloat2(n.c_str(),(float*)vars.get(fn));
+  }
+  else if(type == typeid(glm::uvec2)){
+    change = ImGui::DragInt2(n.c_str(),(int*)vars.get(fn));
+  }
+  else if(type == typeid(std::string)){
+    auto&str = vars.getString(fn);
+    auto const maxV = [](size_t i,size_t j){if(i>j)return i;return j;};
+    auto const size = maxV(str.length()*2,256);
+    auto buf = new char[size];
+    std::strcpy(buf,str.c_str());
+    change = ImGui::InputText(n.c_str(),buf,size);
+    str = buf;
+    delete[]buf;
+  }
+#undef DRAG_SCALAR
+  if(change)
+    vars.updateTicks(fn);
+}
+
+
+void drawGroup(std::unique_ptr<Group>const&group,vars::Vars &vars,ImguiLimits const*const lims){
+  if(group->isVariable)
+    drawVariable(group,vars,lims);
 
   if(group->children.empty())return;
 
   if(ImGui::TreeNode(group->name.c_str())){
     for(auto const&x:group->children)
-      drawGroup(x.second,vars);
+      drawGroup(x.second,vars,lims);
     ImGui::TreePop();
   }
 }
@@ -169,10 +169,12 @@ void drawImguiVars(vars::Vars &vars){
   ImGui::PushItemWidth(-160);
   ImGui::LabelText("label", "Value");
 
+  ImguiLimits const* lims = nullptr;
+  if(vars.has(imguiLimitsVariable))
+    lims = vars.get<ImguiLimits>(imguiLimitsVariable);
+
   for(auto const&x:hierarchy.groups)
-    drawGroup(x.second,vars);
+    drawGroup(x.second,vars,lims);
 
   ImGui::End();
-
-  
 }
