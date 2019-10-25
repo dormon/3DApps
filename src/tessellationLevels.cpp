@@ -1,41 +1,54 @@
+#include <Simple3DApp/Application.h>
 #include <geGL/geGL.h>
 #include <geGL/StaticCalls.h>
 #include <SDL2CPP/MainLoop.h>
 #include <SDL2CPP/Window.h>
 #include <imguiSDL2OpenGL/imgui.h>
+#include <imguiVars.h>
+#include <Barrier.h>
+#include <addVarsLimits.h>
+#include <glm/glm.hpp>
 #include <sstream>
 
 using namespace ge::gl;
 using namespace std;
 
-template<typename RETURN,typename...ARGS>
-class Barrier{
-  public:
-    using PTR = RETURN(*)(ARGS...);
-    Barrier(PTR const&,RETURN && defRet):returnValue(defRet){}
-    bool notChanged(ARGS ... args){
-      auto newInputs = std::tuple<ARGS...>(args...);
-      auto same = arguments == newInputs;
-      if((!first) && same)return same;
-      first = false;
-      arguments = newInputs;
-      return false;
-    }
-    bool first = true;
-    RETURN             returnValue;
-    std::tuple<ARGS...>arguments  ;
+class TessellationLevels: public simple3DApp::Application{
+ public:
+  TessellationLevels(int argc, char* argv[]) : Application(argc, argv,330) {}
+  virtual ~TessellationLevels(){}
+  virtual void draw() override;
+
+  vars::Vars vars;
+
+  virtual void                init() override;
+  virtual void                resize(uint32_t x,uint32_t y) override;
 };
 
-template<typename RETURN,typename...ARGS,typename VRET>
-Barrier<RETURN,ARGS...>make_Barrier(RETURN(*ptr)(ARGS...),VRET && returnDef){
-  return Barrier<RETURN,ARGS...>{ptr,static_cast<RETURN>(returnDef)};
-}
+enum Spacing{
+  EQUAL_SPACING,
+  FRACTIONAL_EVEN_SPACING,
+  FRACTIONAL_ODD_SPACING,
+};
 
-shared_ptr<Program> getProgram(size_t vertices,int spacing,int drawMode){
-  static auto barrier = make_Barrier(getProgram,nullptr);
-  if(barrier.notChanged(vertices,spacing,drawMode))
-    return barrier.returnValue;
+enum DrawMode{
+  FILL,
+  LINE,
+  POINT,
+};
 
+enum Primitive{
+  ISOLINE,
+  TRIANGLE,
+  QUAD,
+};
+
+void createProgram(vars::Vars&vars){
+  if(notChanged(vars,"all",__FUNCTION__,{"primitive","spacing","drawMode"}))return;
+
+  auto vertices = (int32_t)vars.getEnum<Primitive>("primitive")+2;
+  auto spacing = (int32_t)vars.getEnum<Spacing>("spacing");
+  auto drawMode = (int32_t)vars.getEnum<DrawMode>("drawMode");
   stringstream vsSrc;
   vsSrc << "#version                     " << 450                << endl;
   vsSrc << "#line                        " << __LINE__           << endl;
@@ -179,66 +192,68 @@ shared_ptr<Program> getProgram(size_t vertices,int spacing,int drawMode){
 
   ).";
   auto frag = make_shared<Shader>(GL_FRAGMENT_SHADER,fsSrc.str());
-  barrier.returnValue = make_shared<Program>(vert,cont,eval,geom,frag);
-  return barrier.returnValue;
+  vars.reCreate<Program>("program",vert,cont,eval,geom,frag);
 }
 
+void TessellationLevels::draw(){
+  createProgram(vars);
+  glClearColor(0.f,0.1f,0.f,1.f);
+  glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
+
+  auto primitive = (int32_t)vars.getEnum<Primitive>("primitive");
+  vars.get<VertexArray>("emptyVao")->bind();
+  auto const vertices = primitive+2;
+  auto program = vars.get<Program>("program");
+  program
+    ->set2f("inner",vars.getFloat("innerLevel0"),vars.getFloat("innerLevel1"))
+    ->set4f("outer",vars.getFloat("outerLevel0"),vars.getFloat("outerLevel1"),vars.getFloat("outerLevel2"),vars.getFloat("outerLevel3"))
+    ->use();
+  glPatchParameteri(GL_PATCH_VERTICES,vertices);
+  glPointSize(4);
+  glDrawArrays(GL_PATCHES,0,vertices);
+  vars.get<VertexArray>("emptyVao")->unbind();
+
+  drawImguiVars(vars);
+
+  swap();
+}
+
+void TessellationLevels::init(){
+  vars.add<ge::gl::VertexArray>("emptyVao");
+  vars.add<glm::uvec2>("windowSize",window->getWidth(),window->getHeight());
+  vars.addFloat("innerLevel0",1.f);
+  vars.addFloat("innerLevel1",1.f);
+  vars.addFloat("outerLevel0",1.f);
+  vars.addFloat("outerLevel1",1.f);
+  vars.addFloat("outerLevel2",1.f);
+  vars.addFloat("outerLevel3",1.f);
+  vars.addEnum<Spacing>("spacing",EQUAL_SPACING);
+  vars.addEnum<DrawMode>("drawMode",FILL);
+  vars.addEnum<Primitive>("primitive",QUAD);
+
+  addVarsLimitsF(vars,"innerLevel0",0,64,0.1f);
+  addVarsLimitsF(vars,"innerLevel1",0,64,0.1f);
+  addVarsLimitsF(vars,"outerLevel0",0,64,0.1f);
+  addVarsLimitsF(vars,"outerLevel1",0,64,0.1f);
+  addVarsLimitsF(vars,"outerLevel2",0,64,0.1f);
+  addVarsLimitsF(vars,"outerLevel3",0,64,0.1f);
+
+  addEnumValues<Primitive>(vars,{ISOLINE,TRIANGLE,QUAD},{"isoline","triangle","quad"});
+  addEnumValues<Spacing>  (vars,{EQUAL_SPACING,FRACTIONAL_EVEN_SPACING,FRACTIONAL_ODD_SPACING},{"equal","fractional_even","fractional_odd"});
+  addEnumValues<DrawMode> (vars,{FILL,LINE,POINT},{"fill","line","point"});
+}
+
+void TessellationLevels::resize(uint32_t x,uint32_t y){
+  auto windowSize = vars.get<glm::uvec2>("windowSize");
+  windowSize->x = x;
+  windowSize->y = y;
+  vars.updateTicks("windowSize");
+  ge::gl::glViewport(0,0,x,y);
+}
+
+
 int main(int argc,char*argv[]){
-  auto mainLoop = make_shared<sdl2cpp::MainLoop>();
-  auto window   = make_shared<sdl2cpp::Window  >();
-  window->createContext("rendering");
-  ge::gl::init();
-  mainLoop->addWindow("mainWindow",window);
-  auto imgui = std::make_unique<imguiSDL2OpenGL::Imgui>(window->getWindow());
-  mainLoop->setEventHandler([&](SDL_Event const&event){
-    return imgui->processEvent(&event);
-  });
-
-  float innerLevel[2] = {1.f,1.f};
-  float outerLevel[4] = {1.f,1.f,1.f,1.f};
-  int spacing = 0;
-  int drawMode = 0;
-  int primitive = 2;
-  float minLevel = 0.f;
-  float maxLevel = 64.f;
-
-  auto vao = make_shared<VertexArray>();
-  mainLoop->setIdleCallback([&]{
-    glClearColor(0.f,0.1f,0.f,1.f);
-    glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
-    imgui->newFrame(window->getWindow());
-
-    vao->bind();
-    auto const vertices = primitive+2;
-    auto program = getProgram(vertices,spacing,drawMode);
-    program
-      ->set2fv("inner",innerLevel)
-      ->set4fv("outer",outerLevel)
-      ->use();
-	  glPatchParameteri(GL_PATCH_VERTICES,vertices);
-    glPointSize(4);
-    glDrawArrays(GL_PATCHES,0,vertices);
-    vao->unbind();
-    ImGui::Begin("vars");
-    ImGui::PushItemWidth(-90);
-    ImGui::LabelText("label", "Value");
-    ImGui::DragScalar("Inner0"  ,ImGuiDataType_Float,&innerLevel[0],0.1f,&minLevel   ,&maxLevel);
-    ImGui::DragScalar("Inner1"  ,ImGuiDataType_Float,&innerLevel[1],0.1f,&minLevel   ,&maxLevel);
-    ImGui::DragScalar("Outer0"  ,ImGuiDataType_Float,&outerLevel[0],0.1f,&minLevel   ,&maxLevel);
-    ImGui::DragScalar("Outer1"  ,ImGuiDataType_Float,&outerLevel[1],0.1f,&minLevel   ,&maxLevel);
-    ImGui::DragScalar("Outer2"  ,ImGuiDataType_Float,&outerLevel[2],0.1f,&minLevel   ,&maxLevel);
-    ImGui::DragScalar("Outer3"  ,ImGuiDataType_Float,&outerLevel[3],0.1f,&minLevel   ,&maxLevel);
-    char const* primitiveNames[] = {"isolines","triangles","quads"};
-    ImGui::ListBox("primitive", &primitive, primitiveNames, IM_ARRAYSIZE(primitiveNames), 4);
-    const char* spacingNames[] = { "equal_spacing", "fractional_even_spacing", "fractional_odd_spacing"};
-    ImGui::ListBox("spacing type", &spacing, spacingNames, IM_ARRAYSIZE(spacingNames), 4);
-    const char* drawModes[] = { "fill", "line", "point"};
-    ImGui::ListBox("draw mode", &drawMode, drawModes, IM_ARRAYSIZE(drawModes), 4);
-    ImGui::End();
-    imgui->render(window->getWindow(), window->getContext("rendering"));
-    window->swap();
-  });
-  (*mainLoop)();
-  imgui = nullptr;
-  return 0;
+  TessellationLevels app{argc, argv};
+  app.start();
+  return EXIT_SUCCESS;
 }
