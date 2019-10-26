@@ -117,13 +117,25 @@ void drawVariable(std::unique_ptr<Group>const&group,vars::Vars &vars,ImguiLimits
     change = ImGui::Checkbox(n.c_str(),(bool*)vars.get(fn));
   }
   else if(type == typeid(glm::vec4)){
-    change = ImGui::DragFloat4(n.c_str(),(float*)vars.get(fn));
+    auto lim = lims?lims->getLimit<float>(fn):nullptr;
+    if(lim)
+      change = ImGui::DragFloat4(n.c_str(),(float*)vars.get(fn),lim->step,lim->minValue,lim->maxValue);
+    else
+      change = ImGui::DragFloat4(n.c_str(),(float*)vars.get(fn));
   }
   else if(type == typeid(glm::vec3)){
-    change = ImGui::DragFloat3(n.c_str(),(float*)vars.get(fn));
+    auto lim = lims?lims->getLimit<float>(fn):nullptr;
+    if(lim)
+      change = ImGui::DragFloat3(n.c_str(),(float*)vars.get(fn),lim->step,lim->minValue,lim->maxValue);
+    else
+      change = ImGui::DragFloat3(n.c_str(),(float*)vars.get(fn));
   }
   else if(type == typeid(glm::vec2)){
-    change = ImGui::DragFloat2(n.c_str(),(float*)vars.get(fn));
+    auto lim = lims?lims->getLimit<float>(fn):nullptr;
+    if(lim)
+      change = ImGui::DragFloat2(n.c_str(),(float*)vars.get(fn),lim->step,lim->minValue,lim->maxValue);
+    else
+      change = ImGui::DragFloat2(n.c_str(),(float*)vars.get(fn));
   }
   else if(type == typeid(glm::uvec2)){
     change = ImGui::DragInt2(n.c_str(),(int*)vars.get(fn));

@@ -95,6 +95,21 @@ void addVarsLimitsU(vars::Vars&        vars,
                uint32_t           mmin = 0,
                uint32_t           mmax = 0xffffffff,
                uint32_t           step = 1);
+void addVarsLimits2F(vars::Vars&        vars,
+               std::string const& name,
+               float              mmin = -1e38,
+               float              mmax = +1e38,
+               float              step = 1.f);
+void addVarsLimits3F(vars::Vars&        vars,
+               std::string const& name,
+               float              mmin = -1e38,
+               float              mmax = +1e38,
+               float              step = 1.f);
+void addVarsLimits4F(vars::Vars&        vars,
+               std::string const& name,
+               float              mmin = -1e38,
+               float              mmax = +1e38,
+               float              step = 1.f);
 
 template<typename ENUM>
 void addEnumValues(

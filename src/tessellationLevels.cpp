@@ -205,8 +205,8 @@ void TessellationLevels::draw(){
   auto const vertices = primitive+2;
   auto program = vars.get<Program>("program");
   program
-    ->set2f("inner",vars.getFloat("innerLevel0"),vars.getFloat("innerLevel1"))
-    ->set4f("outer",vars.getFloat("outerLevel0"),vars.getFloat("outerLevel1"),vars.getFloat("outerLevel2"),vars.getFloat("outerLevel3"))
+    ->set2fv("inner",(float*)vars.get<glm::vec2>("innerLevel"))
+    ->set4fv("outer",(float*)vars.get<glm::vec4>("outerLevel"))
     ->use();
   glPatchParameteri(GL_PATCH_VERTICES,vertices);
   glPointSize(4);
@@ -221,22 +221,14 @@ void TessellationLevels::draw(){
 void TessellationLevels::init(){
   vars.add<ge::gl::VertexArray>("emptyVao");
   vars.add<glm::uvec2>("windowSize",window->getWidth(),window->getHeight());
-  vars.addFloat("innerLevel0",1.f);
-  vars.addFloat("innerLevel1",1.f);
-  vars.addFloat("outerLevel0",1.f);
-  vars.addFloat("outerLevel1",1.f);
-  vars.addFloat("outerLevel2",1.f);
-  vars.addFloat("outerLevel3",1.f);
+  vars.add<glm::vec2>("innerLevel",glm::vec2(1.f));
+  vars.add<glm::vec4>("outerLevel",glm::vec4(1.f));
   vars.addEnum<Spacing>("spacing",EQUAL_SPACING);
   vars.addEnum<DrawMode>("drawMode",FILL);
   vars.addEnum<Primitive>("primitive",QUAD);
 
-  addVarsLimitsF(vars,"innerLevel0",0,64,0.1f);
-  addVarsLimitsF(vars,"innerLevel1",0,64,0.1f);
-  addVarsLimitsF(vars,"outerLevel0",0,64,0.1f);
-  addVarsLimitsF(vars,"outerLevel1",0,64,0.1f);
-  addVarsLimitsF(vars,"outerLevel2",0,64,0.1f);
-  addVarsLimitsF(vars,"outerLevel3",0,64,0.1f);
+  addVarsLimits2F(vars,"innerLevel",1,64,0.1f);
+  addVarsLimits4F(vars,"outerLevel",1,64,0.1f);
 
   addEnumValues<Primitive>(vars,{ISOLINE,TRIANGLE,QUAD},{"isoline","triangle","quad"});
   addEnumValues<Spacing>  (vars,{EQUAL_SPACING,FRACTIONAL_EVEN_SPACING,FRACTIONAL_ODD_SPACING},{"equal","fractional_even","fractional_odd"});

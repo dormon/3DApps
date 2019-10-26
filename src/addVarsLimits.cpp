@@ -8,6 +8,21 @@ void addVarsLimitsF(vars::Vars& vars,std::string const&name,float mmin,float mma
   lim->setLimit<float>(name,mmin,mmax,step);
 }
 
+void addVarsLimits2F(vars::Vars& vars,std::string const&name,float mmin,float mmax,float step){
+  auto lim = vars.addOrGet<ImguiLimits>(imguiLimitsVariable);
+  lim->setLimit<float>(name,mmin,mmax,step);
+}
+
+void addVarsLimits3F(vars::Vars& vars,std::string const&name,float mmin,float mmax,float step){
+  auto lim = vars.addOrGet<ImguiLimits>(imguiLimitsVariable);
+  lim->setLimit<float>(name,mmin,mmax,step);
+}
+
+void addVarsLimits4F(vars::Vars& vars,std::string const&name,float mmin,float mmax,float step){
+  auto lim = vars.addOrGet<ImguiLimits>(imguiLimitsVariable);
+  lim->setLimit<float>(name,mmin,mmax,step);
+}
+
 void addVarsLimitsU(vars::Vars& vars,std::string const&name,uint32_t mmin,uint32_t mmax,uint32_t step){
   auto lim = vars.addOrGet<ImguiLimits>(imguiLimitsVariable);
   lim->setLimit<uint32_t>(name,mmin,mmax,step);
