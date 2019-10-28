@@ -24,15 +24,33 @@ int main(int argc,char*argv[]){
     exit(0);
   }
 
-  size_t const DATA = 1024*1024*4;
-  auto buf = std::make_shared<ge::gl::Buffer>(sizeof(uint32_t)*DATA);
+  size_t const WORKGROUPS = 1024*1024*8;
+  uint32_t const ITERATIONS = 100;
+  std::vector<uint32_t>data(WORKGROUPS);
+  for(auto&x:data)x = ITERATIONS;
+  auto buf = std::make_shared<ge::gl::Buffer>(data.size()*sizeof(decltype(data)::value_type));
+  buf->setData(data);
   buf->bindBase(GL_SHADER_STORAGE_BUFFER,0);
 
-  auto const measure = [&](std::string const&name,std::string const&src,size_t line){
+
+  auto const measure = [&](std::string const&name,std::string const&src,size_t line,float full=0.f,float active = 0.f){
     std::stringstream ss;
     ss << "#version 450" << std::endl;
     ss << "#line " << line << std::endl;
-    ss << src;
+
+    ss << "layout(local_size_x=64)in;\n";
+
+    ss << "layout(binding=0)buffer Data{uint data[];};\n";
+    ss << "void main(){\n";
+    ss << "  uint wid = gl_WorkGroupID.y * gl_NumWorkGroups.x + gl_WorkGroupID.x;\n";
+    ss << "  if("<< src <<")return;\n";
+    ss << "  uint N = data[gl_WorkGroupID.x];\n";
+    ss << "  uint counter = 0;\n";
+    ss << "  for(uint i=0;i<N&&i<1000;++i)\n";
+    ss << "    counter += i;\n";
+    ss << "  if(counter == 1337)\n";
+    ss << "    data[gl_GlobalInvocationID.x] = 100;\n";
+    ss << "}\n";
     auto prg = std::make_shared<ge::gl::Program>(std::make_shared<ge::gl::Shader>(GL_COMPUTE_SHADER,ss.str()));
 
     auto timer = Timer<float>();
@@ -40,195 +58,47 @@ int main(int argc,char*argv[]){
     timer.reset();
     prg->use();
     for(size_t i=0;i<N;++i)
-      prg->dispatch(DATA/256);
+      prg->dispatch(WORKGROUPS/1024,1024,1);
     glFinish();
     auto time = timer.elapsedFromStart()/N;
-    std::cerr << name << ": " << time << std::endl;
+    size_t const alignLen = 60;
+    size_t nofSpaces = alignLen >= name.size()? alignLen - name.size() : 0;
+    std::cerr << name;
+    for(size_t i=0;i<nofSpaces;++i)
+      std::cerr << " ";
+    std::cerr << ": " << time;
+    if(full != 0.f && active != 0.f){
+      std::cerr << " - " << (time/full)*100 << "% - " << time/(full*active) << " times slower";
+    }
+    std::cerr << std::endl;
+    return time;
   };
-#define MEASURE(name,src) measure(name,src,__LINE__)
+#define MEASURE(name,src,...) measure(name,src,__LINE__,__VA_ARGS__)
 
-  {MEASURE("warm up",R".(
-  layout(local_size_x=256)in;
+  MEASURE("warm up","1==0",0.f);
 
-  layout(binding=0)buffer Data{uint data[];};
+  auto full = MEASURE("64 |****|","1==0",0.f);
 
-  void main(){
-    data[gl_GlobalInvocationID.x] = 32;
-  }
-  ).");}
+  MEASURE("64 |*.|"                                     ,"(wid%2)!=0"     ,full,1/2.f);
+  MEASURE("64 |*...|"                                   ,"(wid%4)!=0"     ,full,1/4.f);
+  MEASURE("64 |*...|....|"                              ,"(wid%8)!=0"     ,full,1/8.f);
+  MEASURE("64 |*...|....|....|....|"                    ,"(wid%16)!=0"    ,full,1/16.f);
+  MEASURE("64 |*...|....|....|....|....|....|....|....|","(wid%32)!=0"    ,full,1/32.f);
 
-  //std::vector<uint32_t>d(10);
-  //buf->getData(d);
-  //for(auto x:d)
-  //  std::cerr << x << std::endl;
+  MEASURE("64 |.*..|"                                   ,"(wid%4)!=1"     ,full,1/4.f);
 
-  {MEASURE("simple",R".(
-  layout(local_size_x=256)in;
+  MEASURE("64 |*...|.*..|..*.|...*|....|"               ,"(wid%5)!=0"     ,full,1/5.f);
 
-  layout(binding=0)buffer Data{uint data[];};
+  MEASURE("64 |*..*|..*.|.*..|"                         ,"(wid%3)!=0"     ,full,1/3.f);
 
-  void main(){
-    data[gl_GlobalInvocationID.x] = 32;
-  }
-  ).");}
+  MEASURE("64 |****|....|****|....|"                    ,"((wid/4)%2)!=0" ,full,1/2.f);
 
-  {MEASURE("constLoop",R".(
-  layout(local_size_x=256)in;
+  MEASURE("64 |****|****|....|....|"                    ,"((wid/8)%2)!=0" ,full,1/2.f);
 
-  layout(binding=0)buffer Data{uint data[];};
+  MEASURE("64 |****|****|****|****|....|....|....|...|" ,"((wid/16)%2)!=0",full,1/2.f);
 
-  void main(){
-    uint a  = 32;
-    for(uint i=0;i<1000;++i)
-      a = uint(32*sin(a*32));
-      
-    data[gl_GlobalInvocationID.x] = a;
-  }
-  ).");}
 
-  {MEASURE("constLoop2",R".(
-  layout(local_size_x=256)in;
 
-  layout(binding=0)buffer Data{uint data[];};
-
-  void main(){
-    uint a  = 32;
-    for(uint i=0;i<1000;++i)
-      a += i;
-      
-    data[gl_GlobalInvocationID.x] = a;
-  }
-  ).");}
-
-  {MEASURE("constLoop3",R".(
-  layout(local_size_x=256)in;
-
-  layout(binding=0)buffer Data{uint data[];};
-
-  void main(){
-    uint a  = 32;
-    for(uint i=0;i<1000;++i)
-      a += uint(sin(i*32)*32);
-      
-    data[gl_GlobalInvocationID.x] = a;
-  }
-  ).");}
-
-  {MEASURE("a lot of addition",R".(
-  layout(local_size_x=256)in;
-
-  layout(binding=0)buffer Data{uint data[];};
-
-  #define C1(x,y)  (x      +y      )
-  #define C2(x,y)  (C1(x,y)+C1(x,y))
-  #define C4(x,y)  (C2(x,y)+C2(x,y))
-  #define C8(x,y)  (C4(x,y)+C4(x,y))
-  #define C16(x,y) (C8(x,y)+C8(x,y))
-  #define C32(x,y) (C16(x,y)+C16(x,y))
-  #define C64(x,y) (C32(x,y)+C32(x,y))
-  #define C128(x,y) (C64(x,y)+C64(x,y))
-  #define C256(x,y) (C128(x,y)+C128(x,y))
-  #define C512(x,y) (C256(x,y)+C256(x,y))
-  #define C1024(x,y) (C512(x,y)+C512(x,y))
-
-  void main(){
-    data[gl_GlobalInvocationID.x] = C1024(23,10);
-  }
-
-  ).");}
-
-  {MEASURE("function",R".(
-  layout(local_size_x=256)in;
-
-  layout(binding=0)buffer Data{uint data[];};
-
-  uint get(uint a){
-    return a*2;
-  }
-
-  void main(){
-    data[gl_GlobalInvocationID.x] = get(32);
-  }
-
-  ).");}
-
-  {MEASURE("function loop",R".(
-  layout(local_size_x=256)in;
-
-  layout(binding=0)buffer Data{uint data[];};
-
-  uint get(uint a){
-    for(uint i=0;i<1000;++i)
-      a += uint(sin(i*32)*32);
-    return a;
-  }
-
-  void main(){
-    data[gl_GlobalInvocationID.x] = get(32);
-  }
-
-  ).");}
-
-  {MEASURE("function",R".(
-  layout(local_size_x=256)in;
-
-  layout(binding=0)buffer Data{uint data[];};
-
-  uint get(uint a){
-    uint b = a*2;
-    b = uint(sin(float(b))*32);
-    b = uint(sin(float(b))*32);
-    b = uint(sin(float(b))*32);
-    b = uint(sin(float(b))*32);
-    b += 1;
-    b = uint(sin(float(b))*32);
-    b = uint(sin(float(b))*32);
-    return b;
-  }
-
-  void main(){
-    data[gl_GlobalInvocationID.x] = get(32);
-  }
-
-  ).");}
-
-  {MEASURE("variables",R".(
-  layout(local_size_x=256)in;
-
-  layout(binding=0)buffer Data{uint data[];};
-
-  void main(){
-    uint a = 32;
-    a *= 32;
-    a += 2;
-    a *= 4;
-    a += 2;
-    a *= 4;
-    a += 2;
-    a *= 4;
-    a += 2;
-    a *= 4;
-    a = uint(sin(float(a)))*32;
-    a = uint(sin(float(a)))*32;
-    a = uint(sin(float(a)))*32;
-    a = uint(sin(float(a)))*32;
-    a = uint(sin(float(a)))*32;
-    a = uint(sin(float(a)))*32;
-    data[gl_GlobalInvocationID.x] = a;
-  }
-
-  ).");}
-
-  {MEASURE("const <",R".(
-  layout(local_size_x=256)in;
-
-  layout(binding=0)buffer Data{uint data[];};
-
-  void main(){
-    data[gl_GlobalInvocationID.x] = uint(23*sin(21*float(gl_WorkGroupSize.x < 300)));
-  }
-
-  ).");}
 
   return EXIT_SUCCESS;
 }
