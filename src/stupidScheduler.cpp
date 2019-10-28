@@ -18,14 +18,14 @@ int main(int argc,char*argv[]){
 
   auto args = std::make_shared<argumentViewer::ArgumentViewer>(argc,argv);
   auto N = args->getu64("-N",10,"how many times are tests executed");
+  auto WORKGROUPS = args->getu64("-W",1024*1024,"how many workgroups to launch");
+  auto ITERATIONS = args->getu64("-I",100,"how much work is performed by each thread");
   bool printHelp = args->isPresent("-h", "prints this help");
   if (printHelp || !args->validate()) {
     std::cerr << args->toStr();
     exit(0);
   }
 
-  size_t const WORKGROUPS = 1024*1024;
-  uint32_t const ITERATIONS = 100;
   std::vector<uint32_t>data(WORKGROUPS);
   for(auto&x:data)x = ITERATIONS;
   auto buf = std::make_shared<ge::gl::Buffer>(data.size()*sizeof(decltype(data)::value_type));
