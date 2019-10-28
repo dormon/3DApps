@@ -24,7 +24,7 @@ int main(int argc,char*argv[]){
     exit(0);
   }
 
-  size_t const WORKGROUPS = 1024*1024*8;
+  size_t const WORKGROUPS = 1024*1024;
   uint32_t const ITERATIONS = 100;
   std::vector<uint32_t>data(WORKGROUPS);
   for(auto&x:data)x = ITERATIONS;
@@ -33,12 +33,12 @@ int main(int argc,char*argv[]){
   buf->bindBase(GL_SHADER_STORAGE_BUFFER,0);
 
 
-  auto const measure = [&](std::string const&name,std::string const&src,size_t line,float full=0.f,float active = 0.f){
+  auto const measure = [&](std::string const&name,size_t wgs,std::string const&src,size_t line,float full=0.f,float active = 0.f){
     std::stringstream ss;
     ss << "#version 450" << std::endl;
     ss << "#line " << line << std::endl;
 
-    ss << "layout(local_size_x=64)in;\n";
+    ss << "layout(local_size_x="<<wgs<<")in;\n";
 
     ss << "layout(binding=0)buffer Data{uint data[];};\n";
     ss << "void main(){\n";
@@ -63,7 +63,7 @@ int main(int argc,char*argv[]){
     auto time = timer.elapsedFromStart()/N;
     size_t const alignLen = 60;
     size_t nofSpaces = alignLen >= name.size()? alignLen - name.size() : 0;
-    std::cerr << name;
+    std::cerr << wgs << " " << name;
     for(size_t i=0;i<nofSpaces;++i)
       std::cerr << " ";
     std::cerr << ": " << time;
@@ -73,31 +73,31 @@ int main(int argc,char*argv[]){
     std::cerr << std::endl;
     return time;
   };
-#define MEASURE(name,src,...) measure(name,src,__LINE__,__VA_ARGS__)
+#define MEASURE(name,WGS,src,...) measure(name,WGS,src,__LINE__,__VA_ARGS__)
 
-  MEASURE("warm up","1==0",0.f);
+  MEASURE("warm up",64,"1==0",0.f);
 
-  auto full = MEASURE("64 |****|","1==0",0.f);
+  float full = 0.f;
 
-  MEASURE("64 |*.|"                                     ,"(wid%2)!=0"     ,full,1/2.f);
-  MEASURE("64 |*...|"                                   ,"(wid%4)!=0"     ,full,1/4.f);
-  MEASURE("64 |*...|....|"                              ,"(wid%8)!=0"     ,full,1/8.f);
-  MEASURE("64 |*...|....|....|....|"                    ,"(wid%16)!=0"    ,full,1/16.f);
-  MEASURE("64 |*...|....|....|....|....|....|....|....|","(wid%32)!=0"    ,full,1/32.f);
+  auto measureWGS = [&](size_t WGS){
+    auto full = MEASURE("|****|",WGS,"1==0",0.f);
+    MEASURE("|*.|"                                     ,WGS,"(wid%2)!=0"     ,full,1/2.f);
+    MEASURE("|*...|"                                   ,WGS,"(wid%4)!=0"     ,full,1/4.f);
+    MEASURE("|*...|....|"                              ,WGS,"(wid%8)!=0"     ,full,1/8.f);
+    MEASURE("|*...|....|....|....|"                    ,WGS,"(wid%16)!=0"    ,full,1/16.f);
+    MEASURE("|*...|....|....|....|....|....|....|....|",WGS,"(wid%32)!=0"    ,full,1/32.f);
+    MEASURE("|.*..|"                                   ,WGS,"(wid%4)!=1"     ,full,1/4.f);
+    MEASURE("|*...|.*..|..*.|...*|....|"               ,WGS,"(wid%5)!=0"     ,full,1/5.f);
+    MEASURE("|*..*|..*.|.*..|"                         ,WGS,"(wid%3)!=0"     ,full,1/3.f);
+    MEASURE("|****|....|****|....|"                    ,WGS,"((wid/4)%2)!=0" ,full,1/2.f);
+    MEASURE("|****|****|....|....|"                    ,WGS,"((wid/8)%2)!=0" ,full,1/2.f);
+    MEASURE("|****|****|****|****|....|....|....|...|" ,WGS,"((wid/16)%2)!=0",full,1/2.f);
+  };
 
-  MEASURE("64 |.*..|"                                   ,"(wid%4)!=1"     ,full,1/4.f);
-
-  MEASURE("64 |*...|.*..|..*.|...*|....|"               ,"(wid%5)!=0"     ,full,1/5.f);
-
-  MEASURE("64 |*..*|..*.|.*..|"                         ,"(wid%3)!=0"     ,full,1/3.f);
-
-  MEASURE("64 |****|....|****|....|"                    ,"((wid/4)%2)!=0" ,full,1/2.f);
-
-  MEASURE("64 |****|****|....|....|"                    ,"((wid/8)%2)!=0" ,full,1/2.f);
-
-  MEASURE("64 |****|****|****|****|....|....|....|...|" ,"((wid/16)%2)!=0",full,1/2.f);
-
-
+  measureWGS(32);
+  measureWGS(64);
+  measureWGS(128);
+  measureWGS(256);
 
 
   return EXIT_SUCCESS;
