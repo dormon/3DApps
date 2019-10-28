@@ -33,29 +33,6 @@ void createDrawProgram(vars::Vars&vars){
   ).";
   std::string const fsSrc = R".(
   #line 35
-  const uint randomTable[] = {
-    1945727213u, 1784552535u, 41943905u, 1798153196u, 2127711793u, 1383241286u, 1091391988u, 1847409030u,
-    1038705170u, 1187509214u, 209365311u, 104644057u, 1851780687u, 459376088u, 182898471u, 1239991444u,
-    1347046528u, 498436117u, 455220822u, 705817406u, 1689529107u, 2062940353u, 1904830352u, 70547598u,
-    564582963u, 1409962186u, 1179142285u, 1261607965u, 383116697u, 1605873696u, 220879512u, 745942922u,
-    14249494u, 1580084801u, 426577606u, 1300856708u, 1537819200u, 1774801760u, 1056013051u, 1442713539u,
-    375737785u, 779320848u, 2018351003u, 55250055u, 696510849u, 1454634923u, 1757192185u, 1405839594u,
-    1543672241u, 521349144u, 1751893281u, 1634712163u, 413503478u, 1475429616u, 304022636u, 857439716u,
-    1363205923u, 1416809528u, 83877344u, 608089758u, 1735907325u, 849492852u, 895296994u, 1801143577u
-  };
-
-  uint getOneRandom(uint x){
-    return (randomTable[x>>2u]>>((x&0x3u)<<0x3u))&0xffu;
-  }
-
-  uint getFromRandomTable(uint a){
-    uint result = 0;
-    result |= getOneRandom((a>> 0u)&0xffu)<< 0u;
-    result |= getOneRandom((a>> 8u)&0xffu)<< 8u;
-    result |= getOneRandom((a>>16u)&0xffu)<<16u;
-    result |= getOneRandom((a>>24u)&0xffu)<<24u;
-    return result;
-  }
 
 #define JOIN1(x,y) x##y
 #define JOIN0(x,y) JOIN1(x,y)
@@ -76,12 +53,6 @@ void createDrawProgram(vars::Vars&vars){
 #define UVEC3 uvec3
 #define UVEC4 uvec4
 
-//#define VECXI(x,m,i) JOIN(x,JOIN(VECI,m(i)))
-//#define VECI1(i) 
-//#define VECI2(i) [i]
-//#define VECI3(i) [i]
-//#define VECI4(i) [i]
-
 uint  getElem(uint  x,uint i){return x   ;}
 uint  getElem(uvec2 x,uint i){return x[i];}
 uint  getElem(uvec3 x,uint i){return x[i];}
@@ -97,8 +68,6 @@ vec2  convert(uvec2 x){return vec2 (float(x.x),float(x.y)                      )
 vec3  convert(uvec3 x){return vec3 (float(x.x),float(x.y),float(x.z)           );}
 vec4  convert(uvec4 x){return vec4 (float(x.x),float(x.y),float(x.z),float(x.w));}
 
-
-
 const uint UINT_0       = 0u         ;
 const uint UINT_1       = 1u         ;
 const uint UINT_2       = 2u         ;
@@ -106,30 +75,19 @@ const uint UINT_MAXDIV2 = 0x7fffffffu;
 const uint UINT_MAX     = 0xffffffffu;
 
 uint poly(in uint x,in uint c){
-  //return x;
-  //return x*(x+c);
-  //return x*(x*(x+c)+c);
-  //return x*(x*(x*(x+c)+c)+c);
-  //return x*(x*(x*(x*(x+c)+c)+c)+c);
-  return getFromRandomTable(x+c);
-  //return x*(x*(x*(x*(x*(x+c)+c)+c)+c)+c);
-  //return x*(x*(x*(x*(x*(x*(x+c)+c)+c)+c)+c)+c);
-  //return x*(x*(x*(x*(x*(x*(x*(x+c)+c)+c)+c)+c)+c)+c);
+  return x*(x*(x*(x*(x+c)+c)+c)+c);
 }
 
-#define BASE(DIMENSION)                                     \
-float baseIntegerNoise(in JOIN(UVEC,DIMENSION) x){          \
-  uint last = 10u;                                          \
-  for(uint i = 0u; i < uint(DIMENSION); ++i)                \
-    last = poly( VECXI(x,DIMENSION,i) + (20024u << i),last);\
-  return -1. + float(last)/float(UINT_MAXDIV2);             \
-}                                                           \
-uint baseIntegerNoiseU(in JOIN(UVEC,DIMENSION) x){          \
-  uint last = 10u;                                          \
-  for(uint i = 0u; i < uint(DIMENSION); ++i)                \
-    last = poly( VECXI(x,DIMENSION,i) + (20024u << i),last);\
-  return last;                                              \
-}
+#define BASE(DIMENSION)                                        \
+uint baseIntegerNoiseU(in JOIN(UVEC,DIMENSION) x){             \
+  uint last = 10u;                                             \
+  for(uint i = 0u; i < uint(DIMENSION); ++i)                   \
+    last = poly( VECXI(x,DIMENSION,i) + (20024u << i),last);   \
+  return last;                                                 \
+}                                                              \
+float baseIntegerNoise(in JOIN(UVEC,DIMENSION) x){             \
+  return -1. + float(baseIntegerNoiseU(x))/float(UINT_MAXDIV2);\
+}                                                              
 
 
 #define SMOOTH(DIMENSION)                                                          \
