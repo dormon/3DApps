@@ -20,6 +20,7 @@ int main(int argc,char*argv[]){
   auto N = args->getu64("-N",10,"how many times are tests executed");
   auto WORKGROUPS = args->getu64("-W",1024*1024,"how many workgroups to launch");
   auto ITERATIONS = args->getu64("-I",100,"how much work is performed by each thread");
+  auto WGS        = args->getu64("-S",64,"size of a workgroup");
   bool printHelp = args->isPresent("-h", "prints this help");
   if (printHelp || !args->validate()) {
     std::cerr << args->toStr();
@@ -77,8 +78,6 @@ int main(int argc,char*argv[]){
 
   MEASURE("warm up",64,"1==0",0.f);
 
-  float full = 0.f;
-
   auto measureWGS = [&](size_t WGS){
     auto full = MEASURE("|****|",WGS,"1==0",0.f);
     MEASURE("|*.|"                                     ,WGS,"(wid%2)!=0"     ,full,1/2.f);
@@ -92,12 +91,13 @@ int main(int argc,char*argv[]){
     MEASURE("|****|....|****|....|"                    ,WGS,"((wid/4)%2)!=0" ,full,1/2.f);
     MEASURE("|****|****|....|....|"                    ,WGS,"((wid/8)%2)!=0" ,full,1/2.f);
     MEASURE("|****|****|****|****|....|....|....|...|" ,WGS,"((wid/16)%2)!=0",full,1/2.f);
+    MEASURE("40 out of 80"                             ,WGS,"((wid/40)%2)!=0",full,1/2.f);
+    MEASURE("20 out of 40"                             ,WGS,"((wid/20)%2)!=0",full,1/2.f);
+    MEASURE("10 out of 20"                             ,WGS,"((wid/10)%2)!=0",full,1/2.f);
+    MEASURE("5 out of 10"                              ,WGS,"((wid/5)%2)!=0",full,1/2.f);
   };
 
-  measureWGS(32);
-  measureWGS(64);
-  measureWGS(128);
-  measureWGS(256);
+  measureWGS(WGS);
 
 
   return EXIT_SUCCESS;
