@@ -86,15 +86,16 @@ int main(int argc,char*argv[]){
     MEASURE("|*...|....|....|....|"                    ,WGS,"(wid%16)!=0"    ,full,1/16.f);
     MEASURE("|*...|....|....|....|....|....|....|....|",WGS,"(wid%32)!=0"    ,full,1/32.f);
     MEASURE("|.*..|"                                   ,WGS,"(wid%4)!=1"     ,full,1/4.f);
-    MEASURE("|*...|.*..|..*.|...*|....|"               ,WGS,"(wid%5)!=0"     ,full,1/5.f);
-    MEASURE("|*..*|..*.|.*..|"                         ,WGS,"(wid%3)!=0"     ,full,1/3.f);
     MEASURE("|****|....|****|....|"                    ,WGS,"((wid/4)%2)!=0" ,full,1/2.f);
     MEASURE("|****|****|....|....|"                    ,WGS,"((wid/8)%2)!=0" ,full,1/2.f);
     MEASURE("|****|****|****|****|....|....|....|...|" ,WGS,"((wid/16)%2)!=0",full,1/2.f);
     MEASURE("40 out of 80"                             ,WGS,"((wid/40)%2)!=0",full,1/2.f);
     MEASURE("20 out of 40"                             ,WGS,"((wid/20)%2)!=0",full,1/2.f);
     MEASURE("10 out of 20"                             ,WGS,"((wid/10)%2)!=0",full,1/2.f);
-    MEASURE("5 out of 10"                              ,WGS,"((wid/5)%2)!=0",full,1/2.f);
+    MEASURE("5 out of 10"                              ,WGS,"((wid/5)%2)!=0" ,full,1/2.f);
+    MEASURE("1 out of 10"                              ,WGS,"(wid%10)!=0"    ,full,1/10.f);
+    MEASURE("1 out of 5"                               ,WGS,"(wid%5)!=0"     ,full,1/5.f);
+    MEASURE("1 out of 3"                               ,WGS,"(wid%3)!=0"     ,full,1/3.f);
   };
 
   measureWGS(WGS);
