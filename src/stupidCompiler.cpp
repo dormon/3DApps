@@ -93,6 +93,7 @@ int main(int argc,char*argv[]){
 
   void main(){
     uint a  = 32;
+    
     for(uint i=0;i<1000;++i)
       a += i;
       

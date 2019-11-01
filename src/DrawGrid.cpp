@@ -48,8 +48,16 @@ void createGridProgram(vars::Vars&vars){
 
 }
 
+void createGridVAO(vars::Vars&vars){
+  if(notChanged(vars,"all",__FUNCTION__,{}))return;
+
+  vars.reCreate<ge::gl::VertexArray>("gridVAO");
+}
+
 void drawGrid(vars::Vars&vars,glm::mat4 const&view,glm::mat4 const&proj){
   createGridProgram(vars);
+  createGridVAO(vars);
+  vars.get<ge::gl::VertexArray>("gridVAO")->bind();
   vars.get<ge::gl::Program>("gridProgram")
     ->setMatrix4fv("view"      ,glm::value_ptr(view))
     ->setMatrix4fv("projection",glm::value_ptr(proj))
@@ -58,6 +66,7 @@ void drawGrid(vars::Vars&vars,glm::mat4 const&view,glm::mat4 const&proj){
   ge::gl::glDepthMask(GL_FALSE);
   ge::gl::glDrawArrays(GL_TRIANGLE_STRIP,0,4);
   ge::gl::glDepthMask(GL_TRUE);
+  vars.get<ge::gl::VertexArray>("gridVAO")->unbind();
 }
 
 void drawGrid(vars::Vars&vars){
