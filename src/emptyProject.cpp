@@ -100,8 +100,7 @@ void EmptyProject::key(SDL_Event const& event, bool DOWN) {
   (*keys)[event.key.keysym.sym] = DOWN;
 }
 
-void EmptyProject::mouseMove(SDL_Event const& e) {
-  if(vars.getBool("useOrbitCamera")){
+void orbitManipulator(vars::Vars&vars,SDL_Event const&e){
     auto sensitivity = vars.getFloat("input.sensitivity");
     auto orbitCamera =
         vars.getReinterpret<basicCamera::OrbitCamera>("view");
@@ -125,18 +124,26 @@ void EmptyProject::mouseMove(SDL_Event const& e) {
       orbitCamera->addYPosition(-orbitCamera->getDistance() * yrel /
                                 float(windowSize->y) * 2.f);
     }
-  }else{
-    auto const xrel           = static_cast<float>(e.motion.xrel);
-    auto const yrel           = static_cast<float>(e.motion.yrel);
-    auto view = vars.get<basicCamera::FreeLookCamera>("view");
-    auto sensitivity = vars.getFloat("input.sensitivity");
-    if (e.motion.state & SDL_BUTTON_LMASK) {
-      view->setAngle(
-          1, view->getAngle(1) + xrel * sensitivity);
-      view->setAngle(
-          0, view->getAngle(0) + yrel * sensitivity);
-    }
+}
+
+void freeLookManipulator(vars::Vars&vars,SDL_Event const&e){
+  auto const xrel = static_cast<float>(e.motion.xrel);
+  auto const yrel = static_cast<float>(e.motion.yrel);
+  auto view = vars.get<basicCamera::FreeLookCamera>("view");
+  auto sensitivity = vars.getFloat("input.sensitivity");
+  if (e.motion.state & SDL_BUTTON_LMASK) {
+    view->setAngle(
+        1, view->getAngle(1) + xrel * sensitivity);
+    view->setAngle(
+        0, view->getAngle(0) + yrel * sensitivity);
   }
+}
+
+void EmptyProject::mouseMove(SDL_Event const& e) {
+  if(vars.getBool("useOrbitCamera"))
+    orbitManipulator(vars,e);
+  else
+    freeLookManipulator(vars,e);
 }
 
 void EmptyProject::resize(uint32_t x,uint32_t y){
