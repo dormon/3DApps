@@ -9,7 +9,7 @@
 #include <Barrier.h>
 #include <imguiSDL2OpenGL/imgui.h>
 #include <imguiVars.h>
-#include <DrawGrid.h>
+#include <drawGrid.h>
 #include <FreeImagePlus.h>
 
 #define ___ std::cerr << __FILE__ << " " << __LINE__ << std::endl

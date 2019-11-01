@@ -1,21 +1,22 @@
-#include <DrawGrid.h>
+#include <drawGrid.h>
 #include <Barrier.h>
 #include <geGL/geGL.h>
 #include <geGL/StaticCalls.h>
 #include <BasicCamera/FreeLookCamera.h>
 #include <BasicCamera/PerspectiveCamera.h>
+#include <makeShader.h>
 
 void createGridProgram(vars::Vars&vars){
   if(notChanged(vars,"all",__FUNCTION__,{}))return;
 
-  std::string const vsSrc = R".(
+  auto const vsSrc = R".(
   out vec2 vCoord;
   void main(){
     vCoord = vec2(-1+2*(gl_VertexID&1),-1+2*(gl_VertexID>>1));
     gl_Position = vec4(vCoord,0,1);
   }
   ).";
-  std::string const fsSrc = R".(
+  auto const fsSrc = R".(
   uniform mat4 projection;
   uniform mat4 view;
   uniform float far;
@@ -27,7 +28,9 @@ void createGridProgram(vars::Vars&vars){
     vec3 direction = normalize(pointOnFarPlane - start);
     float t = (-3-start.y)/direction.y;
     vec3 gridPosition = start + direction*t;
-    float v = pow((1-cos(mod(gridPosition.x,1.f)*3.141592*2)) * (1-cos(mod(gridPosition.z,1.f)*3.141592*2)),.1);
+    vec2 saw = abs(mod(gridPosition.xz,1)*2-1);
+
+    float v = pow(saw.x*saw.y,.1);
     if(t < 0 || length(gridPosition) > 30){
       fColor = vec4(0,0,0,1);
       return;
@@ -36,14 +39,8 @@ void createGridProgram(vars::Vars&vars){
   }
   ).";
 
-  auto vs = std::make_shared<ge::gl::Shader>(GL_VERTEX_SHADER,
-      "#version 330\n",
-      vsSrc
-      );
-  auto fs = std::make_shared<ge::gl::Shader>(GL_FRAGMENT_SHADER,
-      "#version 330\n",
-      fsSrc
-      );
+  auto vs = makeVertexShader(330,vsSrc);
+  auto fs = makeFragmentShader(330,fsSrc);
   vars.reCreate<ge::gl::Program>("gridProgram",vs,fs);
 
 }

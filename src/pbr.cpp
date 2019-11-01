@@ -8,7 +8,7 @@
 #include <Barrier.h>
 #include <imguiSDL2OpenGL/imgui.h>
 #include <imguiVars.h>
-#include <DrawGrid.h>
+#include <drawGrid.h>
 #include <addVarsLimits.h>
 
 class EmptyProject: public simple3DApp::Application{

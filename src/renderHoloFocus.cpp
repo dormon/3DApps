@@ -11,7 +11,7 @@
 #include <imguiVars.h>
 #include <glm/glm.hpp>
 #include <glm/gtc/type_ptr.hpp>
-#include <DrawGrid.h>
+#include <drawGrid.h>
 #include <FreeImagePlus.h>
 #include <addVarsLimits.h>
 #include <imguiDormon/imgui.h>

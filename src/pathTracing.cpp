@@ -8,7 +8,7 @@
 #include <Barrier.h>
 #include <imguiSDL2OpenGL/imgui.h>
 #include <imguiVars.h>
-#include <DrawGrid.h>
+#include <drawGrid.h>
 #include <Barrier.h>
 
 class PathTracing: public simple3DApp::Application{
