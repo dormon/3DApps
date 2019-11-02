@@ -10,6 +10,10 @@
 #include <imguiVars.h>
 #include <drawGrid.h>
 #include <addVarsLimits.h>
+#include <VarsGLMDecorator/VarsGLMDecorator.h>
+
+
+using DVars = VarsGLMDecorator<vars::Vars>;
 
 class EmptyProject: public simple3DApp::Application{
  public:
@@ -17,7 +21,7 @@ class EmptyProject: public simple3DApp::Application{
   virtual ~EmptyProject(){}
   virtual void draw() override;
 
-  vars::Vars vars;
+  DVars vars;
 
   virtual void                init() override;
   virtual void                mouseMove(SDL_Event const& event) override;
@@ -25,7 +29,7 @@ class EmptyProject: public simple3DApp::Application{
   virtual void                resize(uint32_t x,uint32_t y) override;
 };
 
-void createView(vars::Vars&vars){
+void createView(DVars&vars){
   if(notChanged(vars,"all",__FUNCTION__,{"useOrbitCamera"}))return;
 
   if(vars.getBool("useOrbitCamera"))
@@ -34,12 +38,12 @@ void createView(vars::Vars&vars){
     vars.reCreate<basicCamera::FreeLookCamera>("view");
 }
 
-void createProjection(vars::Vars&vars){
+void createProjection(DVars&vars){
   if(notChanged(vars,"all",__FUNCTION__,{"windowSize","camera.fovy","camera.near","camera.far"}))return;
 
-  auto windowSize = vars.get<glm::uvec2>("windowSize");
-  auto width = windowSize->x;
-  auto height = windowSize->y;
+  auto windowSize = vars.getUVec2("windowSize");
+  auto width = windowSize.x;
+  auto height = windowSize.y;
   auto aspect = (float)width/(float)height;
   auto nearv = vars.getFloat("camera.near");
   auto farv  = vars.getFloat("camera.far" );
@@ -48,7 +52,7 @@ void createProjection(vars::Vars&vars){
   vars.reCreate<basicCamera::PerspectiveCamera>("projection",fovy,aspect,nearv,farv);
 }
 
-void createCamera(vars::Vars&vars){
+void createCamera(DVars&vars){
   createProjection(vars);
   createView(vars);
 }
@@ -56,7 +60,7 @@ void createCamera(vars::Vars&vars){
 void EmptyProject::init(){
   vars.add<ge::gl::VertexArray>("emptyVao");
   vars.addFloat("input.sensitivity",0.01f);
-  vars.add<glm::uvec2>("windowSize",window->getWidth(),window->getHeight());
+  vars.addUVec2("windowSize",window->getWidth(),window->getHeight());
   vars.addFloat("camera.fovy",glm::half_pi<float>());
   vars.addFloat("camera.near",.1f);
   vars.addFloat("camera.far",1000.f);
@@ -100,11 +104,11 @@ void EmptyProject::key(SDL_Event const& event, bool DOWN) {
   keys[event.key.keysym.sym] = DOWN;
 }
 
-void orbitManipulator(vars::Vars&vars,SDL_Event const&e){
+void orbitManipulator(DVars&vars,SDL_Event const&e){
     auto sensitivity = vars.getFloat("input.sensitivity");
     auto orbitCamera =
         vars.getReinterpret<basicCamera::OrbitCamera>("view");
-    auto const windowSize     = vars.get<glm::uvec2>("windowSize");
+    auto const windowSize     = vars.getUVec2("windowSize");
     auto const orbitZoomSpeed = 0.1f;//vars.getFloat("args.camera.orbitZoomSpeed");
     auto const xrel           = static_cast<float>(e.motion.xrel);
     auto const yrel           = static_cast<float>(e.motion.yrel);
@@ -120,13 +124,13 @@ void orbitManipulator(vars::Vars&vars,SDL_Event const&e){
     }
     if (mState & SDL_BUTTON_MMASK) {
       orbitCamera->addXPosition(+orbitCamera->getDistance() * xrel /
-                                float(windowSize->x) * 2.f);
+                                float(windowSize.x) * 2.f);
       orbitCamera->addYPosition(-orbitCamera->getDistance() * yrel /
-                                float(windowSize->y) * 2.f);
+                                float(windowSize.y) * 2.f);
     }
 }
 
-void freeLookManipulator(vars::Vars&vars,SDL_Event const&e){
+void freeLookManipulator(DVars&vars,SDL_Event const&e){
   auto const xrel = static_cast<float>(e.motion.xrel);
   auto const yrel = static_cast<float>(e.motion.yrel);
   auto view = vars.get<basicCamera::FreeLookCamera>("view");
@@ -147,9 +151,9 @@ void EmptyProject::mouseMove(SDL_Event const& e) {
 }
 
 void EmptyProject::resize(uint32_t x,uint32_t y){
-  auto windowSize = vars.get<glm::uvec2>("windowSize");
-  windowSize->x = x;
-  windowSize->y = y;
+  auto&windowSize = vars.getUVec2("windowSize");
+  windowSize.x = x;
+  windowSize.y = y;
   vars.updateTicks("windowSize");
   ge::gl::glViewport(0,0,x,y);
 }
