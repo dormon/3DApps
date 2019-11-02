@@ -74,9 +74,9 @@ void EmptyProject::draw(){
   else{
     auto freeView = vars.get<basicCamera::FreeLookCamera>("view");
     float freeCameraSpeed = 0.01f;
-    auto keys = vars.get<std::map<SDL_Keycode, bool>>("input.keyDown");
+    auto& keys = vars.getMap<SDL_Keycode, bool>("input.keyDown");
     for (int a = 0; a < 3; ++a)
-      freeView->move(a, float((*keys)["d s"[a]] - (*keys)["acw"[a]]) *
+      freeView->move(a, float(keys["d s"[a]] - keys["acw"[a]]) *
                             freeCameraSpeed);
     view = freeView;
   }
@@ -96,8 +96,8 @@ void EmptyProject::draw(){
 }
 
 void EmptyProject::key(SDL_Event const& event, bool DOWN) {
-  auto keys = vars.get<std::map<SDL_Keycode, bool>>("input.keyDown");
-  (*keys)[event.key.keysym.sym] = DOWN;
+  auto&keys = vars.getMap<SDL_Keycode, bool>("input.keyDown");
+  keys[event.key.keysym.sym] = DOWN;
 }
 
 void orbitManipulator(vars::Vars&vars,SDL_Event const&e){
