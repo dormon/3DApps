@@ -60,7 +60,7 @@ void EmptyProject::init(){
   vars.addFloat("camera.fovy",glm::half_pi<float>());
   vars.addFloat("camera.near",.1f);
   vars.addFloat("camera.far",1000.f);
-  vars.add<std::map<SDL_Keycode, bool>>("input.keyDown");
+  vars.addMap<SDL_Keycode, bool>("input.keyDown");
   vars.addBool("useOrbitCamera",false);
   createCamera(vars);
 }
