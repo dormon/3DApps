@@ -8,7 +8,7 @@
 #include <BasicCamera/OrbitCamera.h>
 #include <Barrier.h>
 #include <imguiSDL2OpenGL/imgui.h>
-#include <imguiVars.h>
+#include <imguiVars/imguiVars.h>
 #include <drawGrid.h>
 #include <FreeImagePlus.h>
 

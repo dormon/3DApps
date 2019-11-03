@@ -4,8 +4,8 @@
 #include <geGL/geGL.h>
 #include <Barrier.h>
 #include <imguiSDL2OpenGL/imgui.h>
-#include <imguiVars.h>
-#include <addVarsLimits.h>
+#include <imguiVars/imguiVars.h>
+#include <imguiVars/addVarsLimits.h>
 #include <glm/glm.hpp>
 #include <glm/gtc/type_ptr.hpp>
 #include<assimp/cimport.h>

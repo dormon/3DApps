@@ -4,9 +4,9 @@
 #include <SDL2CPP/MainLoop.h>
 #include <SDL2CPP/Window.h>
 #include <imguiSDL2OpenGL/imgui.h>
-#include <imguiVars.h>
+#include <imguiVars/imguiVars.h>
 #include <Barrier.h>
-#include <addVarsLimits.h>
+#include <imguiVars/addVarsLimits.h>
 #include <glm/glm.hpp>
 #include <sstream>
 

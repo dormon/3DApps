@@ -3,8 +3,8 @@
 #include <geGL/StaticCalls.h>
 #include <geGL/geGL.h>
 #include <imguiSDL2OpenGL/imgui.h>
-#include <imguiVars.h>
-#include <addVarsLimits.h>
+#include <imguiVars/imguiVars.h>
+#include <imguiVars/addVarsLimits.h>
 #include <glm/glm.hpp>
 
 class EmptyProject: public simple3DApp::Application{

@@ -7,9 +7,9 @@
 #include <BasicCamera/OrbitCamera.h>
 #include <Barrier.h>
 #include <imguiSDL2OpenGL/imgui.h>
-#include <imguiVars.h>
+#include <imguiVars/imguiVars.h>
+#include <imguiVars/addVarsLimits.h>
 #include <drawGrid.h>
-#include <addVarsLimits.h>
 
 class EmptyProject: public simple3DApp::Application{
  public:

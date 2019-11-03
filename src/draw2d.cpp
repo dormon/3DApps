@@ -4,7 +4,7 @@
 #include <geGL/geGL.h>
 #include <Barrier.h>
 #include <imguiSDL2OpenGL/imgui.h>
-#include <imguiVars.h>
+#include <imguiVars/imguiVars.h>
 #include <glm/glm.hpp>
 
 class EmptyProject: public simple3DApp::Application{

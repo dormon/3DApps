@@ -4,7 +4,7 @@
 #include <geGL/geGL.h>
 #include <Barrier.h>
 #include <imguiSDL2OpenGL/imgui.h>
-#include <imguiVars.h>
+#include <imguiVars/imguiVars.h>
 #include <sstream>
 #include <Timer.h>
 #include <glm/glm.hpp>

@@ -8,8 +8,8 @@
 #include <BasicCamera/OrbitCamera.h>
 #include<Barrier.h>
 #include<imguiSDL2OpenGL/imgui.h>
-#include<imguiVars.h>
-#include<DrawGrid.h>
+#include<imguiVars/imguiVars.h>
+#include<drawGrid.h>
 /*#include <assimp/Importer.hpp>
 #include <assimp/scene.h>*/
 #include <SDL2CPP/Exception.h>

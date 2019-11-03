@@ -8,15 +8,14 @@
 #include <BasicCamera/OrbitCamera.h>
 #include <Barrier.h>
 #include <imguiSDL2OpenGL/imgui.h>
-#include <imguiVars.h>
+#include <imguiVars/imguiVars.h>
+#include <imguiVars/addVarsLimits.h>
 #include <glm/glm.hpp>
 #include <glm/gtc/type_ptr.hpp>
 #include <drawGrid.h>
 #include <FreeImagePlus.h>
-#include <addVarsLimits.h>
 #include <imguiDormon/imgui.h>
 #include <drawBunny.h>
-#include <addVarsLimits.h>
 
 #define ___ std::cerr << __FILE__ << " " << __LINE__ << std::endl
 
