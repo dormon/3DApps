@@ -32,6 +32,8 @@ find_package(k4a           QUIET)
 find_package(OpenCV        QUIET)
 find_package(PCL           QUIET)
 find_package(libusb-1.0    QUIET)
+find_package(Threads       QUIET)
+find_package(OpenCL        QUIET)
 
 set(SOURCES
   )
@@ -42,10 +44,12 @@ set(INCLUDES
 
 include(CMakeUtils.cmake)
 
-createTargetForBadLibrary(cv     "${OpenCV_LIBS}"      "${OpenCV_INCLUDE_DIRS}"  )
-createTargetForBadLibrary(pcl    "${PCL_LIBRARIES}"    "${PCL_INCLUDE_DIRS}"     )
-createTargetForBadLibrary(libusb "${LIBUSB_1_LIBRARY}" "${LIBUSB_1_INCLUDE_DIRS}")
-createTargetForBadLibrary(ffmpeg "${FFMPEG_LIBRARIES}" "${FFMPEG_INCLUDE_DIRS}"  )
+createTargetForBadLibrary(cv      "${OpenCV_LIBS}"            "${OpenCV_INCLUDE_DIRS}"  )
+createTargetForBadLibrary(pcl     "${PCL_LIBRARIES}"          "${PCL_INCLUDE_DIRS}"     )
+createTargetForBadLibrary(libusb  "${LIBUSB_1_LIBRARY}"       "${LIBUSB_1_INCLUDE_DIRS}")
+createTargetForBadLibrary(ffmpeg  "${FFMPEG_LIBRARIES}"       "${FFMPEG_INCLUDE_DIRS}"  )
+createTargetForBadLibrary(OpenCL  "${OpenCL_LIBRARY}"         "${OpenCL_INCLUDE_DIR}"   )
+createTargetForBadLibrary(Threads "${CMAKE_THREAD_LIBS_INIT}" ""                        )
 
 addHeaderLibrary(timer            "")
 addObjectLibrary(barrier          "src/Barrier.cpp;src/Barrier.h"                                               "Vars::Vars"                                                                            )
@@ -60,9 +64,9 @@ addObjectLibrary(drawFace         "src/drawFace.cpp;src/bunny.h;src/bunny.c"    
 addObjectLibrary(gpuDecoder       "src/gpuDecoder.h;src/gpuDecoder.cpp"                                         "ffmpeg;Simple3DApp::Simple3DApp"                                                       )
 #addApp(gameOfLife src/gameOfLife.cpp)
 #addApp2(spirv "src/spirv.cpp" "")
-addApp2(emptyProject                          "src/emptyProject.cpp"                          "Simple3DApp::Simple3DApp;drawGrid;imguiVars::imguiVars;VarsGLMDecorator")
+addApp2(emptyProject                          "src/emptyProject.cpp"                          "Simple3DApp::Simple3DApp;drawGrid;imguiVars::imguiVars;VarsGLMDecorator::VarsGLMDecorator")
 addApp2(openglTest                            "src/openglTest.cpp"                            "SDL2::SDL2;SDL2::SDL2main;geGL::geGL")
-addApp2(heatUp                            "src/heatUp.cpp"                            "SDL2::SDL2;SDL2::SDL2main;geGL::geGL")
+addApp2(heatUp                                "src/heatUp.cpp"                                "OpenCL;Threads")
 addApp2(pbr                                   "src/pbr.cpp"                                   "Simple3DApp::Simple3DApp;drawGrid;imguiVars::imguiVars")
 addApp2(drawVars                              "src/drawVars.cpp"                              "Simple3DApp::Simple3DApp;imguiVars::imguiVars")
 addApp2(pathTracing                           "src/pathTracing.cpp"                           "Simple3DApp::Simple3DApp;drawGrid;imguiVars::imguiVars")
