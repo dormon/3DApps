@@ -1,21 +1,41 @@
-#include <Simple3DApp/Application.h>
+#include <SDL.h>
 #include <ArgumentViewer/ArgumentViewer.h>
-#include <TxtUtils/TxtUtils.h>
 #include <geGL/StaticCalls.h>
 #include <geGL/geGL.h>
 #include <Timer.h>
 #include <iomanip>
-
-class CSCompiler: public simple3DApp::Application{
- public:
-  CSCompiler(int argc, char* argv[]) : Application(argc, argv) {}
-  virtual ~CSCompiler(){}
-};
+#include <functional>
 
 using namespace ge::gl;
 
 int main(int argc,char*argv[]){
-  CSCompiler app{argc, argv};
+  uint32_t version = 430;
+  if(SDL_Init(SDL_INIT_EVERYTHING)<0)
+    throw std::runtime_error(SDL_GetError());
+  auto window = SDL_CreateWindow("", SDL_WINDOWPOS_CENTERED,SDL_WINDOWPOS_CENTERED, 512, 512, SDL_WINDOW_OPENGL|SDL_WINDOW_HIDDEN);
+  if(!window)
+    throw std::runtime_error(SDL_GetError());
+  if (SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, version / 100) < 0){
+    throw std::runtime_error(SDL_GetError());
+    std::cerr << SDL_GetError() << std::endl;
+    SDL_DestroyWindow(window);
+    return 0;
+  }
+  if (SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, (version % 100) / 10) < 0){
+    std::cerr << SDL_GetError() << std::endl;
+    SDL_DestroyWindow(window);
+    return 0;
+  }
+  auto ctx = SDL_GL_CreateContext(window);
+  if(!ctx){
+    std::cerr << SDL_GetError() << std::endl;
+    SDL_DestroyWindow(window);
+    return 0;
+  }
+
+
+  ge::gl::init();
+
 
   auto args = std::make_shared<argumentViewer::ArgumentViewer>(argc,argv);
   auto N = args->getu64("-N",10,"how many times are tests executed");
