@@ -64,12 +64,12 @@ int main(int argc,char*argv[]){
     ss << "layout(binding=0)buffer Data{uint data[];};\n";
     ss << "void main(){\n";
     ss << "  uint wid = gl_WorkGroupID.y * gl_NumWorkGroups.x + gl_WorkGroupID.x;\n";
-    ss << "  uint N = data[gl_WorkGroupID.x];\n";
+    ss << "  uint N = data[wid];\n";
     ss << "  uint counter = 0;\n";
     ss << "  for(uint i=0;i<N&&i<10000;++i)\n";
-    ss << "    counter += i;\n";
+    ss << "    counter += N*counter;\n";
     ss << "  if(counter == 1337)\n";
-    ss << "    data[gl_GlobalInvocationID.x] = 100;\n";
+    ss << "    data[wid] = 100;\n";
     ss << "}\n";
     auto prg = std::make_shared<ge::gl::Program>(std::make_shared<ge::gl::Shader>(GL_COMPUTE_SHADER,ss.str()));
 
@@ -98,9 +98,16 @@ int main(int argc,char*argv[]){
     prg->use();
     glFinish();
     timer.reset();
-    for(size_t i=0;i<N;++i)
+    for(size_t i=0;i<N;++i){
       prg->dispatch(WORKGROUPS/1024,1024,1);
-    glFinish();
+      glFinish();
+    }
+
+    //std::vector<uint32_t>aa;
+    //buf->getData(aa);
+    //for(int i=0;i<10;++i)
+    //  std::cerr << aa[i] << " ";
+    //std::cerr << std::endl;
     auto time = timer.elapsedFromStart()/N;
     size_t const alignLen = 60;
     size_t nofSpaces = alignLen >= nname.size()? alignLen - nname.size() : 0;
@@ -110,6 +117,7 @@ int main(int argc,char*argv[]){
     std::cerr << ": " << std::fixed << std::setprecision(5) << time;
     if(full != 0.f && active != 0.f){
         std::cerr << " active : " << std::setfill(' ') << std::setw(6) << std::setprecision(2) << active*100 << "%";
+        std::cerr << " 1/" << std::setfill(' ') << std::setw(2) << (uint32_t)roundf(1.f/active);
         std::cerr << " time   : " << std::setfill(' ') << std::setw(6) << std::setprecision(2) << (time/full)*100 << "%";
         float dist = (1-time/(full*active));
         if(dist < 0)dist*=-1;
