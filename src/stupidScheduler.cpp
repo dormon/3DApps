@@ -55,7 +55,7 @@ int main(int argc,char*argv[]){
   buf->bindBase(GL_SHADER_STORAGE_BUFFER,0);
 
 
-  auto const measure = [&](std::string const&name,size_t wgs,std::function<bool(size_t)>const&isActive,float full=0.f){
+  auto const measure = [&](size_t wgs,std::function<bool(size_t)>const&isActive,float full=0.f){
     std::stringstream ss;
     ss << "#version 450" << std::endl;
 
@@ -119,28 +119,17 @@ int main(int argc,char*argv[]){
     std::cerr << std::endl;
     return time;
   };
-#define MEASURE(name,WGS,...) measure(name,WGS,__VA_ARGS__)
+#define MEASURE(WGS,...) measure(WGS,__VA_ARGS__)
 
-  MEASURE("warm up",64,[](size_t){return true;},0.f);
+  MEASURE(64,[](size_t){return true;},0.f);
 
   auto measureWGS = [&](size_t WGS){
-    auto full = MEASURE("|****|",WGS,[](size_t){return true;},0.f);
-    MEASURE("|*.|"                                     ,WGS,[](size_t w){return(w%2)     ==0;},full);
-    MEASURE("|*...|"                                   ,WGS,[](size_t w){return(w%4)     ==0;},full);
-    MEASURE("|*...|....|"                              ,WGS,[](size_t w){return(w%8)     ==0;},full);
-    MEASURE("|*...|....|....|....|"                    ,WGS,[](size_t w){return(w%16)    ==0;},full);
-    MEASURE("|*...|....|....|....|....|....|....|....|",WGS,[](size_t w){return(w%32)    ==0;},full);
-    MEASURE("|.*..|"                                   ,WGS,[](size_t w){return(w%4)     ==1;},full);
-    MEASURE("|****|....|****|....|"                    ,WGS,[](size_t w){return((w/4)%2) ==0;},full);
-    MEASURE("|****|****|....|....|"                    ,WGS,[](size_t w){return((w/8)%2) ==0;},full);
-    MEASURE("|****|****|****|****|....|....|....|...|" ,WGS,[](size_t w){return((w/16)%2)==0;},full);
-    MEASURE("40 out of 80"                             ,WGS,[](size_t w){return((w/40)%2)==0;},full);
-    MEASURE("20 out of 40"                             ,WGS,[](size_t w){return((w/20)%2)==0;},full);
-    MEASURE("10 out of 20"                             ,WGS,[](size_t w){return((w/10)%2)==0;},full);
-    MEASURE("5 out of 10"                              ,WGS,[](size_t w){return((w/5)%2) ==0;},full);
-    MEASURE("1 out of 10"                              ,WGS,[](size_t w){return(w%10)    ==0;},full);
-    MEASURE("1 out of 5"                               ,WGS,[](size_t w){return(w%5)     ==0;},full);
-    MEASURE("1 out of 3"                               ,WGS,[](size_t w){return(w%3)     ==0;},full);
+    auto full = MEASURE(WGS,[](size_t){return true;},0.f);
+    MEASURE(WGS,[](size_t w){return(w%4)     ==1;},full);
+    for(size_t i=1;i<=40;++i)
+      MEASURE(WGS,[&](size_t w){return((w/i )%2)==0;},full);
+    for(size_t i=1;i<=16;++i)
+      MEASURE(WGS,[&](size_t w){return(w%i )    ==0;},full);
   };
 
   measureWGS(WGS);
