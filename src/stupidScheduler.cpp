@@ -5,6 +5,7 @@
 #include <Timer.h>
 #include <iomanip>
 #include <functional>
+#include <sstream>
 
 using namespace ge::gl;
 
