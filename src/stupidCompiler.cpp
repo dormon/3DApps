@@ -138,7 +138,7 @@ int main(int argc,char*argv[]){
   #define DUP4096(x) DUP2048(x) DUP2048(x)
 
   void main(){
-    const uint sw[] = {
+    const uint sw[10] = {
     6,
     2,
     3,
@@ -193,6 +193,47 @@ int main(int argc,char*argv[]){
 
     uint a = 3;
     DUP4096(a = sw[a];)
+      
+    data[gl_GlobalInvocationID.x] = a;
+  }
+  ).");}
+
+  {MEASURE("reading from const array",R".(
+  layout(local_size_x=256)in;
+
+  layout(binding=0)buffer Data{uint data[];};
+
+  #define DUP0(x) x x
+  #define DUP1(x) DUP0(x) DUP0(x)
+  #define DUP2(x) DUP1(x) DUP1(x)
+  #define DUP4(x) DUP2(x) DUP2(x)
+  #define DUP8(x) DUP4(x) DUP4(x)
+  #define DUP16(x) DUP8(x) DUP8(x)
+  #define DUP32(x) DUP16(x) DUP16(x)
+  #define DUP64(x) DUP32(x) DUP32(x)
+  #define DUP128(x) DUP64(x) DUP64(x)
+  #define DUP256(x) DUP128(x) DUP128(x)
+  #define DUP512(x) DUP256(x) DUP256(x)
+  #define DUP1024(x) DUP512(x) DUP512(x)
+  #define DUP2048(x) DUP1024(x) DUP1024(x)
+  #define DUP4096(x) DUP2048(x) DUP2048(x)
+
+  void main(){
+    const uint sw[10] = {
+    6,
+    2,
+    3,
+    7,
+    0,
+    8,
+    9,
+    1,
+    4,
+    5,
+    };
+
+    uint a = 3;
+    DUP4096(a+=sw[3];a+=sw[8];a+=sw[3];a+=sw[1];a+=sw[0];)
       
     data[gl_GlobalInvocationID.x] = a;
   }
