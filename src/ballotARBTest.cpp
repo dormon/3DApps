@@ -85,9 +85,11 @@ int main(int argc,char*argv[]){
       d &= uint64_t(0xFF00FF00FF00FF00ul);
       data[6] = unpackUint2x32(d)[0];
       data[7] = unpackUint2x32(d)[1];
+      data[8] = uint(d != 0);
+      data[9] = uint(d != 0);
       d >>= 40;
-      data[8] = unpackUint2x32(d)[0];
-      data[9] = unpackUint2x32(d)[1];
+      data[10] = unpackUint2x32(d)[0];
+      data[11] = unpackUint2x32(d)[1];
       //data[10] = findLSB(d);
       //data[11] = findMSB(d);
       //data[12] = bitCount(d);
