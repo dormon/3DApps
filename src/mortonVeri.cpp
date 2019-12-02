@@ -220,8 +220,8 @@ uint morton(uvec3 v){
     uvec3 pos = uvec3(gl_GlobalInvocationID.xyz);
     uvec3 apos = pos;
     uvec3 bpos = pos;
-    uint mm0 = morton(apos);
-    uint mm1 = morton2(bpos);
+    uint mm0 = morton(apos/uvec3(TILE_X,TILE_Y,1));
+    uint mm1 = morton2(bpos/uvec3(TILE_X,TILE_Y,1));
     if(mm0 != mm1){
       uint w = atomicAdd(counter[0],1);
       if(w < 1000){
