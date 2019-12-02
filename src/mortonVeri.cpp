@@ -18,18 +18,32 @@ using namespace ge::gl;
 int main(int argc,char*argv[]){
   CSCompiler app{argc, argv};
 
+  auto args = std::make_shared<argumentViewer::ArgumentViewer>(argc,argv);
+  uint32_t const WINDOW_X = args->getu32("-WX",512,"windowX size");
+  uint32_t const WINDOW_Y = args->getu32("-WY",512,"windowY size");
+  uint32_t const MIN_Z_BITS = args->getu32("-MZ",9u,"min Z bits");
+  bool printHelp = args->isPresent("-h", "prints this help");
+  if (printHelp || !args->validate()) {
+    std::cerr << args->toStr();
+    exit(0);
+  }
+
   auto wrong = std::make_shared<ge::gl::Buffer>(sizeof(uint32_t)*1000*5);
   wrong->bindBase(GL_SHADER_STORAGE_BUFFER,0);
 
   auto counter = std::make_shared<ge::gl::Buffer>(sizeof(uint32_t));
   counter->bindBase(GL_SHADER_STORAGE_BUFFER,1);
  
-  uint32_t const WARP       = 64u ;
-  uint32_t const WINDOW_X   = 512u;
-  uint32_t const WINDOW_Y   = 512u;
-  uint32_t const MIN_Z_BITS = 9u  ;
   uint32_t const TILE_X     = 8u  ;
   uint32_t const TILE_Y     = 8u  ;
+
+  auto max = [](uint32_t y,uint32_t x){return x>y?x:y;};
+  const uint32_t clustersX     = uint((WINDOW_X)/(TILE_X)) + uint(((WINDOW_X)%(TILE_X)) != 0u);
+  const uint32_t clustersY     = uint((WINDOW_Y)/(TILE_Y)) + uint(((WINDOW_Y)%(TILE_Y)) != 0u);
+  const uint32_t xBits         = uint(ceil(log2(float(clustersX))));
+  const uint32_t yBits         = uint(ceil(log2(float(clustersY))));
+  const uint32_t zBits         = (MIN_Z_BITS)>0u?(MIN_Z_BITS):max(max(xBits,yBits),(MIN_Z_BITS));
+  const uint32_t clustersZ = 1u << zBits;
 
   std::stringstream ss;
   ss << "#version 450" << std::endl;
@@ -37,37 +51,36 @@ int main(int argc,char*argv[]){
 
 
   ss << "#line " << __LINE__ << std::endl;
-  ss << "layout(local_size_x=16,local_size_y=16,local_size_z=1)in;" << std::endl;
+  ss << "layout(local_size_x=8,local_size_y=8,local_size_z=8)in;" << std::endl;
   ss << "layout(binding=0)buffer Wrong   {uint wrong   [];};" << std::endl;
   ss << "layout(binding=1)buffer Counter {uint counter [];};" << std::endl;
 
-  ss << "#define WARP     " << WARP       << "u" << std::endl;
-  ss << "#define WINDOW_X " << WINDOW_X   << "u" << std::endl;
-  ss << "#define WINDOW_Y " << WINDOW_Y   << "u" << std::endl;
-  ss << "#define TILE_X   " << TILE_X     << "u" << std::endl;
-  ss << "#define TILE_Y   " << TILE_Y     << "u" << std::endl;
-  ss << "#define MIN_Z    " << MIN_Z_BITS << "u" << std::endl;
+  ss << "#define WINDOW_X   " << WINDOW_X   << "u" << std::endl;
+  ss << "#define WINDOW_Y   " << WINDOW_Y   << "u" << std::endl;
+  ss << "#define TILE_X     " << TILE_X     << "u" << std::endl;
+  ss << "#define TILE_Y     " << TILE_Y     << "u" << std::endl;
+  ss << "#define MIN_Z_BITS " << MIN_Z_BITS << "u" << std::endl;
 
   ss << R".(
-#ifndef WINDOW_X
-#define WINDOW_X 512
-#endif//WINDOW_X
-
-#ifndef WINDOW_Y
-#define WINDOW_Y 512
-#endif//WINDOW_Y
-
-#ifndef TILE_X
-#define TILE_X 8
-#endif//TILE_X
-
-#ifndef TILE_Y
-#define TILE_Y 8
-#endif//TILE_Y
-
-#ifndef MIN_Z_BITS
-#define MIN_Z_BITS 9
-#endif//MIN_Z_BITS
+//#ifndef WINDOW_X
+//#define WINDOW_X 512
+//#endif//WINDOW_X
+//
+//#ifndef WINDOW_Y
+//#define WINDOW_Y 512
+//#endif//WINDOW_Y
+//
+//#ifndef TILE_X
+//#define TILE_X 8
+//#endif//TILE_X
+//
+//#ifndef TILE_Y
+//#define TILE_Y 8
+//#endif//TILE_Y
+//
+//#ifndef MIN_Z_BITS
+//#define MIN_Z_BITS 9
+//#endif//MIN_Z_BITS
 
 // m - length of 3 bits together
 // n - length of 2 bits together
@@ -130,7 +143,7 @@ uint morton(uvec3 v){
   const uint shortestY     = uint(shortestAxis == 1u);
   const uint longestZ      = uint(longestAxis == 2u);
   const uint longestX      = uint(longestAxis == 0u);
-  const uint isMiddle      = uint(middle > 0u);
+  const uint isMiddle      = uint(bits2Length > 0u);
   const uint isLongest     = uint(longest > 0u);
   const uint bits2Shifts   = uint(uint(bits2Length - uint(shortestZ | (shortestY & longestZ))) * isMiddle);
 
@@ -218,10 +231,11 @@ uint morton(uvec3 v){
   ss << R".(
   void main(){
     uvec3 pos = uvec3(gl_GlobalInvocationID.xyz);
+    
     uvec3 apos = pos;
     uvec3 bpos = pos;
-    uint mm0 = morton(apos/uvec3(TILE_X,TILE_Y,1));
-    uint mm1 = morton2(bpos/uvec3(TILE_X,TILE_Y,1));
+    uint mm0 = morton (apos);
+    uint mm1 = morton2(bpos);
     if(mm0 != mm1){
       uint w = atomicAdd(counter[0],1);
       if(w < 1000){
@@ -242,7 +256,8 @@ uint morton(uvec3 v){
   glFinish();
 
   prg->use();
-  glDispatchCompute(512/16,512/16,512);
+  auto divRoundUp = [](uint32_t x,uint32_t y){return (x/y) + (uint32_t)(x%y>0);};
+  glDispatchCompute(divRoundUp(clustersX,8),divRoundUp(clustersY,8),divRoundUp(clustersZ,8));
   glFinish();
 
   std::vector<uint32_t>wData;
@@ -251,7 +266,6 @@ uint morton(uvec3 v){
   counter->getData(cData);
 
 
-  auto max = [](uint32_t y,uint32_t x){return x>y?x:y;};
   auto mortonCPU =[&](uint32_t v[3]){
     const uint clustersX     = uint(WINDOW_X/TILE_X) + uint(WINDOW_X%TILE_X != 0u);
     const uint clustersY     = uint(WINDOW_Y/TILE_Y) + uint(WINDOW_Y%TILE_Y != 0u);
@@ -279,10 +293,10 @@ uint morton(uvec3 v){
   };
 
   std::cerr << "counter: " << cData[0] << std::endl;
-  for(size_t i=0;i<100;++i){
+  for(size_t i=0;i<100&&i<cData[0];++i){
     uint32_t v[3];
-    v[0] = wData[i*5+0]/TILE_X;
-    v[1] = wData[i*5+1]/TILE_Y;
+    v[0] = wData[i*5+0];
+    v[1] = wData[i*5+1];
     v[2] = wData[i*5+2];
 
     std::cerr << "x: ";
