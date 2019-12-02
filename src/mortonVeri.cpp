@@ -4,6 +4,8 @@
 #include <geGL/StaticCalls.h>
 #include <geGL/geGL.h>
 #include <Timer.h>
+#include <bitset>
+#include <iomanip>
 
 class CSCompiler: public simple3DApp::Application{
  public:
@@ -16,12 +18,11 @@ using namespace ge::gl;
 int main(int argc,char*argv[]){
   CSCompiler app{argc, argv};
 
-  std::vector<uint32_t>inputData(1000*5);
-  auto wrong = std::make_shared<ge::gl::Buffer>(inputData);
+  auto wrong = std::make_shared<ge::gl::Buffer>(sizeof(uint32_t)*1000*5);
   wrong->bindBase(GL_SHADER_STORAGE_BUFFER,0);
 
   auto counter = std::make_shared<ge::gl::Buffer>(sizeof(uint32_t));
-  wrong->bindBase(GL_SHADER_STORAGE_BUFFER,1);
+  counter->bindBase(GL_SHADER_STORAGE_BUFFER,1);
  
   uint32_t const WARP       = 64u ;
   uint32_t const WINDOW_X   = 512u;
@@ -36,13 +37,15 @@ int main(int argc,char*argv[]){
 
 
   ss << "#line " << __LINE__ << std::endl;
-  ss << "layout(local_size_x=16,local_size_y=16)in;" << std::endl;
+  ss << "layout(local_size_x=16,local_size_y=16,local_size_z=1)in;" << std::endl;
   ss << "layout(binding=0)buffer Wrong   {uint wrong   [];};" << std::endl;
   ss << "layout(binding=1)buffer Counter {uint counter [];};" << std::endl;
 
   ss << "#define WARP     " << WARP       << "u" << std::endl;
   ss << "#define WINDOW_X " << WINDOW_X   << "u" << std::endl;
   ss << "#define WINDOW_Y " << WINDOW_Y   << "u" << std::endl;
+  ss << "#define TILE_X   " << TILE_X     << "u" << std::endl;
+  ss << "#define TILE_Y   " << TILE_Y     << "u" << std::endl;
   ss << "#define MIN_Z    " << MIN_Z_BITS << "u" << std::endl;
 
   ss << R".(
@@ -215,8 +218,10 @@ uint morton(uvec3 v){
   ss << R".(
   void main(){
     uvec3 pos = uvec3(gl_GlobalInvocationID.xyz);
-    uint mm0 = morton(pos);
-    uint mm1 = morton2(pos);
+    uvec3 apos = pos;
+    uvec3 bpos = pos;
+    uint mm0 = morton(apos);
+    uint mm1 = morton2(bpos);
     if(mm0 != mm1){
       uint w = atomicAdd(counter[0],1);
       if(w < 1000){
@@ -234,6 +239,7 @@ uint morton(uvec3 v){
 
   counter->clear(GL_R32UI,GL_RED_INTEGER,GL_UNSIGNED_INT);
   wrong->clear(GL_R32UI,GL_RED_INTEGER,GL_UNSIGNED_INT);
+  glFinish();
 
   prg->use();
   glDispatchCompute(512/16,512/16,512);
@@ -244,8 +250,15 @@ uint morton(uvec3 v){
   wrong->getData(wData);
   counter->getData(cData);
 
-  for(size_t i=0;i<10;++i){
-    std::cerr << "x: " << wData[i*5+0] << " y: " << wData[i*5+1] << " z: " << wData[i*5+2] << " - m: " << wData[i*5+3] << " m2: " << wData[i*5+4] << std::endl;
+  std::cerr << "counter: " << cData[0] << std::endl;
+  for(size_t i=0;i<100;++i){
+    std::cerr << "x: ";
+    std::cerr << std::setw(4) << std::setfill(' ') << wData[i*5+0] << " " << std::bitset<10>(wData[i*5+0]);
+    std::cerr << " y: ";
+    std::cerr << std::setw(4) << std::setfill(' ') << wData[i*5+1] << " " << std::bitset<10>(wData[i*5+1]);
+    std::cerr << " z: ";
+    std::cerr << std::setw(4) << std::setfill(' ') << wData[i*5+2] << " " << std::bitset<10>(wData[i*5+2]);
+    std::cerr << " - m: " << std::bitset<32>(wData[i*5+3]) << " m2: " << std::bitset<32>(wData[i*5+4]) << std::endl;
   }
 
 
