@@ -144,7 +144,7 @@ uint morton(uvec3 v){
   const uint longestZ      = uint(longestAxis == 2u);
   const uint longestX      = uint(longestAxis == 0u);
   const uint isMiddle      = uint(bits2Length > 0u);
-  const uint isLongest     = uint(longest > 0u);
+  const uint isLongest     = uint(bits1Length > 0u);
   const uint bits2Shifts   = uint(uint(bits2Length - uint(shortestZ | (shortestY & longestZ))) * isMiddle);
 
   const uint bits2OffsetB   = bits3Length*3u + shortestAxis;
@@ -257,6 +257,9 @@ uint morton(uvec3 v){
 
   prg->use();
   auto divRoundUp = [](uint32_t x,uint32_t y){return (x/y) + (uint32_t)(x%y>0);};
+  std::cerr << "clustersX: " << divRoundUp(clustersX,8)<< std::endl;
+  std::cerr << "clustersY: " << divRoundUp(clustersY,8)<< std::endl;
+  std::cerr << "clustersZ: " << divRoundUp(clustersZ,8)<< std::endl;
   glDispatchCompute(divRoundUp(clustersX,8),divRoundUp(clustersY,8),divRoundUp(clustersZ,8));
   glFinish();
 
