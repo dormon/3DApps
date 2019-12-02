@@ -250,15 +250,46 @@ uint morton(uvec3 v){
   wrong->getData(wData);
   counter->getData(cData);
 
+
+  auto max = [](uint32_t y,uint32_t x){return x>y?x:y;};
+  auto mortonCPU =[&](uint32_t v[3]){
+    const uint clustersX     = uint(WINDOW_X/TILE_X) + uint(WINDOW_X%TILE_X != 0u);
+    const uint clustersY     = uint(WINDOW_Y/TILE_Y) + uint(WINDOW_Y%TILE_Y != 0u);
+    const uint xBits         = uint(ceil(log2(float(clustersX))));
+    const uint yBits         = uint(ceil(log2(float(clustersY))));
+    const uint zBits         = MIN_Z_BITS>0?MIN_Z_BITS:max(max(xBits,yBits),MIN_Z_BITS);
+    const uint allBits = xBits + yBits + zBits;
+
+    uint res = 0;
+    uint xb[3] = {0,0,0};
+    uint mb[3] = {xBits,yBits,zBits};
+    uint a = 0;
+    for(uint b=0;b<allBits;++b){
+      res |= ((v[a]>>xb[a])&1u) << b;
+      xb[a]++;
+      a = (a+1u)%3u;
+      if(xb[a] >= mb[a])a = (a+1u)%3u;
+      if(xb[a] >= mb[a])a = (a+1u)%3u;
+    }
+    return res;
+  };
+
   std::cerr << "counter: " << cData[0] << std::endl;
   for(size_t i=0;i<100;++i){
+    uint32_t v[3];
+    v[0] = wData[i*5+0];
+    v[1] = wData[i*5+1];
+    v[2] = wData[i*5+2];
+
     std::cerr << "x: ";
-    std::cerr << std::setw(4) << std::setfill(' ') << wData[i*5+0] << " " << std::bitset<10>(wData[i*5+0]);
+    std::cerr << std::setw(4) << std::setfill(' ') << v[0] << " " << std::bitset<10>(v[0]);
     std::cerr << " y: ";
-    std::cerr << std::setw(4) << std::setfill(' ') << wData[i*5+1] << " " << std::bitset<10>(wData[i*5+1]);
+    std::cerr << std::setw(4) << std::setfill(' ') << v[1] << " " << std::bitset<10>(v[1]);
     std::cerr << " z: ";
-    std::cerr << std::setw(4) << std::setfill(' ') << wData[i*5+2] << " " << std::bitset<10>(wData[i*5+2]);
-    std::cerr << " - m: " << std::bitset<32>(wData[i*5+3]) << " m2: " << std::bitset<32>(wData[i*5+4]) << std::endl;
+    std::cerr << std::setw(4) << std::setfill(' ') << v[2] << " " << std::bitset<10>(v[2]);
+    std::cerr << " - m: " << std::bitset<32>(wData[i*5+3]) << " m2: " << std::bitset<32>(wData[i*5+4]);
+    std::cerr << " mc: " << std::bitset<32>(mortonCPU(v)) << std::endl;;
+
   }
 
 
