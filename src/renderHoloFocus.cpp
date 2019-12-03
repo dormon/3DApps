@@ -354,7 +354,7 @@ void createHoloProgram(vars::Vars&vars){
   		nuv.z = fract(nuv.z);
   		nuv.z = (1.0 - nuv.z);
       if(drawOnlyOneImage == 1){
-        if(uint(nuv.z *tile.z) == selectedView)
+        if(uint(nuv.z *tile.z) == selectedView || uint(nuv.z *tile.z) == 19)
   		    rgb[i] = texture(screenTex, texArr(nuv));
         else
           rgb[i] = vec4(0);
