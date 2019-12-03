@@ -332,9 +332,10 @@ void createHoloProgram(vars::Vars&vars){
   vec2 texArr(vec3 uvz)
   {
       // decide which section to take from based on the z.
-      
+ 
+
       float z = floor(uvz.z * tile.z);
-      float focusMod = focus*(1-2*clamp(uvz.z,0,1));
+      float focusMod = focus*(1-2*clamp(z/tile.z,0,1));
       float x = (mod(z, tile.x) + clamp(uvz.x+focusMod,0,1)) / tile.x;
       float y = (floor(z / tile.x) + uvz.y) / tile.y;
       return vec2(x, y) * viewPortion.xy;
