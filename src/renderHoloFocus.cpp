@@ -332,9 +332,10 @@ void createHoloProgram(vars::Vars&vars){
   vec2 texArr(vec3 uvz)
   {
       // decide which section to take from based on the z.
-      
+ 
+
       float z = floor(uvz.z * tile.z);
-      float focusMod = focus*(1-2*clamp(uvz.z,0,1));
+      float focusMod = focus*(1-2*clamp(z/tile.z,0,1));
       float x = (mod(z, tile.x) + clamp(uvz.x+focusMod,0,1)) / tile.x;
       float y = (floor(z / tile.x) + uvz.y) / tile.y;
       return vec2(x, y) * viewPortion.xy;
@@ -353,7 +354,7 @@ void createHoloProgram(vars::Vars&vars){
   		nuv.z = fract(nuv.z);
   		nuv.z = (1.0 - nuv.z);
       if(drawOnlyOneImage == 1){
-        if(uint(nuv.z *tile.z) == selectedView)
+        if(uint(nuv.z *tile.z) == selectedView || uint(nuv.z *tile.z) == 19)
   		    rgb[i] = texture(screenTex, texArr(nuv));
         else
           rgb[i] = vec4(0);

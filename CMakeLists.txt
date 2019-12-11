@@ -93,6 +93,7 @@ addApp2(stupidCompiler                        "src/stupidCompiler.cpp"          
 addApp2(stupidScheduler                       "src/stupidScheduler.cpp"                       "SDL2::SDL2;SDL2::SDL2main;geGL::geGL;ArgumentViewer::ArgumentViewer;OpenCL")
 addApp2(stupidSchedulerCL                     "src/stupidSchedulerCL.cpp"                     "OpenCL;ArgumentViewer::ArgumentViewer")
 addApp2(mortonTest                            "src/mortonTest.cpp"                            "Simple3DApp::Simple3DApp;barrier;imguiVars::imguiVars;ArgumentViewer::ArgumentViewer")
+addApp2(mortonVeri                            "src/mortonVeri.cpp"                            "Simple3DApp::Simple3DApp;barrier;imguiVars::imguiVars;ArgumentViewer::ArgumentViewer")
 addApp2(ballotARBTest                         "src/ballotARBTest.cpp"                         "Simple3DApp::Simple3DApp;barrier;imguiVars::imguiVars;ArgumentViewer::ArgumentViewer")
 addApp2(lightfieldPlayer                      "src/lightfieldPlayer.cpp"                      "Simple3DApp::Simple3DApp;barrier;imguiVars::imguiVars;ArgumentViewer::ArgumentViewer;gpuDecoder;Vars::Vars;drawGrid;BasicCamera::BasicCamera")
 addApp2(tessellationLevels                    "src/tessellationLevels.cpp"                    "Simple3DApp::Simple3DApp;barrier;imguiVars::imguiVars;Vars::Vars")

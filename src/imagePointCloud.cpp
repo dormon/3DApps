@@ -299,11 +299,10 @@ void ImagePointCloud::draw(){
   ge::gl::glClearColor(0.1f,0.1f,0.1f,1.f);
   ge::gl::glClear(GL_COLOR_BUFFER_BIT);
 
-  vars.get<ge::gl::VertexArray>("emptyVao")->bind();
 
   drawGrid(vars);
+  vars.get<ge::gl::VertexArray>("emptyVao")->bind();
   drawPointCloud(vars);
-
   vars.get<ge::gl::VertexArray>("emptyVao")->unbind();
 
   drawImguiVars(vars);
