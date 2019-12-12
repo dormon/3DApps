@@ -23,9 +23,11 @@
 constexpr float FRAME_LIMIT{1.0f/24};
 constexpr bool SCREENSHOT_MODE{0};
 constexpr bool SCREENSHOT_VIDEO{0};
+constexpr uint32_t FOCUSMAP_DIV = 4;
 constexpr bool MEASURE_TIME{1};
 //TODO not multiple of local size resolution cases
-constexpr int LOCAL_SIZE_X{32};
+constexpr int WARP_SIZE{32};
+constexpr int LOCAL_SIZE_X{WARP_SIZE};
 constexpr int LOCAL_SIZE_Y{8};
 
 class LightFields: public simple3DApp::Application
@@ -67,16 +69,43 @@ void createProgram(vars::Vars&vars)
     #extension GL_ARB_bindless_texture : require
     const uint lfSize = 64;
     uniform uint64_t lfTextures[lfSize];
-    uniform uint64_t focusMap;
     //layout(bindless_image)uniform layout(r8ui) readonly uimage2D focusMap;
+    uniform uint64_t focusMap;
     out vec4 fColor;
     in vec2 vCoord;
     in vec3 position;
+
+    const ivec2 gridSize = ivec2(8);
+    
+    uniform vec2 viewCoord;
+    uniform float focusStep;
+    uniform float focus;
+    uniform float aspect;
     
     void main()
     {
+        //float focusValue = focus+imageLoad(focusMap, ivec2(vCoord*imageSize(focusMap))).x*focusStep;
         usampler2D s = usampler2D(focusMap);
-        fColor = vec4(vec3(float(texture(s, vCoord*textureSize(s,0)).x)/32.0),1.0);
+        float focusValue = focus+dot(vec4(textureGather(s, vCoord*textureSize(s,0))), vec4(.25))*focusStep;
+        int n=0;
+        for(int x=0; x<gridSize.x; x++)
+            for(int y=0; y<gridSize.y; y++)
+            {   
+                float dist = distance(viewCoord, vec2(x,y));
+                if(dist > 2.0) continue;
+
+                n++;
+                int slice = y*int(gridSize.x)+x;
+                vec2 offset = viewCoord-vec2(x,y);
+                offset.y *=-1;
+                vec2 focusedCoords = clamp(vCoord+offset*focusValue*vec2(1.0,aspect), 0.0, 1.0); 
+                sampler2D s = sampler2D(lfTextures[slice]);
+                fColor.xyz += texture(s,focusedCoords).xyz;
+            }
+        fColor.xyz /= n;
+        fColor.w = 1;
+        //fColor = vec4(vec3(dot(vec4(textureGather(s, vCoord*textureSize(s,0))), vec4(.25))/32.0),1.0);
+        //fColor = vec4(vec3(vec4(float(texture(s, vCoord*textureSize(s,0)).x)/32.0)),1.0);
     }
     ).";
     
@@ -243,15 +272,12 @@ void createProgram(vars::Vars&vars)
             } 
         m2 /= n-1;
 
-        for (uint offset=focusLevels/2; offset>0; offset/=2)
-        {
+        float origM2 = m2;
+        for (uint offset=focusLevels>>1; offset>0; offset>>=1)
             m2 = min(m2,shuffleDownNV(m2,offset,focusLevels));
-        }
         float minM2=readFirstInvocationARB(m2);
-        if(minM2 == m2)
-        {
-            imageStore(focusMap, outCoords, uvec4(mean.x*255));//gl_LocalInvocationID.x));
-        }
+        if(minM2 == origM2)
+            imageStore(focusMap, outCoords, uvec4(/*mean.x*32));/*/gl_LocalInvocationID.x));
     }
     ).";
 
@@ -313,14 +339,13 @@ void asyncVideoLoading(vars::Vars &vars)
     auto length = vars.addUint32("length",static_cast<int>(decoder->getLength()/64000000.0*25));
     
     //Must be here since all textures are created in this context and handles might overlap
-    const uint32_t focusMapDiv = 4;
-    auto focusMapSize = glm::uvec2(vars.addUint32("focusMap.width", lfSize.x/focusMapDiv), vars.addUint32("focusMap.height", lfSize.y/focusMapDiv));
+    auto focusMapSize = glm::uvec2(vars.addUint32("focusMap.width", lfSize.x/FOCUSMAP_DIV), vars.addUint32("focusMap.height", lfSize.y/FOCUSMAP_DIV));
     auto focusMapTexture = ge::gl::Texture(GL_TEXTURE_2D,GL_R8UI,1,focusMapSize.x,focusMapSize.y);
     auto focusMap = vars.add<GLuint64>("focusMap.image",ge::gl::glGetImageHandleARB(focusMapTexture.getId(), 0, GL_FALSE, 0, GL_R8UI));
   
     auto rdyMutex = vars.get<std::mutex>("rdyMutex");
     auto rdyCv = vars.get<std::condition_variable>("rdyCv");
-    int frameNum = 1;   
+    int frameNum = 1;  
     while(vars.getBool("mainRuns"))
     {    
         int seekFrame = *vars.get<int>("seekFrame");
@@ -347,7 +372,7 @@ void asyncVideoLoading(vars::Vars &vars)
             frameNum++;
             vars.reCreate<int>("frameNum", frameNum);
         
-            //vars.getBool("pause") = true;
+            vars.getBool("pause") = true;
         }
         vars.getBool("loaded") = true;
         rdyCv->notify_all();
@@ -511,13 +536,13 @@ void LightFields::draw()
     float range = .2;
     float coox = (glm::clamp(centerRay.x*-1,-range*aspect,range*aspect)/(range*aspect)+1)/2.;
     float cooy = (glm::clamp(centerRay.y,-range,range)/range+1)/2.;
-    glm::vec2 viewCoord = glm::vec2(glm::clamp(coox*(gridIndex.x),0.0f,static_cast<float>(gridIndex.x)),glm::clamp(cooy*(gridIndex.y),0.0f,static_cast<float>(gridIndex.y)));
+    glm::vec2 viewCoord = glm::vec2(gridIndex)-glm::vec2(glm::clamp(coox*(gridIndex.x),0.0f,static_cast<float>(gridIndex.x)),glm::clamp(cooy*(gridIndex.y),0.0f,static_cast<float>(gridIndex.y)));
 
     auto csProgram = vars.get<ge::gl::Program>("csProgram");
     csProgram
     //->set2uiv("gridSize",glm::value_ptr(*vars.get<glm::uvec2>("gridSize")))
-    ->set1i("focus",vars.getFloat("focus"))
-    ->set1i("focusStep",vars.getFloat("focusStep"))
+    ->set1f("focus",vars.getFloat("focus"))
+    ->set1f("focusStep",vars.getFloat("focusStep"))
     ->set2fv("viewCoord",glm::value_ptr(viewCoord))
     ->set1f("aspect",aspect)
     ->use();
@@ -540,6 +565,9 @@ void LightFields::draw()
     auto program = vars.get<ge::gl::Program>("lfProgram");
     program
     ->setMatrix4fv("mvp",glm::value_ptr(projection->getProjection()*view->getView()))
+    ->set1f("focus",vars.getFloat("focus"))
+    ->set1f("focusStep",vars.getFloat("focusStep"))
+    ->set2fv("viewCoord",glm::value_ptr(viewCoord))
     ->set1f("aspect",aspect)
     ->use();
     ge::gl::glProgramUniformHandleui64vARB(program->getId(), program->getUniformLocation("lfTextures"), 64, vars.getVector<GLuint64>(currentTexturesName).data());
@@ -552,7 +580,8 @@ void LightFields::draw()
     if(ImGui::SliderInt("Timeline", vars.get<int>("frameNum"), 1, vars.getUint32("length")))
         vars.reCreate<int>("seekFrame", *vars.get<int>("frameNum"));
     ImGui::Selectable("Pause", &vars.getBool("pause"));
-    ImGui::DragFloat("Focus", &vars.getFloat("focus"),0.001f);
+    ImGui::DragFloat("Focus", &vars.getFloat("focus"),0.0001f);
+    ImGui::DragFloat("Focus step", &vars.getFloat("focusStep"),0.0001f);
     ImGui::End();
     swap();
 
