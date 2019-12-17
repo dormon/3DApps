@@ -311,6 +311,24 @@ int main(int argc,char*argv[]){
   }
   ).");}
 
+  {MEASURE("complex function to const",R".(
+  layout(local_size_x=256)in;
+
+  layout(binding=0)buffer Data{uint data[];};
+
+  uint complexFunction(const uint N){
+    uint c=2;
+    for(uint i=0;i<N;++i)
+      c=c*c+1;
+    return c;
+  }
+
+  void main(){
+    const uint value = complexFunction(1000);
+    data[gl_GlobalInvocationID.x] = value;
+  }
+  ).");}
+
   {MEASURE("a+=1;a+=1;a+=1;... a lot",R".(
   layout(local_size_x=256)in;
 
