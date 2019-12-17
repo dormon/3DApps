@@ -23,7 +23,7 @@
 constexpr float FRAME_LIMIT{1.0f/24};
 constexpr bool SCREENSHOT_MODE{0};
 constexpr bool SCREENSHOT_VIDEO{0};
-constexpr uint32_t FOCUSMAP_DIV = 4;
+constexpr uint32_t FOCUSMAP_DIV = 1;
 constexpr bool MEASURE_TIME{1};
 //TODO not multiple of local size resolution cases
 constexpr int WARP_SIZE{32};
@@ -71,6 +71,7 @@ void createProgram(vars::Vars&vars)
     uniform uint64_t lfTextures[lfSize];
     //layout(bindless_image)uniform layout(r8ui) readonly uimage2D focusMap;
     uniform uint64_t focusMap;
+    uniform int showFocusMap;
     out vec4 fColor;
     in vec2 vCoord;
     in vec3 position;
@@ -104,7 +105,8 @@ void createProgram(vars::Vars&vars)
             }
         fColor.xyz /= n;
         fColor.w = 1;
-        //fColor = vec4(vec3(dot(vec4(textureGather(s, vCoord*textureSize(s,0))), vec4(.25))/32.0),1.0);
+        if(showFocusMap != 0)
+            fColor = vec4(vec3(dot(vec4(textureGather(s, vCoord*textureSize(s,0))), vec4(.25))/32.0),1.0);
         //fColor = vec4(vec3(vec4(float(texture(s, vCoord*textureSize(s,0)).x)/32.0)),1.0);
     }
     ).";
@@ -277,7 +279,7 @@ void createProgram(vars::Vars&vars)
             m2 = min(m2,shuffleDownNV(m2,offset,focusLevels));
         float minM2=readFirstInvocationARB(m2);
         if(minM2 == origM2)
-            imageStore(focusMap, outCoords, uvec4(/*mean.x*32));/*/gl_LocalInvocationID.x));
+            imageStore(focusMap, outCoords, uvec4(gl_LocalInvocationID.x));
     }
     ).";
 
@@ -462,6 +464,7 @@ std::cerr << result << std::endl;
     vars.addFloat("camera.far",1000.f);
     vars.addFloat("focus",0.0f);
     vars.addFloat("focusStep",0.0f);
+    vars.addBool("showFocusMap", false);
     vars.add<std::map<SDL_Keycode, bool>>("input.keyDown");
     vars.addUint32("frame",0);
     createProgram(vars);
@@ -569,6 +572,7 @@ void LightFields::draw()
     ->set1f("focusStep",vars.getFloat("focusStep"))
     ->set2fv("viewCoord",glm::value_ptr(viewCoord))
     ->set1f("aspect",aspect)
+    ->set1i("showFocusMap",vars.getBool("showFocusMap"))
     ->use();
     ge::gl::glProgramUniformHandleui64vARB(program->getId(), program->getUniformLocation("lfTextures"), 64, vars.getVector<GLuint64>(currentTexturesName).data());
     ge::gl::glProgramUniformHandleui64vARB(program->getId(), program->getUniformLocation("focusMap"), 1, vars.get<GLuint64>("focusMap.image"));
@@ -581,7 +585,8 @@ void LightFields::draw()
         vars.reCreate<int>("seekFrame", *vars.get<int>("frameNum"));
     ImGui::Selectable("Pause", &vars.getBool("pause"));
     ImGui::DragFloat("Focus", &vars.getFloat("focus"),0.0001f);
-    ImGui::DragFloat("Focus step", &vars.getFloat("focusStep"),0.0001f);
+    ImGui::DragFloat("Focus step", &vars.getFloat("focusStep"),0.00001f,-10, 10, "%.4f");
+    ImGui::Checkbox("Show focus map", &vars.getBool("showFocusMap"));
     ImGui::End();
     swap();
 
