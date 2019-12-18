@@ -202,6 +202,13 @@ void createProgram(vars::Vars&vars)
         float e = 1.0e-10;
         return vec3(abs(q.z + (q.w - q.y) / (6.0 * d + e)), d / (q.x + e), q.x);
     }
+        
+    vec3 hsvTrans(vec3 hsv)
+    {
+        float sv = hsv.y*hsv.z;
+        float pih = hsv.x*2*PI;
+        return vec3(sv*cos(pih), sv*sin(pih), hsv.z);
+    }
  
     vec3 rgb2lab(in vec3 rgb){
         float R = rgb.x;
@@ -253,10 +260,26 @@ void createProgram(vars::Vars&vars)
         if(colMetric == 0)
             return distance(c1,c2);
         else if(colMetric == 1)
-            return distance(rgb2yuv(c1), rgb2yuv(c2));
-            //return distance(rgb2lab(c1), rgb2lab(c2));
+            //return sqrt(3*pow(c1.r-c2.r,2) + 4*pow(c1.g-c2.g,2) + 2*pow(c1.b-c2.b,2));
+            //return sqrt(0.2753667361197665*pow(c1.r-c2.r,2) + 0.3846815980739518*pow(c1.g-c2.g,2) + 0.3399516658062818*pow(c1.b-c2.b,2));
+            //return sqrt(1*pow(c1.r-c2.r,2) + 4*pow(c1.g-c2.g,2) + 2*pow(c1.b-c2.b,2));
+            //return 3*(c1.r-c2.r) + 4*(c1.g-c2.g) + 3*(c1.b-c2.b);
+            //return (abs(c1.r-c2.r)+abs(c1.g-c2.g)+abs(c1.b-c2.b))/(c1.r+c2.r+c1.g+c2.g+c1.b+c2.b); //canberra
+            //return max(max(abs(c1.r-c2.r), abs(c1.g-c2.g)), abs(c1.b-c2.b)); //chebyshev
+            //return pow(pow(abs(c1.r-c2.r),5) + pow(abs(c1.g-c2.g),5) + pow(abs(c1.b-c2.b),5), 1.0/5.0); //minkowski
+            //return distance(rgb2yuv(c1), rgb2yuv(c2));
+            //return abs(rgb2hsv(c1).x - rgb2hsv(c2).x);
+       /* {
+            float rmean = (c1.r+c2.r)/2.0;
+            vec3 delta = c1-c2;
+            return sqrt((2.0+rmean)*delta.r*delta.r + 4*delta.g*delta.g + (2.0+(1.0-rmean))*delta.b*delta.b); 
+        }*/
+            //return max(max(3*abs(c1.r-c2.r), 4*abs(c1.g-c2.g)), 2*abs(c1.b-c2.b)); //weighted chebyshev
+            //return max(max(abs(c1.r-c2.r), abs(c1.g-c2.g)), abs(c1.b-c2.b)); //chebyshev
+            return distance(hsvTrans(rgb2hsv(c1)), hsvTrans(rgb2hsv(c2)));
         else 
-            return deltaE2000(rgb2lab(c1), rgb2lab(c2));
+            return max(max(3*abs(c1.r-c2.r), 4*abs(c1.g-c2.g)), 2*abs(c1.b-c2.b)); //weighted chebyshev
+            //return deltaE2000(rgb2lab(c1), rgb2lab(c2));
     }
 
     void main()
