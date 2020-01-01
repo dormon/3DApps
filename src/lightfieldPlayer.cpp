@@ -23,7 +23,7 @@
 constexpr float FRAME_LIMIT{1.0f/24};
 constexpr bool SCREENSHOT_MODE{0};
 constexpr bool SCREENSHOT_VIDEO{0};
-constexpr uint32_t FOCUSMAP_DIV = 4;
+constexpr uint32_t FOCUSMAP_DIV = 1;
 constexpr bool MEASURE_TIME{1};
 //TODO not multiple of local size resolution cases
 constexpr int WARP_SIZE{32};
@@ -77,10 +77,12 @@ void createProgram(vars::Vars&vars)
 
     const ivec2 gridSize = ivec2(8);
     
+    uniform int showFocusMap;
     uniform vec2 viewCoord;
     uniform float focusStep;
     uniform float focus;
     uniform float aspect;
+    uniform float gridSampleDistanceR;
     
     void main()
     {
@@ -92,7 +94,7 @@ void createProgram(vars::Vars&vars)
             for(int y=0; y<gridSize.y; y++)
             {   
                 float dist = distance(viewCoord, vec2(x,y));
-                if(dist > 2.0) continue;
+                if(dist > gridSampleDistanceR) continue;
 
                 n++;
                 int slice = y*int(gridSize.x)+x;
@@ -104,7 +106,8 @@ void createProgram(vars::Vars&vars)
             }
         fColor.xyz /= n;
         fColor.w = 1;
-        //fColor = vec4(vec3(dot(vec4(textureGather(s, vCoord*textureSize(s,0))), vec4(.25))/32.0),1.0);
+        if(showFocusMap != 0)
+            fColor = vec4(vec3(dot(vec4(textureGather(s, vCoord*textureSize(s,0))), vec4(.25))/32.0),1.0);
         //fColor = vec4(vec3(vec4(float(texture(s, vCoord*textureSize(s,0)).x)/32.0)),1.0);
     }
     ).";
@@ -130,56 +133,10 @@ void createProgram(vars::Vars&vars)
     uniform float focusStep;
     uniform float focus;
     uniform float aspect;
+    uniform float gridSampleDistance;
+    uniform int colMetric;
 
     const float PI = 3.141592653589793238462643;
-    vec3 bgr2xyz(vec3 BGR)
-    {
-        float r = BGR[0];
-        float g = BGR[1];
-        float b = BGR[2];
-        if( r > 0.04045 )
-            r = pow( ( r + 0.055 ) / 1.055, 2.4 );
-        else
-            r = r / 12.92;
-        if( g > 0.04045 )
-            g = pow( ( g + 0.055 ) / 1.055, 2.4 );
-        else
-            g = g / 12.92;
-        if( b > 0.04045 )
-            b = pow( ( b + 0.055 ) / 1.055, 2.4 );
-        else
-            b = b / 12.92;
-        r *= 100.0;
-        g *= 100.0;
-        b *= 100.0;
-        return vec3(r * 0.4124 + g * 0.3576 + b * 0.1805,
-        r * 0.2126 + g * 0.7152 + b * 0.0722,
-        r * 0.0193 + g * 0.1192 + b * 0.9505);
-    }
-
-    vec3 xyz2lab(vec3 XYZ)
-    {
-        float x = XYZ[0] / 95.047;
-        float y = XYZ[1] / 95.047;
-        float z = XYZ[2] / 95.047;
-        if( x > 0.008856 )
-            x = pow( x , .3333333333 );
-        else
-            x = ( 7.787 * x ) + ( 16.0 / 116.0 );
-        if( y > 0.008856 )
-            y = pow( y , .3333333333 );
-        else
-            y = ( 7.787 * y ) + ( 16.0 / 116.0 );
-        if( z > 0.008856 )
-            z = pow( z , .3333333333 );
-        else
-            z = ( 7.787 * z ) + ( 16.0 / 116.0 );
-        return vec3(
-        ( 116.0 * y ) - 16.0,
-        500.0 * ( x - y ),
-        200.0 * ( y - z ));
-    }
-
     vec3 lab2lch(vec3 Lab)
     {
         return vec3(
@@ -227,16 +184,102 @@ void createProgram(vars::Vars&vars)
         return sqrt( delta_L * delta_L + delta_C * delta_C + delta_H * delta_H + RT * delta_C * delta_H );
     }
 
-    float deltaE2000( vec3 bgr1, vec3 bgr2 )
+    float deltaE2000( vec3 lab1, vec3 lab2 )
     {
-        vec3 xyz1, xyz2, lab1, lab2, lch1, lch2;
-        xyz1 = bgr2xyz( bgr1);
-        xyz2 = bgr2xyz( bgr2);
-        lab1 = xyz2lab( xyz1);
-        lab2 = xyz2lab( xyz2);
+        vec3 lch1, lch2;
         lch1 = lab2lch( lab1);
         lch2 = lab2lch( lab2);
         return deltaE2000l( lch1, lch2 );
+    }
+
+    vec3 rgb2hsv(vec3 c)
+    {
+        vec4 K = vec4(0.0, -1.0 / 3.0, 2.0 / 3.0, -1.0);
+        vec4 p = mix(vec4(c.bg, K.wz), vec4(c.gb, K.xy), step(c.b, c.g));
+        vec4 q = mix(vec4(p.xyw, c.r), vec4(c.r, p.yzx), step(p.x, c.r));
+
+        float d = q.x - min(q.w, q.y);
+        float e = 1.0e-10;
+        return vec3(abs(q.z + (q.w - q.y) / (6.0 * d + e)), d / (q.x + e), q.x);
+    }
+        
+    vec3 hsvTrans(vec3 hsv)
+    {
+        float sv = hsv.y*hsv.z;
+        float pih = hsv.x*2*PI;
+        return vec3(sv*cos(pih), sv*sin(pih), hsv.z);
+    }
+ 
+    vec3 rgb2lab(in vec3 rgb){
+        float R = rgb.x;
+        float G = rgb.y;
+        float B = rgb.z;
+        // threshold
+        float T = 0.008856;
+
+        float X = R * 0.412453 + G * 0.357580 + B * 0.180423;
+        float Y = R * 0.212671 + G * 0.715160 + B * 0.072169;
+        float Z = R * 0.019334 + G * 0.119193 + B * 0.950227;
+
+        // Normalize for D65 white point
+        X = X / 0.950456;
+        Y = Y;
+        Z = Z / 1.088754;
+
+        bool XT, YT, ZT;
+        XT = false; YT=false; ZT=false;
+        if(X > T) XT = true;
+        if(Y > T) YT = true;
+        if(Z > T) ZT = true;
+
+        float Y3 = pow(Y,1.0/3.0);
+        float fX, fY, fZ;
+        if(XT){ fX = pow(X, 1.0/3.0);} else{ fX = 7.787 * X + 16.0/116.0; }
+        if(YT){ fY = Y3; } else{ fY = 7.787 * Y + 16.0/116.0 ; }
+        if(ZT){ fZ = pow(Z,1.0/3.0); } else{ fZ = 7.787 * Z + 16.0/116.0; }
+
+        float L; if(YT){ L = (116.0 * Y3) - 16.0; }else { L = 903.3 * Y; }
+        float a = 500.0 * ( fX - fY );
+        float b = 200.0 * ( fY - fZ );
+
+        return vec3(L,a,b);
+    }
+
+    vec3 rgb2yuv(vec3 rgba)
+    {
+        vec3 yuv = vec3(0.0);
+
+        yuv.x = rgba.r * 0.299 + rgba.g * 0.587 + rgba.b * 0.114;
+        yuv.y = rgba.r * -0.169 + rgba.g * -0.331 + rgba.b * 0.5 + 0.5;
+        yuv.z = rgba.r * 0.5 + rgba.g * -0.419 + rgba.b * -0.081 + 0.5;
+        return yuv;
+    }
+
+    float colorDistance(vec3 c1, vec3 c2)
+    {
+        if(colMetric == 0)
+            return distance(c1,c2);
+        else if(colMetric == 1)
+            //return sqrt(3*pow(c1.r-c2.r,2) + 4*pow(c1.g-c2.g,2) + 2*pow(c1.b-c2.b,2));
+            //return sqrt(0.2753667361197665*pow(c1.r-c2.r,2) + 0.3846815980739518*pow(c1.g-c2.g,2) + 0.3399516658062818*pow(c1.b-c2.b,2));
+            //return sqrt(1*pow(c1.r-c2.r,2) + 4*pow(c1.g-c2.g,2) + 2*pow(c1.b-c2.b,2));
+            //return 3*(c1.r-c2.r) + 4*(c1.g-c2.g) + 3*(c1.b-c2.b);
+            //return (abs(c1.r-c2.r)+abs(c1.g-c2.g)+abs(c1.b-c2.b))/(c1.r+c2.r+c1.g+c2.g+c1.b+c2.b); //canberra
+            //return max(max(abs(c1.r-c2.r), abs(c1.g-c2.g)), abs(c1.b-c2.b)); //chebyshev
+            //return pow(pow(abs(c1.r-c2.r),5) + pow(abs(c1.g-c2.g),5) + pow(abs(c1.b-c2.b),5), 1.0/5.0); //minkowski
+            //return distance(rgb2yuv(c1), rgb2yuv(c2));
+            //return abs(rgb2hsv(c1).x - rgb2hsv(c2).x);
+       /* {
+            float rmean = (c1.r+c2.r)/2.0;
+            vec3 delta = c1-c2;
+            return sqrt((2.0+rmean)*delta.r*delta.r + 4*delta.g*delta.g + (2.0+(1.0-rmean))*delta.b*delta.b); 
+        }*/
+            //return max(max(3*abs(c1.r-c2.r), 4*abs(c1.g-c2.g)), 2*abs(c1.b-c2.b)); //weighted chebyshev
+            //return max(max(abs(c1.r-c2.r), abs(c1.g-c2.g)), abs(c1.b-c2.b)); //chebyshev
+            return distance(hsvTrans(rgb2hsv(c1)), hsvTrans(rgb2hsv(c2)));
+        else 
+            return max(max(3*abs(c1.r-c2.r), 4*abs(c1.g-c2.g)), 2*abs(c1.b-c2.b)); //weighted chebyshev
+            //return deltaE2000(rgb2lab(c1), rgb2lab(c2));
     }
 
     void main()
@@ -255,7 +298,7 @@ void createProgram(vars::Vars&vars)
             for(int y=0; y<gridSize.y; y++)
             {   
                 float dist = distance(viewCoord, vec2(x,y));
-                if(dist > 2.0) continue;
+                if(dist > gridSampleDistance) continue;
                 
                 int slice = y*int(gridSize.x)+x;
                 vec2 offset = viewCoord-vec2(x,y);
@@ -266,9 +309,9 @@ void createProgram(vars::Vars&vars)
             
                 n++;
                 vec3 delta = color-mean;
-                float d = distance(color, mean);
+                float d = colorDistance(color, mean);
                 mean += delta/n;
-                m2 += d*distance(color,mean);
+                m2 += d*colorDistance(color,mean);
             } 
         m2 /= n-1;
 
@@ -277,7 +320,7 @@ void createProgram(vars::Vars&vars)
             m2 = min(m2,shuffleDownNV(m2,offset,focusLevels));
         float minM2=readFirstInvocationARB(m2);
         if(minM2 == origM2)
-            imageStore(focusMap, outCoords, uvec4(/*mean.x*32));/*/gl_LocalInvocationID.x));
+            imageStore(focusMap, outCoords, uvec4(gl_LocalInvocationID.x));
     }
     ).";
 
@@ -462,6 +505,10 @@ std::cerr << result << std::endl;
     vars.addFloat("camera.far",1000.f);
     vars.addFloat("focus",0.0f);
     vars.addFloat("focusStep",0.0f);
+    vars.addFloat("gridSampleDistance",2.0f);
+    vars.addFloat("gridSampleDistanceR",2.0f);
+    vars.addBool("showFocusMap", false);
+    vars.addInt32("colMetric", 0);
     vars.add<std::map<SDL_Keycode, bool>>("input.keyDown");
     vars.addUint32("frame",0);
     createProgram(vars);
@@ -543,7 +590,9 @@ void LightFields::draw()
     //->set2uiv("gridSize",glm::value_ptr(*vars.get<glm::uvec2>("gridSize")))
     ->set1f("focus",vars.getFloat("focus"))
     ->set1f("focusStep",vars.getFloat("focusStep"))
+    ->set1f("gridSampleDistance",vars.getFloat("gridSampleDistance"))
     ->set2fv("viewCoord",glm::value_ptr(viewCoord))
+    ->set1i("colMetric",vars.getInt32("colMetric"))
     ->set1f("aspect",aspect)
     ->use();
     ge::gl::glProgramUniformHandleui64vARB(csProgram->getId(), csProgram->getUniformLocation("lfTextures"), 64, vars.getVector<GLuint64>(currentTexturesName).data());
@@ -569,6 +618,8 @@ void LightFields::draw()
     ->set1f("focusStep",vars.getFloat("focusStep"))
     ->set2fv("viewCoord",glm::value_ptr(viewCoord))
     ->set1f("aspect",aspect)
+    ->set1i("showFocusMap",vars.getBool("showFocusMap"))
+    ->set1f("gridSampleDistanceR",vars.getFloat("gridSampleDistanceR"))
     ->use();
     ge::gl::glProgramUniformHandleui64vARB(program->getId(), program->getUniformLocation("lfTextures"), 64, vars.getVector<GLuint64>(currentTexturesName).data());
     ge::gl::glProgramUniformHandleui64vARB(program->getId(), program->getUniformLocation("focusMap"), 1, vars.get<GLuint64>("focusMap.image"));
@@ -581,7 +632,11 @@ void LightFields::draw()
         vars.reCreate<int>("seekFrame", *vars.get<int>("frameNum"));
     ImGui::Selectable("Pause", &vars.getBool("pause"));
     ImGui::DragFloat("Focus", &vars.getFloat("focus"),0.0001f);
-    ImGui::DragFloat("Focus step", &vars.getFloat("focusStep"),0.0001f);
+    ImGui::DragFloat("Focus step", &vars.getFloat("focusStep"),0.00001f,-10, 10, "%.4f");
+    ImGui::DragFloat("Focus sample distance", &vars.getFloat("gridSampleDistance"),0.1f,0,vars.get<glm::ivec2>("gridSize")->x); 
+    ImGui::DragFloat("Render sample distance", &vars.getFloat("gridSampleDistanceR"),0.1f,0,vars.get<glm::ivec2>("gridSize")->x); 
+    ImGui::Checkbox("Show focus map", &vars.getBool("showFocusMap"));
+    ImGui::InputInt("Alternative col metric", &vars.getInt32("colMetric"));
     ImGui::End();
     swap();
 
