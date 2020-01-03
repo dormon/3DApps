@@ -441,7 +441,7 @@ bool doesEdgeIntersectFrustum(in vec4 A,in vec4 B){
 bool doesDiagonalIntersectShadowVolumeSide(in vec4 A,in vec4 B,in vec4 L,in uint d){
   float a = -1.f + 2.f*float(d/2);
   float b = -1.f + 2.f*float(d&1);
-  float u = B.x - A.y - a*B.y + a*A.y;
+  float u = B.x - A.x - a*B.y + a*A.y;
   float v = a*L.y - L.x;
   float w = a*A.y - A.x;
   float x = B.x - A.x - b*B.z + b*A.z;
@@ -455,7 +455,9 @@ bool doesDiagonalIntersectShadowVolumeSide(in vec4 A,in vec4 B,in vec4 L,in uint
   if(v == 0.f)return false;
   float l = (w-t*u)/v;
   if(l < 0.f || l > 1.f)return false;
-  return true;
+  vec4 pp = mix(A,B,t)-L*l;
+  return all(greaterThanEqual(pp.xyz,-pp.www))&&all(lessThanEqual(pp.xyz,+pp.www));
+  //return true;
 }
 // */
 
