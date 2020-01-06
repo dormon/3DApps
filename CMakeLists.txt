@@ -65,6 +65,7 @@ addObjectLibrary(gpuDecoder       "src/gpuDecoder.h;src/gpuDecoder.cpp"         
 #addApp(gameOfLife src/gameOfLife.cpp)
 #addApp2(spirv "src/spirv.cpp" "")
 addApp2(emptyProject                          "src/emptyProject.cpp"                          "Simple3DApp::Simple3DApp;drawGrid;imguiVars::imguiVars;VarsGLMDecorator::VarsGLMDecorator")
+addApp2(svSide                                "src/svSide.cpp"                                "Simple3DApp::Simple3DApp;drawGrid;imguiVars::imguiVars;VarsGLMDecorator::VarsGLMDecorator")
 addApp2(openglTest                            "src/openglTest.cpp"                            "SDL2::SDL2;SDL2::SDL2main;geGL::geGL")
 addApp2(heatUp                                "src/heatUp.cpp"                                "OpenCL;Threads")
 addApp2(pbr                                   "src/pbr.cpp"                                   "Simple3DApp::Simple3DApp;drawGrid;imguiVars::imguiVars")
