@@ -37,6 +37,13 @@ void prepareDrawPointCloud(vars::Vars&vars){
   uniform float az = 1.f;
   uniform float bz = 10.f;
 
+  uniform vec3 A = vec3(0,0,0);
+  uniform vec3 B = vec3(1,0,0);
+  uniform vec4 light = vec4(10,10,10,1);
+
+  uniform vec3 SM;
+  uniform vec3 SN;
+
   out vec3 vColor;
 
   vec4 movePointToSubfrustum(
@@ -52,7 +59,24 @@ void prepareDrawPointCloud(vars::Vars&vars){
     return result;
   }
 
-  bool pointInside(vec4 b){
+
+  float depthToZ(float d){
+    return -2*NN*FF / (d*(NN-FF) + FF + NN);
+  }
+
+  vec3 getSample3D(vec3 c){
+    //float s = 1.f+(c.z*.5f+.5f)*(FF/NN-1);
+    float z  = depthToZ(c.z);
+    float s = z/(-NN);
+
+    return vec3(
+      LL*s+(.5f+.5f*c.x)*(RR*s-LL*s),
+      BB*s+(.5f+.5f*c.y)*(TT*s-BB*s),
+      depthToZ(c.z)
+      );
+  }
+
+  mat4 getProj(){
     mat4 prj = mat4(0);
     prj[0][0] = 2*NN/(RR-LL);
     prj[0][1] = 0;
@@ -73,15 +97,51 @@ void prepareDrawPointCloud(vars::Vars&vars){
     prj[3][1] = 0;
     prj[3][2] = -2*FF*NN/(FF-NN);
     prj[3][3] = 0;
+    return prj;
+  }
+
+  mat4 getInvProj(){
+    return transpose(inverse(getProj()));
+  }
+
+  bool pointInside(vec4 b){
+    mat4 prj = getProj();
 
     vec4 a = prj * b;
 
-    a = movePointToSubfrustum(a,vec2(ax,bx),vec2(ay,by),vec2(az,bz));
+    //a = movePointToSubfrustum(a,vec2(ax,bx),vec2(ay,by),vec2(az,bz));
 
     return all(greaterThanEqual(a.xyz,-a.www))&&all(lessThanEqual(a.xyz,+a.www));
   }
+
+  vec4 getEdgePlane(){
+    vec3 n = normalize(cross(B-A,light.xyz-A));
+    vec4 p = getInvProj()*vec4(n,-dot(n,A));
+    return p;
+  }
+
+  vec4 getSamplePlane(){
+    vec4 ll = getProj()*light;
+    vec3 normal = normalize(cross(SN-SM,ll.xyz-SM*ll.w));
+    return vec4(normal,-dot(normal,SM));
+  }
+
+  bool pointInFront(vec4 pp){
+    //return dot(getEdgePlane(),pp) > 0;
+    return dot(getSamplePlane(),pp) > 0;
+  }
   
+  #define REMEMBER3(a)if(a==vec3(1337))return
+  #define REMEMBER4(a)if(a==vec4(1337))return
+
   void main(){
+    REMEMBER3(A);
+    REMEMBER3(B);
+    REMEMBER4(light);
+    REMEMBER3(SM);
+    REMEMBER3(SN);
+
+
     vec4 pp;
     pp.x = (-50.f + float(((gl_VertexID%100)    )    ))*.2f;
     pp.y = (-50.f + float(((gl_VertexID/100)%100)    ))*.2f;
@@ -90,6 +150,9 @@ void prepareDrawPointCloud(vars::Vars&vars){
 
     if(pointInside(pp)){
       vColor = vec3(1,0,0);
+      if(pointInFront(getProj()*pp))
+        vColor = vec3(0,0,1);
+        
       gl_Position = proj*view*pp;
     }else{
       vColor = vec3(0,0,0);
@@ -142,6 +205,22 @@ void drawPointCloud(vars::Vars&vars){
   prg->set1f("by",vars.getFloat("by"));
   prg->set1f("az",vars.getFloat("az"));
   prg->set1f("bz",vars.getFloat("bz"));
+
+
+  auto SM = *vars.get<glm::vec3>("SM");
+  auto SN = *vars.get<glm::vec3>("SN");
+  prg->set3fv("SM",glm::value_ptr(SM));
+  prg->set3fv("SN",glm::value_ptr(SN));
+
+
+  auto light = *vars.get<glm::vec4>("light");
+  auto A = *vars.get<glm::vec3>("A");
+  auto B = *vars.get<glm::vec3>("B");
+
+  prg->set4fv("light",glm::value_ptr(light));
+  prg->set3fv("A",glm::value_ptr(A));
+  prg->set3fv("B",glm::value_ptr(B));
+
 
   ge::gl::glDrawArrays(GL_POINTS,0,100*100*100);
 
@@ -411,6 +490,7 @@ bool doesEdgeIntersectFrustum(in vec4 A,in vec4 B){
   divisor  = divident+B[2]-B[3];
   MINIMIZE();
 
+#undef MINIMIZE
   return tMin <= tMax;
 
 
@@ -439,8 +519,8 @@ bool doesEdgeIntersectFrustum(in vec4 A,in vec4 B){
 
 //*
 bool doesDiagonalIntersectShadowVolumeSide(in vec4 A,in vec4 B,in vec4 L,in uint d){
-  float a = -1.f + 2.f*float(d/2);
-  float b = -1.f + 2.f*float(d&1);
+  float a = -1.f + 2.f*float(d/2u);
+  float b = -1.f + 2.f*float(d&1u);
   float u = B.x - A.x - a*B.y + a*A.y;
   float v = a*L.y - L.x;
   float w = a*A.y - A.x;
@@ -495,6 +575,208 @@ bool doesShadowVolumeSideIntersectsFrustum(in vec4 A,in vec4 B,in vec4 L){
 }
 #line 182
 
+// line inresects
+// i in {x,y,z}
+// X(t) = A+t*(B-A)
+// -X(t)w <= X(t)i <= + X(t)w
+// 
+// -X(t)w + 2aiX(t)w <= X(t)i <= -X(t) + 2biX(t)w
+// X(t)w*(-1+2ai) <= X(t)i <= X(t)w*(-1+2bi)
+// X(t)w*aai <= X(t)i <= X(t)w*bbi
+//
+// X(t)w*aai <= X(t)i
+// X(t)i     <= X(t)w*bbi
+//
+// [Aw+t(Bw-Aw)]*aai <= Ai+t(Bi-Ai)
+// Ai+t(Bi-Ai)       <= [Aw+t(Bw-Aw)]*bbi
+//
+// Aw*aai+t(Bw-Aw)aai <= Ai+t(Bi-Ai)
+// Ai+t(Bi-Ai)        <= Aw*bbi+t(Bw-Aw)bbi
+//
+// Aw*aai-Ai          <= t(Bi-Ai)-t(Bw-Aw)aai
+// Ai-Aw*bbi          <= t(Bw-Aw)bbi-t(Bi-Ai)
+//
+// Aw*aai-Ai          <= t[Bi-Ai-(Bw-Aw)aai]
+// Ai-Aw*bbi          <= t[(Bw-Aw)bbi-Bi+Ai]
+//
+// +Aw*aai-Ai          <= t[+Bi-Ai-(Bw-Aw)aai]
+// -Aw*bbi+Ai          <= t[-Bi+Ai+(Bw-Aw)bbi]
+// M                  <= t*N
+// N>0: M/N <= t
+// N<0: M/N >= t
+// N=0: stop when M>0
+
+bool doesLineInterectSubFrustum_(in vec4 A,in vec4 B,in vec3 minCorner,in vec3 maxCorner){
+  float tMin = 0.f;
+  float tMax = 1.f;
+  float M;
+  float N;
+
+  #define MINIMIZE()\
+  if(N > 0.f)tMin = max(tMin,M/N);\
+  if(N < 0.f)tMax = min(tMax,M/N);\
+  if(N == 0.f && M > 0.f)tMin = 2.f
+  
+  M = +A.w*minCorner[0]-A[0];
+  N = +B[0]-A[0]-(B.w-A.w)*minCorner[0];
+  MINIMIZE();
+  M = +A.w*minCorner[1]-A[1];
+  N = +B[1]-A[1]-(B.w-A.w)*minCorner[1];
+  MINIMIZE();
+  M = +A.w*minCorner[2]-A[2];
+  N = +B[2]-A[2]-(B.w-A.w)*minCorner[2];
+  MINIMIZE();
+
+  M = -A.w*maxCorner[0]+A[0];
+  N = -B[0]+A[0]+(B.w-A.w)*maxCorner[0];
+  MINIMIZE();
+  M = -A.w*maxCorner[1]+A[1];
+  N = -B[1]+A[1]+(B.w-A.w)*maxCorner[1];
+  MINIMIZE();
+  M = -A.w*maxCorner[2]+A[2];
+  N = -B[2]+A[2]+(B.w-A.w)*maxCorner[2];
+  MINIMIZE();
+  
+#undef MINIMIZE
+  return tMin <= tMax;
+}
+
+bool doesLineInterectSubFrustum(in vec4 A,in vec4 B,in vec3 minCorner,in vec3 maxCorner){
+  float tt[2] = {0.f,1.f};
+  float M;
+  float N;
+  uint doMin;
+
+  #define MINIMIZE()\
+  M/=N;\
+  doMin = uint(N<0.f);\
+  N=(tt[doMin]-M)*(-1.f+2.f*doMin);\
+  tt[doMin] = float(N<0)*tt[doMin] + float(N>=0)*M
+  
+  M = +A.w*minCorner[0]-A[0];
+  N = +B[0]-A[0]-(B.w-A.w)*minCorner[0];
+  MINIMIZE();
+  M = +A.w*minCorner[1]-A[1];
+  N = +B[1]-A[1]-(B.w-A.w)*minCorner[1];
+  MINIMIZE();
+  M = +A.w*minCorner[2]-A[2];
+  N = +B[2]-A[2]-(B.w-A.w)*minCorner[2];
+  MINIMIZE();
+
+  M = -A.w*maxCorner[0]+A[0];
+  N = -B[0]+A[0]+(B.w-A.w)*maxCorner[0];
+  MINIMIZE();
+  M = -A.w*maxCorner[1]+A[1];
+  N = -B[1]+A[1]+(B.w-A.w)*maxCorner[1];
+  MINIMIZE();
+  M = -A.w*maxCorner[2]+A[2];
+  N = -B[2]+A[2]+(B.w-A.w)*maxCorner[2];
+  MINIMIZE();
+  
+#undef MINIMIZE
+  return tt[0] <= tt[1];
+}
+
+
+// 2) one of main diagonals of frustum intersects shadow volume side
+// corners of frustum in clip-space:
+// C0 = (-1,-1,-1,1)
+// C1 = (+1,-1,-1,1)
+// C2 = (-1,+1,-1,1)
+// C3 = (+1,+1,-1,1)
+// C4 = (-1,-1,-1,1)
+// C5 = (+1,-1,-1,1)
+// C6 = (-1,+1,-1,1)
+// C7 = (+1,+1,-1,1)
+//
+// C(i) = (-1+2*((i>>0)&1),-1+2*((i>>1)&1),-1+2*((i>>2)&1),1)
+//
+// If main diagonal intersect shadow volume side in point X then:
+// ax+(bx-ax)*X.x ==  ay+(by-ay)*+X.y ==  az+(bz-az)*+X.z   C0->C7
+// ax+(bx-ax)*X.x ==  ay+(by-ay)*-X.y ==  az+(bz-az)*-X.z   C1->C6
+// X.x == -X.y ==  X.z   C2->C5
+// X.x ==  X.y == -X.z   C3->C4
+//
+// edge: A->B, A=(Ax,Ay,Az,1), B=(Bx,By,Bz,1)
+// shadow volume side: A->B, C = (Ax-Lx,Ay-Ly,Az-Lz,0), D = (Bx-Lx,By-Ly,Bz-Lz,0)
+//
+// M(t) = (1-t)*A+t*B
+// O(t) = (1-t)*C+t*D
+// X(t,l) = (1-l)*M(t) + l*O(t)
+// X(t,l) = (1-l)*(1-t)*A + (1-l)*t*B + l*(1-t)*C + l*t*D
+// X(t,l) = A -l*A -t*A + t*l*A + t*B - t*l*B + l*C - t*l*C + t*l*D
+// X(t,l) = A + l*(C-A) + t*(B-A) + t*l*(A-B-C+D)
+// X(t,l) = A + l*((Ax-Lx,Ay-Ly,Az-Lz,0)-(Ax,Ay,Az,1)) + t*(B-A) + t*l*(A-B-C+D)
+// X(t,l) = A + l*((-Lx,-Ly,-Lz,-1)) + t*(B-A) + t*l*(A-B-C+D)
+// X(t,l) = A - l*L + t*(B-A) + t*l*(A-B-C+D)
+// X(t,l) = A - l*L + t*(B-A) + t*l*((Ax,Ay,Az,1)-(Bx,By,Bz,1)-(Ax-Lx,Ay-Ly,Az-Lz,0)+(Bx-Lx,By-Ly,Bz-Lz,0))
+// X(t,l) = A - l*L + t*(B-A) + t*l*((Ax-Bx,Ay-By,Az-Bz,0)-(Ax-Lx,Ay-Ly,Az-Lz,0)+(Bx-Lx,By-Ly,Bz-Lz,0))
+// X(t,l) = A - l*L + t*(B-A) + t*l*((Lx-Bx,Ly-By,Lz-Bz,0)+(Bx-Lx,By-Ly,Bz-Lz,0))
+// X(t,l) = A - l*L + t*(B-A) + t*l*0
+// X(t,l) = A - l*L + t*(B-A)
+//
+// X(t,l)x == X(t,l)y
+//
+// X(t,l)x ==  X(t,l)y && X(t,l)x ==  X(t,l)z    C0->C7
+// X(t,l)x == -X(t,l)y && X(t,l)x == -X(t,l)z    C1->C6
+// X(t,l)x == -X(t,l)y && X(t,l)x ==  X(t,l)z    C2->C5
+// X(t,l)x ==  X(t,l)y && X(t,l)x == -X(t,l)z    C3->C4
+//
+// X(t,l)x*(bx-ax)+ax == H*X(t,l)y*(by-ay)+ay && X(t,l)x == G*X(t,l)z, a,b in {-1,1}
+//
+// [Ax - l*Lx + t*(Bx-Ax)]*(bx-ax)+ax == [Ay - l*Ly + t*(By-Ay)]*H*(by-ay)+ay
+// [Ax - l*Lx + t*(Bx-Ax)]*sx+ax == [Ay - l*Ly + t*(By-Ay)]*H*sy+ay
+// (Ax*sx-aAy*sy+ax-ay) + l*(HLy*sy-Lx*sx) + t*((Bx-Ax)*sx-(By-Ay)*H*sy) = 0
+// t*((Bx-Ax)*sx-(By-Ay)*H*sy) + l*(HLy*sy-Lx*sx) = -(Ax*sx-HAy*sy+ax-ay)
+//
+// [Ax - l*Lx + t*(Bx-Ax)]*sy+ax == [Ay - l*Ly + t*(By-Ay)]*H*sx+ay
+//
+// t*[(Bx-Ax)*sy-(By-Ay)*H*sx] + l*[Ly*H*sx-Lx*sy] = Ay*H*sx-Ax*sy+ay-ax
+//
+//
+// [Ax - l*Lx + t*(Bx-Ax)]*(bx-ax)+ax == [GAz - Gl*Lz + Gt*(Bz-Az)]*(bz-az)+az
+// t*((Bx-Ay)*sx-(Bz-Az)*G*sz) + l*(GLz*sz-Lx*sz) = -(Ax*sx-G*Az*sz+ax-az)
+//
+// t*((Bx-Ax)*sx-(By-Ay)*H*sy) + l*(HLy*sy-Lx*sx) = -(Ax*sx-HAy*sy+ax-ay)
+// t*((Bx-Ax)*sx-(Bz-Az)*G*sz) + l*(GLz*sz-Lx*sx) = -(Ax*sx-G*Az*sz+ax-az)
+//
+// t*u + l*v = w
+// t*x + l*y = z
+//
+//     |w v|  / |u v|
+// t = |z y| /  |x y|
+//
+// l = (w-t*u)/v
+bool doesDiagonalIntersectShadowVolumeSide2(in vec4 A,in vec4 B,in vec4 L,in uint d,in vec3 minCorner,in vec3 maxCorner){
+  vec3 s = maxCorner-minCorner;
+
+  float H = -1.f + 2.f*float(d/2u);
+  float G = -1.f + 2.f*float(d&1u);
+
+  float u = (B.x - A.x)*s.y - (B.y - A.y)*H*s.x;
+  float v = H*L.y*s.x - L.x*s.y;
+  float w = -A.x*s.y + H*A.y*s.x - minCorner.x + minCorner.y;
+
+  float x = (B.x - A.x)*s.z - (B.z - A.z)*G*s.x;
+  float y = G*L.z*s.x - L.x*s.z;
+  float z = -A.x*s.z + G*A.z*s.x - minCorner.x + minCorner.z;
+
+  float divisor  = u*y - x*v;
+  float dividend = w*y - z*v;
+  if(divisor == 0.f)return false;
+  float t = (w*y - z*v) / (u*y - x*v);
+  if(t < 0.f || t > 1.f)return false;
+  if(v == 0.f)return false;
+  float l = (w-t*u)/v;
+  if(l < 0.f || l > 1.f)return false;
+
+  vec4 pp = mix(A,B,t)-L*l;
+  return all(greaterThanEqual(pp.xyz,pp.www*minCorner))&&all(lessThanEqual(pp.xyz,pp.www*maxCorner));
+  //return true;
+}
+
+
+
 bool pointInside(vec4 a){
   return all(greaterThanEqual(a.xyz,-a.www))&&all(lessThanEqual(a.xyz,+a.www));
 }
@@ -543,6 +825,126 @@ bool silhouetteStatus(){//vec3 minCorner,vec3 aabbSize){
   return false;
 }
 
+bool doesDiagonal(uint d){
+  mat4 prj = mat4(0);
+  prj[0][0] = 2*NN/(RR-LL);
+  prj[0][1] = 0;
+  prj[0][2] = 0;
+  prj[0][3] = 0;
+
+  prj[1][0] = 0;
+  prj[1][1] = 2*NN/(TT-BB);
+  prj[1][2] = 0;
+  prj[1][3] = 0;
+
+  prj[2][0] = (RR+LL)/(RR-LL);
+  prj[2][1] = (TT+BB)/(TT-BB);
+  prj[2][2] = -(FF+NN)/(FF-NN);
+  prj[2][3] = -1;
+
+  prj[3][0] = 0;
+  prj[3][1] = 0;
+  prj[3][2] = -2*FF*NN/(FF-NN);
+  prj[3][3] = 0;
+
+  vec3 n = normalize(cross(B-A,light.xyz-A));
+  vec4 p = vec4(n,-dot(n,A));
+  p = inverse(transpose(prj))*p;
+
+  vec3 minCorner = -1+2*vec3(ax,ay,(1/az-1/NN)/(1/FF-1/NN));
+  vec3 maxCorner = -1+2*vec3(bx,by,(1/bz-1/NN)/(1/FF-1/NN));
+
+
+  if((d&1u) != 0u){
+    float z = minCorner.x;
+    minCorner.x = maxCorner.x;
+    maxCorner.x = z;
+  }
+  if((d&2u) != 0u){
+    float z = minCorner.y;
+    minCorner.y = maxCorner.y;
+    maxCorner.y = z;
+  }
+
+  float s = -dot(p,vec4(minCorner,1))/dot(maxCorner-minCorner,p.xyz);
+
+  vec3 cc = minCorner+s*(maxCorner-minCorner);
+
+  vec4 AA = prj*vec4(A,1);
+  vec4 BB = prj*vec4(B,1);
+  vec4 LI = prj*light;
+#line 8000
+  float u = (BB.x-AA.x)-(BB.w-AA.w)*cc.x;
+  float v = -LI.x+LI.w*cc.x;
+  float w = -AA.x+cc.x*AA.w;
+
+  float x = (BB.y-AA.y)-(BB.w-AA.w)*cc.y;
+  float y = -LI.y+LI.w*cc.y;
+  float z = -AA.y+cc.y*AA.w;
+
+  float divisor  = u*y - x*v;
+  float dividend = w*y - z*v;
+  if(divisor == 0.f)return false;
+  float t = (w*y - z*v) / (u*y - x*v);
+  if(t < 0.f || t > 1.f)return false;
+  if(v == 0.f)return false;
+  float l = (w-t*u)/v;
+  if(l < 0.f || l > 1.f)return false;
+
+  if((d&1u) != 0u){
+    float z = minCorner.x;
+    minCorner.x = maxCorner.x;
+    maxCorner.x = z;
+  }
+  if((d&2u) != 0u){
+    float z = minCorner.y;
+    minCorner.y = maxCorner.y;
+    maxCorner.y = z;
+  }
+
+  vec4 pp = mix(AA,BB,t)-LI*l;
+  return all(greaterThanEqual(pp.xyz,pp.www*minCorner))&&all(lessThanEqual(pp.xyz,pp.www*maxCorner));
+  //return true;
+}
+
+bool silhouetteStatus2(){
+  mat4 prj = mat4(0);
+  prj[0][0] = 2*NN/(RR-LL);
+  prj[0][1] = 0;
+  prj[0][2] = 0;
+  prj[0][3] = 0;
+
+  prj[1][0] = 0;
+  prj[1][1] = 2*NN/(TT-BB);
+  prj[1][2] = 0;
+  prj[1][3] = 0;
+
+  prj[2][0] = (RR+LL)/(RR-LL);
+  prj[2][1] = (TT+BB)/(TT-BB);
+  prj[2][2] = -(FF+NN)/(FF-NN);
+  prj[2][3] = -1;
+
+  prj[3][0] = 0;
+  prj[3][1] = 0;
+  prj[3][2] = -2*FF*NN/(FF-NN);
+  prj[3][3] = 0;
+
+  vec4 AA = prj*vec4(A,1);
+  vec4 BB = prj*vec4(B,1);
+  vec4 LI = prj*light;
+
+  vec3 minCorner = -1+2*vec3(ax,ay,(1/az-1/NN)/(1/FF-1/NN));
+  vec3 maxCorner = -1+2*vec3(bx,by,(1/bz-1/NN)/(1/FF-1/NN));
+  if(doesLineInterectSubFrustum(AA,BB   ,minCorner,maxCorner))return true;
+  if(doesLineInterectSubFrustum(AA,AA-LI,minCorner,maxCorner))return true;
+  if(doesLineInterectSubFrustum(BB,BB-LI,minCorner,maxCorner))return true;
+  if(doesDiagonal(0))return true;
+  if(doesDiagonal(1))return true;
+  if(doesDiagonal(2))return true;
+  if(doesDiagonal(3))return true;
+
+  return false;
+}
 
 
   void drawLine(vec3 a,vec3 b){
@@ -589,7 +991,7 @@ bool silhouetteStatus(){//vec3 minCorner,vec3 aabbSize){
     fp[4+2] = vec3(mix(LL,RR,ax)*bz/NN,mix(BB,TT,by)*bz/NN,-bz);
     fp[4+3] = vec3(mix(LL,RR,bx)*bz/NN,mix(BB,TT,by)*bz/NN,-bz);
 
-    if(silhouetteStatus())
+    if(silhouetteStatus2())
       gColor = vec3(1,0,0);
     else
       gColor = vec3(0,1,0);
@@ -669,6 +1071,200 @@ void drawFrustum(vars::Vars&vars){
   vao->unbind();
 }
 
+void prepareDrawSamples(vars::Vars&vars){
+  if(notChanged(vars,"all",__FUNCTION__,{}))return;
+
+  std::string const vsSrc = R".(
+  #version 450
+  void main(){
+  }
+  ).";
+
+  std::string const gsSrc = R".(
+  #version 450
+
+  layout(points)in;
+  layout(line_strip,max_vertices=100)out;
+
+  uniform mat4 view = mat4(1);
+  uniform mat4 proj = mat4(1);
+
+  uniform vec3 A;
+  uniform vec3 B;
+  uniform vec4 light;
+
+  uniform vec3 SM;
+  uniform vec3 SN;
+
+  uniform float LL = -1.f;
+  uniform float RR = +1.f;
+  uniform float BB = -1.f;
+  uniform float TT = +1.f;
+  uniform float NN = +1.f;
+  uniform float FF = +10.f;
+
+  layout(location=13)out vec3 gColor;
+  
+  float depthToZ(float d){
+    return -2*NN*FF / (d*(NN-FF) + FF + NN);
+  }
+
+  vec3 getSample3D(vec3 c){
+    //float s = 1.f+(c.z*.5f+.5f)*(FF/NN-1);
+    float z  = depthToZ(c.z);
+    float s = z/(-NN);
+
+    return vec3(
+      LL*s+(.5f+.5f*c.x)*(RR*s-LL*s),
+      BB*s+(.5f+.5f*c.y)*(TT*s-BB*s),
+      depthToZ(c.z)
+      );
+  }
+
+
+  mat4 getProj(){
+    mat4 prj = mat4(0);
+    prj[0][0] = 2*NN/(RR-LL);
+    prj[0][1] = 0;
+    prj[0][2] = 0;
+    prj[0][3] = 0;
+
+    prj[1][0] = 0;
+    prj[1][1] = 2*NN/(TT-BB);
+    prj[1][2] = 0;
+    prj[1][3] = 0;
+
+    prj[2][0] = (RR+LL)/(RR-LL);
+    prj[2][1] = (TT+BB)/(TT-BB);
+    prj[2][2] = -(FF+NN)/(FF-NN);
+    prj[2][3] = -1;
+
+    prj[3][0] = 0;
+    prj[3][1] = 0;
+    prj[3][2] = -2*FF*NN/(FF-NN);
+    prj[3][3] = 0;
+    return prj;
+  }
+
+  
+  bool sampleCollision(
+      in vec3 startSample,
+      in vec3 endSample  ,
+      in vec4 aa         ,
+      in vec4 bb         ,
+      in vec4 ll         ){
+
+    vec3 edgeNormal     = normalize(cross(bb.xyz*aa.w-aa.xyz*bb.w,ll.xyz*aa.w-aa.xyz*ll.w));
+    vec4 edgePlane      = vec4(edgeNormal,-dot(edgeNormal,aa.xyz/aa.w));
+
+    vec3 sampleNormal   = normalize(cross(endSample-startSample,ll.xyz-startSample*ll.w));
+    vec4 samplePlane    = vec4(sampleNormal,-dot(sampleNormal,startSample));
+
+    vec3 triangleNormal = normalize(cross(endSample-startSample,bb.xyz*aa.w-aa.xyz*bb.w));
+    vec4 trianglePlane  = vec4(triangleNormal,-dot(triangleNormal,startSample));
+
+    // m n c 
+    // - - 0
+    // 0 - 1
+    // + - 1
+    // - 0 1
+    // 0 0 0
+    // + 0 0
+    // - + 1
+    // 0 + 0
+    // + + 0
+    //
+    // m<0 && n>=0 || m>=0 && n<0
+    // m<0 xor n<0
+
+    if((dot(edgePlane,vec4(startSample,1))<0) == (dot(edgePlane,vec4(endSample,1))<0))return false;
+
+    if(dot(trianglePlane,aa)<=0)return false;
+
+    return dot(samplePlane,aa)*dot(samplePlane,bb) <= 0;
+  }
+
+  void drawLine(vec3 a,vec3 b){
+    gl_Position = proj*view*vec4(a,1);EmitVertex();
+    gl_Position = proj*view*vec4(b,1);EmitVertex();
+    EndPrimitive();
+  }
+
+  void main(){
+    gColor = vec3(1,1,0);
+    if(light == vec4(0) || A == vec3(0) || B == vec3(0))gColor = vec3(1);
+    if(sampleCollision(SM,SN,getProj()*vec4(A,1),getProj()*vec4(B,1),getProj()*light))
+      gColor = vec3(0,1,1);
+    drawLine(getSample3D(SM),getSample3D(SN));
+
+    gColor = vec3(.3);
+    drawLine(light.xyz,getSample3D(SM));
+    drawLine(light.xyz,getSample3D(SN));
+  }
+
+  ).";
+
+  std::string const fsSrc = R".(
+
+  #version 450
+  layout(location=0)out vec4 fColor;
+  layout(location=13)in vec3 gColor;
+  void main(){
+    fColor = vec4(gColor,1);
+  }
+  ).";
+
+  auto vs = std::make_shared<ge::gl::Shader>(GL_VERTEX_SHADER,vsSrc);
+  auto gs = std::make_shared<ge::gl::Shader>(GL_GEOMETRY_SHADER,gsSrc);
+  auto fs = std::make_shared<ge::gl::Shader>(GL_FRAGMENT_SHADER,fsSrc);
+
+  vars.reCreate<ge::gl::Program>("drawSamplesProgram",vs,gs,fs);
+  
+  vars.reCreate<ge::gl::VertexArray>("drawSamplesVAO");
+}
+
+void drawSamples(vars::Vars&vars){
+  prepareDrawSamples(vars);
+
+  auto prg = vars.get<ge::gl::Program>("drawSamplesProgram");
+  auto vao = vars.get<ge::gl::VertexArray>("drawSamplesVAO");
+
+  auto view = vars.getReinterpret<basicCamera::CameraTransform>("view")->getView();
+  auto proj = vars.get<basicCamera::PerspectiveCamera>("projection")->getProjection();
+
+  auto light = *vars.get<glm::vec4>("light");
+  auto A = *vars.get<glm::vec3>("A");
+  auto B = *vars.get<glm::vec3>("B");
+
+  auto SM = *vars.get<glm::vec3>("SM");
+  auto SN = *vars.get<glm::vec3>("SN");
+
+  vao->bind();
+  prg->use();
+  prg->setMatrix4fv("view",glm::value_ptr(view));
+  prg->setMatrix4fv("proj",glm::value_ptr(proj));
+
+  prg->set1f("LL",vars.getFloat("LL"));
+  prg->set1f("RR",vars.getFloat("RR"));
+  prg->set1f("BB",vars.getFloat("BB"));
+  prg->set1f("TT",vars.getFloat("TT"));
+  prg->set1f("NN",vars.getFloat("NN"));
+  prg->set1f("FF",vars.getFloat("FF"));
+
+  prg->set3fv("SM",glm::value_ptr(SM));
+  prg->set3fv("SN",glm::value_ptr(SN));
+
+  prg->set4fv("light",glm::value_ptr(light));
+  prg->set3fv("A",glm::value_ptr(A));
+  prg->set3fv("B",glm::value_ptr(B));
+
+  ge::gl::glLineWidth(3);
+  ge::gl::glDrawArrays(GL_POINTS,0,1);
+  ge::gl::glLineWidth(1);
+
+  vao->unbind();
+}
+
 class EmptyProject: public simple3DApp::Application{
  public:
   EmptyProject(int argc, char* argv[]) : Application(argc, argv,330) {}
@@ -729,6 +1325,12 @@ void EmptyProject::init(){
   addVarsLimits3F(vars,"light",-100,100,0.1);
 
 
+  vars.add<glm::vec3>("SM",glm::vec3(-0.272,0.248,0.333));
+  vars.add<glm::vec3>("SN",glm::vec3(0.515,0.283,+1));
+  addVarsLimits3F(vars,"SM"    ,-1,1,0.001);
+  addVarsLimits3F(vars,"SN"    ,-1,1,0.001);
+
+
   vars.addFloat("LL",-1.f);
   vars.addFloat("RR",+1.f);
   vars.addFloat("BB",-1.f);
@@ -779,9 +1381,10 @@ void EmptyProject::draw(){
 
   vars.get<ge::gl::VertexArray>("emptyVao")->unbind();
 
-  drawPointCloud(vars);
-  drawSide(vars);
-  drawFrustum(vars);
+  if(vars.addOrGetBool("drawPointCloud",true))drawPointCloud(vars);
+  if(vars.addOrGetBool("drasSide"      ,true))drawSide      (vars);
+  if(vars.addOrGetBool("drawFrustum"   ,true))drawFrustum   (vars);
+  if(vars.addOrGetBool("drawSamples"   ,true))drawSamples   (vars);
 
   drawImguiVars(vars);
 
