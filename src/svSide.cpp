@@ -114,10 +114,31 @@ void prepareDrawPointCloud(vars::Vars&vars){
     return all(greaterThanEqual(a.xyz,-a.www))&&all(lessThanEqual(a.xyz,+a.www));
   }
 
+  vec4 getClipPlane(in vec4 a,in vec4 b,in vec4 c){
+    if(a.w==0){
+      if(b.w==0){
+        if(c.w==0){
+          return vec4(0,0,0,cross(b.xyz-a.xyz,c.xyz-a.xyz).z);
+        }else{
+          vec3 n = cross(a.xyz*c.w-c.xyz*a.w,b.xyz*c.w-c.xyz*b.w);
+          return vec4(n*c.w,-dot(n,c.xyz));
+        }
+      }else{
+        vec3 n = cross(c.xyz*b.w-b.xyz*c.w,a.xyz*b.w-b.xyz*a.w);
+        return vec4(n*b.w,-dot(n,b.xyz));
+      }
+    }else{
+      vec3 n = cross(b.xyz*a.w-a.xyz*b.w,c.xyz*a.w-a.xyz*c.w);
+      return vec4(n*a.w,-dot(n,a.xyz));
+    }
+  }
+
   vec4 getEdgePlane(){
-    vec3 n = normalize(cross(B-A,light.xyz-A));
-    vec4 p = getInvProj()*vec4(n,-dot(n,A));
-    return p;
+    vec4 a = getProj()*vec4(A,1);
+    vec4 b = getProj()*vec4(B,1);
+    vec4 c = getProj()*vec4(light);
+
+    return getClipPlane(a,b,c);
   }
 
   vec4 getSamplePlane(){
@@ -127,8 +148,8 @@ void prepareDrawPointCloud(vars::Vars&vars){
   }
 
   bool pointInFront(vec4 pp){
-    //return dot(getEdgePlane(),pp) > 0;
-    return dot(getSamplePlane(),pp) > 0;
+    return dot(getEdgePlane(),pp) > 0;
+    //return dot(getSamplePlane(),pp) > 0;
   }
   
   #define REMEMBER3(a)if(a==vec3(1337))return
@@ -1317,9 +1338,9 @@ void EmptyProject::init(){
   vars.addMap<SDL_Keycode, bool>("input.keyDown");
   vars.addBool("useOrbitCamera",false);
 
-  vars.add<glm::vec4>("light",glm::vec4(10,30,10,1));
-  vars.add<glm::vec3>("A",glm::vec3(-2.5,1.1,-3));
-  vars.add<glm::vec3>("B",glm::vec3(1.3,.6,-3));
+  vars.add<glm::vec4>("light",glm::vec4(10,30,0,1));
+  vars.add<glm::vec3>("A",glm::vec3(-2.5,1.1,0));
+  vars.add<glm::vec3>("B",glm::vec3(1.3,.6,0));
   addVarsLimits3F(vars,"A"    ,-10,10,0.1);
   addVarsLimits3F(vars,"B"    ,-10,10,0.1);
   addVarsLimits3F(vars,"light",-100,100,0.1);
