@@ -169,6 +169,14 @@ void prepareDrawPointCloud(vars::Vars&vars){
     pp.z = (-50.f + float(((gl_VertexID/100)/100)%100))*.2f;
     pp.w = 1.f;
 
+    vColor = vec3(1,0,0);
+    if(pointInFront(getProj()*pp))
+      vColor = vec3(0,0,1);
+      
+    gl_Position = proj*view*pp;
+    return;
+
+
     if(pointInside(pp)){
       vColor = vec3(1,0,0);
       if(pointInFront(getProj()*pp))
