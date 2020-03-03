@@ -23,7 +23,7 @@
 constexpr float FRAME_LIMIT{1.0f/24};
 constexpr bool SCREENSHOT_MODE{0};
 constexpr bool SCREENSHOT_VIDEO{0};
-constexpr uint32_t FOCUSMAP_DIV = 1;
+constexpr uint32_t FOCUSMAP_DIV{1};
 constexpr bool MEASURE_TIME{1};
 //TODO not multiple of local size resolution cases
 constexpr int WARP_SIZE{32};
@@ -111,6 +111,7 @@ void createProgram(vars::Vars&vars)
         if(showFocusMap != 0)
             fColor = vec4(vec3(dot(vec4(textureGather(s, vCoord*textureSize(s,0))), vec4(.25))/float(focusLevels*(searchSubdiv+1))),1.0);
         //fColor = vec4(vec3(vec4(float(texture(s, vCoord*textureSize(s,0)).x)/32.0)),1.0);
+        //fColor = texture(sampler2D(lfTextures[63]),vCoord);
     }
     ).";
     
@@ -274,12 +275,10 @@ void createProgram(vars::Vars&vars)
             else if(colMetric == 5)
                 return distance(rgb2yuv(c1), rgb2yuv(c2));
             else if(colMetric == 6)
-                return abs(rgb2hsv(c1).x - rgb2hsv(c2).x);
-            else if(colMetric == 7)
                 return sqrt(3*pow(c1.r-c2.r,2) + 4*pow(c1.g-c2.g,2) + 2*pow(c1.b-c2.b,2)); //weighted euclidan
+            else if(colMetric == 7)
+                return abs(c1.r-c2.r)+abs(c1.g-c2.g)+abs(c1.b-c2.b); //manhattan
             else if(colMetric == 8)
-                return abs(c1.r-c2.r)+abs(c1.g-c2.g)+abs(c1.b-c2.b);
-            else if(colMetric == 9)
                 return deltaE2000(rgb2lab(c1), rgb2lab(c2));
             else 
                 return max(max(3*abs(c1.r-c2.r), 4*abs(c1.g-c2.g)), 2*abs(c1.b-c2.b)); //weighted chebyshev
@@ -480,6 +479,8 @@ void createProgram(vars::Vars&vars)
         exit(1);
         */
 
+        ge::gl::setDebugMessage(nullptr, nullptr);
+
         auto args = vars.add<argumentViewer::ArgumentViewer>("args",argc,argv);
         auto const videoFile = args->gets("--video","","h265 compressed LF video (pix_fmt yuv420p)");
         auto const gridSize = args->getu32("--grid",8,"number of cameras in row/column (assuming a rectangle)");
@@ -530,7 +531,7 @@ void createProgram(vars::Vars&vars)
         vars.addFloat("gridSampleDistance",2.0f);
         vars.addFloat("gridSampleDistanceR",2.0f);
         vars.addBool("showFocusMap", false);
-        vars.addInt32("colMetric", 0);
+        vars.addInt32("colMetric", 2);
         vars.addInt32("searchSubdiv", 0);
         vars.add<std::map<SDL_Keycode, bool>>("input.keyDown");
         vars.addUint32("frame",0);
@@ -665,8 +666,8 @@ void createProgram(vars::Vars&vars)
         if(ImGui::SliderInt("Timeline", vars.get<int>("frameNum"), 1, vars.getUint32("length")))
             vars.reCreate<int>("seekFrame", *vars.get<int>("frameNum"));
         ImGui::Selectable("Pause", &vars.getBool("pause"));
-        ImGui::DragFloat("Focus", &vars.getFloat("focus"),0.0001f);
-        ImGui::DragFloat("Focus step", &vars.getFloat("inputFocusStep"),0.00001f,-10, 10, "%.4f");
+        ImGui::DragFloat("Focus", &vars.getFloat("focus"),0.00001f, -10, 10, "%.5f");
+        ImGui::DragFloat("Focus step", &vars.getFloat("inputFocusStep"),0.000001f,-10, 10, "%.6f");
         ImGui::DragFloat("Focus sample distance", &vars.getFloat("gridSampleDistance"),0.1f,0,vars.get<glm::ivec2>("gridSize")->x); 
         ImGui::DragFloat("Render sample distance", &vars.getFloat("gridSampleDistanceR"),0.1f,0,vars.get<glm::ivec2>("gridSize")->x); 
         ImGui::Checkbox("Show focus map", &vars.getBool("showFocusMap"));
@@ -699,12 +700,13 @@ void createProgram(vars::Vars&vars)
     vars.addOrGetFloat("elapsed") = time;
     //std::cerr << time << std::endl;
     if(time > FRAME_LIMIT)
-        std::cerr << "Lag" << std::endl;
+        //std::cerr << "Lag" << std::endl;
+        {}
     else
         std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<long>((FRAME_LIMIT-time)*1000)));
 
     if(vars.getBool("printTimes")) 
-        std::cerr << vars.getFloat("csElapsed") << " " << vars.getFloat("drawElapsed") << std::endl;
+        std::cerr << vars.getFloat("csElapsed") << "\t" << vars.getFloat("drawElapsed") << std::endl;
 }
 
 void LightFields::key(SDL_Event const& event, bool DOWN)
