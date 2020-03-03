@@ -72,25 +72,105 @@ void createProgram(vars::Vars&vars)
     const uint lfSize = gridSize.x*gridSize.x;
     const uint focusLevels = 32; //warp size
     uniform uint64_t lfTextures[lfSize];
-    //layout(bindless_image)uniform layout(r8ui) readonly uimage2D focusMap;
-    uniform uint64_t focusMap;
+    layout(bindless_image)uniform layout(r8ui) readonly uimage2D focusMap;
     out vec4 fColor;
     in vec2 vCoord;
     in vec3 position;
 
     uniform int showFocusMap;
+    uniform int useMedian;
     uniform vec2 viewCoord;
     uniform float focusStep;
     uniform float focus;
     uniform float aspect;
     uniform float gridSampleDistanceR;
     uniform int searchSubdiv;
-    
+   
+    void loadPixels(in ivec2 dt, out ivec4 e[3])
+    {
+        int i = 0;
+        ivec2 offset;
+        for (offset.y = -1; offset.y <= 1; ++offset.y)
+        {
+            for (offset.x = -1; offset.x <= 1; ++offset.x)
+            {
+                e[i / 4][i % 4] = int(imageLoad(focusMap, dt + offset).x);
+                ++i;
+            }
+        }
+    }
+
+    void minmax(inout int u, inout int v)
+    {
+        int save = u;
+        u = min(save, v);
+        v = max(save, v);
+    }
+
+    void minmax(inout ivec2 u, inout ivec2 v)
+    {
+        ivec2 save = u;
+        u = min(save, v);
+        v = max(save, v);
+    }
+
+    void minmax(inout ivec4 u, inout ivec4 v)
+    {
+        ivec4 save = u;
+        u = min(save, v);
+        v = max(save, v);
+    }
+
+    void minmax3(inout ivec4 e[3])
+    {
+        minmax(e[0].x, e[0].y);      // min in e0.xz, max in e0.yz
+        minmax(e[0].x, e[0].z);      // min in e0.x, max in e0.yz
+        minmax(e[0].y, e[0].z);      // min in e0.x, max in e0.z
+    }
+
+    void minmax4(inout ivec4 e[3])
+    {
+        minmax(e[0].xy, e[0].zw);    // min in e0.xy, max in e0.zw
+        minmax(e[0].xz, e[0].yw);    // min in e0.x, max in e0.w
+    }
+
+    void minmax5(inout ivec4 e[3])
+    {
+        minmax(e[0].xy, e[0].zw);    // min in {e0.xy, e1.x}, max in {e0.zw, e1.x}
+        minmax(e[0].xz, e[0].yw);    // min in {e0.x, e1.x}, max in {e0.w, e1.x}
+        minmax(e[0].x, e[1].x);      // min in e0.x, max in {e0.w, e1.x}
+        minmax(e[0].w, e[1].x);      // min in e0.x, max in e1.x
+    }
+
+    void minmax6(inout ivec4 e[3])
+    {
+        minmax(e[0].xy, e[0].zw);    // min in {e0.xy, e1.xy}, max in {e0.zw, e1.xy}
+        minmax(e[0].xz, e[0].yw);    // min in {e0.x, e1.xy}, max in {e0.w, e1.xy}
+        minmax(e[1].x, e[1].y);      // min in {e0.x, e1.x}, max in {e0.w, e1.y}
+        minmax(e[0].xw, e[1].xy);    // min in e0.x, max in e1.y
+    }
+ 
     void main()
     {
-        usampler2D s = usampler2D(focusMap);
-        //float focusValue = focus+texture(s, vCoord*textureSize(s,0)).x*focusStep;
-        float focusValue = focus+dot(vec4(textureGather(s, vCoord*textureSize(s,0))), vec4(.25))*focusStep;
+            
+        int focusLvl = 0;
+        if(useMedian != 0)
+        { 
+            ivec4 e[3]; 
+            loadPixels(ivec2(vCoord*imageSize(focusMap)), e);
+            minmax6(e);         
+            e[0].x = e[2].x;   
+            minmax5(e);       
+            e[0].x = e[1].w; 
+            minmax4(e);      
+            e[0].x = e[1].z;
+            minmax3(e);   
+            focusLvl = e[0].y;
+        }
+        else
+            focusLvl = int(imageLoad(focusMap, ivec2(vCoord*imageSize(focusMap))).x);
+        float focusValue = focus+focusLvl*focusStep;
+        
         int n=0;
         for(int x=0; x<gridSize.x; x++)
             for(int y=0; y<gridSize.y; y++)
@@ -109,8 +189,7 @@ void createProgram(vars::Vars&vars)
         fColor.xyz /= n;
         fColor.w = 1;
         if(showFocusMap != 0)
-            fColor = vec4(vec3(dot(vec4(textureGather(s, vCoord*textureSize(s,0))), vec4(.25))/float(focusLevels*(searchSubdiv+1))),1.0);
-        //fColor = vec4(vec3(vec4(float(texture(s, vCoord*textureSize(s,0)).x)/32.0)),1.0);
+            fColor = vec4(vec3(focusLvl/float(focusLevels*(searchSubdiv+1))),1.0);
         //fColor = texture(sampler2D(lfTextures[63]),vCoord);
     }
     ).";
@@ -531,6 +610,7 @@ void createProgram(vars::Vars&vars)
         vars.addFloat("gridSampleDistance",2.0f);
         vars.addFloat("gridSampleDistanceR",2.0f);
         vars.addBool("showFocusMap", false);
+        vars.addBool("useMedian", false);
         vars.addInt32("colMetric", 2);
         vars.addInt32("searchSubdiv", 0);
         vars.add<std::map<SDL_Keycode, bool>>("input.keyDown");
@@ -644,6 +724,7 @@ void createProgram(vars::Vars&vars)
         ->set2fv("viewCoord",glm::value_ptr(viewCoord))
         ->set1f("aspect",aspect)
         ->set1i("showFocusMap",vars.getBool("showFocusMap"))
+        ->set1i("useMedian",vars.getBool("useMedian"))
         ->set1i("searchSubdiv",vars.getInt32("searchSubdiv"))
         ->set1f("gridSampleDistanceR",vars.getFloat("gridSampleDistanceR"))
         ->use();
@@ -671,6 +752,7 @@ void createProgram(vars::Vars&vars)
         ImGui::DragFloat("Focus sample distance", &vars.getFloat("gridSampleDistance"),0.1f,0,vars.get<glm::ivec2>("gridSize")->x); 
         ImGui::DragFloat("Render sample distance", &vars.getFloat("gridSampleDistanceR"),0.1f,0,vars.get<glm::ivec2>("gridSize")->x); 
         ImGui::Checkbox("Show focus map", &vars.getBool("showFocusMap"));
+        ImGui::Checkbox("Use median", &vars.getBool("useMedian"));
         ImGui::InputInt("Alternative col metric", &vars.getInt32("colMetric"));
         ImGui::DragInt("Search subdivisions", &vars.getInt32("searchSubdiv"),0,0,7); 
         vars.getFloat("focusStep")=vars.getFloat("inputFocusStep")/(vars.getInt32("searchSubdiv")+1);
