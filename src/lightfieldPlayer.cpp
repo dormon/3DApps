@@ -21,10 +21,9 @@
 #include<condition_variable>
 
 constexpr float FRAME_LIMIT{1.0f/24};
-constexpr bool SCREENSHOT_MODE{0};
-constexpr bool SCREENSHOT_VIDEO{0};
 constexpr uint32_t FOCUSMAP_DIV{1};
 constexpr bool MEASURE_TIME{1};
+constexpr bool STATISTICS{0};
 //TODO not multiple of local size resolution cases
 constexpr int WARP_SIZE{32};
 constexpr int LOCAL_SIZE_X{WARP_SIZE};
@@ -191,6 +190,11 @@ void createProgram(vars::Vars&vars)
         if(showFocusMap != 0)
             fColor = vec4(vec3(focusLvl/float(focusLevels*(searchSubdiv+1))),1.0);
         //fColor = texture(sampler2D(lfTextures[63]),vCoord);
+
+        /*
+        ivec2 c = ivec2(vCoord*imageSize(focusMap));
+        if(c.y*imageSize(focusMap).x+c.x == 753847)
+            fColor = vec4(1.0,0.0,0.0,1.0);*/
     }
     ).";
     
@@ -210,6 +214,7 @@ void createProgram(vars::Vars&vars)
  
     layout(local_size_x=LSX, local_size_y=LSY)in;
     layout(bindless_image)uniform layout(r8ui) writeonly uimage2D focusMap;
+    STATS_INIT
     
     uniform uint64_t lfTextures[lfSize];
     uniform vec2 viewCoord;
@@ -219,6 +224,8 @@ void createProgram(vars::Vars&vars)
     uniform float gridSampleDistance;
     uniform int colMetric;
     uniform int searchSubdiv;
+    uniform int sampleBlock;
+    uniform int checkSaddle;
 
     const float PI = 3.141592653589793238462643;
     vec3 lab2lch(vec3 Lab)
@@ -361,7 +368,6 @@ void createProgram(vars::Vars&vars)
                 return deltaE2000(rgb2lab(c1), rgb2lab(c2));
             else 
                 return max(max(3*abs(c1.r-c2.r), 4*abs(c1.g-c2.g)), 2*abs(c1.b-c2.b)); //weighted chebyshev
-                //return deltaE2000(rgb2lab(c1), rgb2lab(c2));
         }
 
         void main()
@@ -373,8 +379,6 @@ void createProgram(vars::Vars&vars)
 
             float minM2=MAX_M2;
             int subDivLvl = 0;
-        //TODO vzorky z okoli, ne jeden pixel - blurovany pixel nebo nascitat kernel okoli
-        //TODO post processing dof na zaklade zblurovane masky
         for(int i=0; i<=searchSubdiv; i++)
         {
             float m2=0.0;
@@ -393,6 +397,21 @@ void createProgram(vars::Vars&vars)
                     vec2 focusedCoords = clamp(inCoords+offset*focusValue*vec2(1.0,aspect), 0.0, 1.0); 
                     sampler2D s = sampler2D(lfTextures[slice]);
                     vec3 color = texture(s,focusedCoords).xyz;
+
+                   
+                    if(sampleBlock == 1)
+                    { 
+                        float dif=1.0/textureSize(s,0).x+0.0001;
+                        color += texture(s,focusedCoords+dif).xyz;
+                        color += texture(s,focusedCoords-dif).xyz;
+                        color += texture(s,focusedCoords+vec2(dif, -dif)).xyz;
+                        color += texture(s,focusedCoords+vec2(-dif, dif)).xyz;
+                        /*color += texture(s,focusedCoords+vec2(0, -dif)).xyz;
+                        color += texture(s,focusedCoords+vec2(dif, 0)).xyz;
+                        color += texture(s,focusedCoords+vec2(0, dif)).xyz;
+                        color += texture(s,focusedCoords+vec2(-dif, 0)).xyz;*/
+                        color /= 5.0;
+                    } 
                 
                     n++;
                     vec3 delta = color-mean;
@@ -401,19 +420,34 @@ void createProgram(vars::Vars&vars)
                     m2 += d*colorDistance(color,mean);
                 } 
             m2 /= n-1;
-            //if(i==0) minM2 = m2; else
             if(m2<minM2)
             {
                 minM2 = m2;
                 subDivLvl = i;
             }
         }
+           
+            if(checkSaddle == 1)
+            { 
+                //TODO fix when using subdivisions
+                vec2 neighbours = vec2(minM2);
+                if(gl_LocalInvocationID.x != 0)
+                    neighbours.x = shuffleUpNV(minM2,1,focusLevels); 
+                if(gl_LocalInvocationID.x != 31)
+                    neighbours.y = shuffleDownNV(minM2,1,focusLevels); 
+                float saddle = abs(minM2-neighbours.x) + abs(minM2-neighbours.y);
+                if(minM2 <= neighbours.x && minM2 <= neighbours.y)
+                    minM2 -= saddle*0.5;
+            }
+
             float origM2 = minM2;
             for (uint offset=focusLevels>>1; offset>0; offset>>=1)
                 minM2 = min(minM2,shuffleDownNV(minM2,offset,focusLevels));
             float totalMinM2=readFirstInvocationARB(minM2);
             if(totalMinM2 == origM2)
                 imageStore(focusMap, outCoords, uvec4(subDivLvl*focusLevels+gl_LocalInvocationID.x));
+            
+            STATS_EXEC
         }
         ).";
 
@@ -421,6 +455,26 @@ void createProgram(vars::Vars&vars)
         csSrc.replace(csSrc.find("LSY"), 3, std::to_string(LOCAL_SIZE_Y));
         csSrc.replace(csSrc.find("GSX"), 3, std::to_string(vars.get<glm::ivec2>("gridSize")->x));
         fsSrc.replace(fsSrc.find("GSX"), 3, std::to_string(vars.get<glm::ivec2>("gridSize")->x));
+
+        std::string statsInitCode{""}; 
+        std::string statsExecCode{""}; 
+        if constexpr (STATISTICS)
+        {
+            statsInitCode = 
+            R".(layout(std430, binding = 2) buffer statisticsLayout
+                {
+                   float statistics[];
+                };).";
+            statsExecCode = 
+            R".(
+               if(pixelId==753847)
+                statistics[gl_LocalInvocationID.x] = origM2;
+            ).";
+        }
+        
+        csSrc.replace(csSrc.find("STATS_INIT"), 10, statsInitCode); 
+        csSrc.replace(csSrc.find("STATS_EXEC"), 10, statsExecCode); 
+
 
         auto vs = std::make_shared<ge::gl::Shader>(GL_VERTEX_SHADER, "#version 450\n", vsSrc);
         auto fs = std::make_shared<ge::gl::Shader>(GL_FRAGMENT_SHADER, "#version 450\n", fsSrc);
@@ -563,6 +617,8 @@ void createProgram(vars::Vars&vars)
         auto args = vars.add<argumentViewer::ArgumentViewer>("args",argc,argv);
         auto const videoFile = args->gets("--video","","h265 compressed LF video (pix_fmt yuv420p)");
         auto const gridSize = args->getu32("--grid",8,"number of cameras in row/column (assuming a rectangle)");
+        auto const focus = args->getf32("--focus",0,"focus level");
+        auto const focusStep = args->getf32("--focusStep",0,"focus search step relative to focus level");
         auto const showHelp = args->isPresent("-h","shows help");
         if (showHelp || !args->validate()) {
             std::cerr << args->toStr();
@@ -604,13 +660,15 @@ void createProgram(vars::Vars&vars)
         vars.addFloat("camera.fovy",glm::half_pi<float>());
         vars.addFloat("camera.near",.1f);
         vars.addFloat("camera.far",1000.f);
-        vars.addFloat("focus",0.0f);
+        vars.addFloat("focus",focus);
+        vars.addFloat("inputFocusStep",focusStep);
         vars.addFloat("focusStep",0.0f);
-        vars.addFloat("inputFocusStep",0.0f);
         vars.addFloat("gridSampleDistance",2.0f);
         vars.addFloat("gridSampleDistanceR",2.0f);
         vars.addBool("showFocusMap", false);
         vars.addBool("useMedian", false);
+        vars.addBool("checkSaddle", false);
+        vars.addBool("sampleBlock", false);
         vars.addInt32("colMetric", 2);
         vars.addInt32("searchSubdiv", 0);
         vars.add<std::map<SDL_Keycode, bool>>("input.keyDown");
@@ -619,6 +677,12 @@ void createProgram(vars::Vars&vars)
         createCamera(vars);
 
         ge::gl::glEnable(GL_DEPTH_TEST);
+
+        if constexpr (STATISTICS)
+        { 
+            auto stats = vars.add<ge::gl::Buffer>("statistics", 1000*4);
+            stats->bindBase(GL_SHADER_STORAGE_BUFFER, 2);
+        }
     }
 
     SDL_Surface* flipSurface(SDL_Surface* sfc) {
@@ -698,10 +762,15 @@ void createProgram(vars::Vars&vars)
         ->set2fv("viewCoord",glm::value_ptr(viewCoord))
         ->set1i("colMetric",vars.getInt32("colMetric"))
         ->set1i("searchSubdiv",vars.getInt32("searchSubdiv"))
+        ->set1i("checkSaddle",vars.getBool("checkSaddle"))
+        ->set1i("sampleBlock",vars.getBool("sampleBlock"))
         ->set1f("aspect",aspect)
         ->use();
         ge::gl::glProgramUniformHandleui64vARB(csProgram->getId(), csProgram->getUniformLocation("lfTextures"), vars.getInt32("lfCount"), vars.getVector<GLuint64>(currentTexturesName).data());
         ge::gl::glProgramUniformHandleui64vARB(csProgram->getId(), csProgram->getUniformLocation("focusMap"), 1, vars.get<GLuint64>("focusMap.image"));
+
+        if constexpr (STATISTICS)
+            vars.get<ge::gl::Buffer>("statistics")->bind(GL_SHADER_STORAGE_BUFFER);
 
         auto query = ge::gl::AsynchronousQuery(GL_TIME_ELAPSED, GL_QUERY_RESULT, ge::gl::AsynchronousQuery::UINT64);
         if constexpr (MEASURE_TIME) query.begin();
@@ -715,6 +784,16 @@ void createProgram(vars::Vars&vars)
             query.end();
             vars.reCreate<float>("csElapsed", query.getui64()/1000000.0);
         } 
+        
+        if constexpr (STATISTICS)
+        {
+            vars.get<ge::gl::Buffer>("statistics")->unbind(GL_SHADER_STORAGE_BUFFER);
+            ge::gl::glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+            GLfloat *ptr = reinterpret_cast<GLfloat*>(vars.get<ge::gl::Buffer>("statistics")->map());
+            for(int i=0; i<32; i++)
+                std::cerr << i*vars.getFloat("focusStep")+vars.getFloat("focus") << "\t" << ptr[i] << std::endl;
+            vars.get<ge::gl::Buffer>("statistics")->unmap();
+        }
 
         auto program = vars.get<ge::gl::Program>("lfProgram");
         program
@@ -753,6 +832,8 @@ void createProgram(vars::Vars&vars)
         ImGui::DragFloat("Render sample distance", &vars.getFloat("gridSampleDistanceR"),0.1f,0,vars.get<glm::ivec2>("gridSize")->x); 
         ImGui::Checkbox("Show focus map", &vars.getBool("showFocusMap"));
         ImGui::Checkbox("Use median", &vars.getBool("useMedian"));
+        ImGui::Checkbox("Check saddle", &vars.getBool("checkSaddle"));
+        ImGui::Checkbox("Sample block", &vars.getBool("sampleBlock"));
         ImGui::InputInt("Alternative col metric", &vars.getInt32("colMetric"));
         ImGui::DragInt("Search subdivisions", &vars.getInt32("searchSubdiv"),0,0,7); 
         vars.getFloat("focusStep")=vars.getFloat("inputFocusStep")/(vars.getInt32("searchSubdiv")+1);
