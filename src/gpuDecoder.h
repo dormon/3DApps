@@ -10,7 +10,6 @@ extern "C" {
 #include <libavcodec/vdpau.h>
 }
 
-
 class GpuDecoder
 {
     public:

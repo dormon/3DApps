@@ -122,31 +122,31 @@ void createProgram(vars::Vars&vars)
 
     void minmax3(inout ivec4 e[3])
     {
-        minmax(e[0].x, e[0].y);      // min in e0.xz, max in e0.yz
-        minmax(e[0].x, e[0].z);      // min in e0.x, max in e0.yz
-        minmax(e[0].y, e[0].z);      // min in e0.x, max in e0.z
+        minmax(e[0].x, e[0].y);     
+        minmax(e[0].x, e[0].z);     
+        minmax(e[0].y, e[0].z);     
     }
 
     void minmax4(inout ivec4 e[3])
     {
-        minmax(e[0].xy, e[0].zw);    // min in e0.xy, max in e0.zw
-        minmax(e[0].xz, e[0].yw);    // min in e0.x, max in e0.w
+        minmax(e[0].xy, e[0].zw);   
+        minmax(e[0].xz, e[0].yw);   
     }
 
     void minmax5(inout ivec4 e[3])
     {
-        minmax(e[0].xy, e[0].zw);    // min in {e0.xy, e1.x}, max in {e0.zw, e1.x}
-        minmax(e[0].xz, e[0].yw);    // min in {e0.x, e1.x}, max in {e0.w, e1.x}
-        minmax(e[0].x, e[1].x);      // min in e0.x, max in {e0.w, e1.x}
-        minmax(e[0].w, e[1].x);      // min in e0.x, max in e1.x
+        minmax(e[0].xy, e[0].zw);   
+        minmax(e[0].xz, e[0].yw);   
+        minmax(e[0].x, e[1].x);     
+        minmax(e[0].w, e[1].x);     
     }
 
     void minmax6(inout ivec4 e[3])
     {
-        minmax(e[0].xy, e[0].zw);    // min in {e0.xy, e1.xy}, max in {e0.zw, e1.xy}
-        minmax(e[0].xz, e[0].yw);    // min in {e0.x, e1.xy}, max in {e0.w, e1.xy}
-        minmax(e[1].x, e[1].y);      // min in {e0.x, e1.x}, max in {e0.w, e1.y}
-        minmax(e[0].xw, e[1].xy);    // min in e0.x, max in e1.y
+        minmax(e[0].xy, e[0].zw);   
+        minmax(e[0].xz, e[0].yw);   
+        minmax(e[1].x, e[1].y);     
+        minmax(e[0].xw, e[1].xy);   
     }
  
     void main()
@@ -184,6 +184,8 @@ void createProgram(vars::Vars&vars)
                 vec2 focusedCoords = clamp(vCoord+offset*focusValue*vec2(1.0,aspect), 0.0, 1.0); 
                 sampler2D s = sampler2D(lfTextures[slice]);
                 fColor.xyz += texture(s,focusedCoords).xyz;
+                //fColor.xyz += textureLod(s,focusedCoords,20).xyz;
+                //fColor.xyz += texelFetch(s,ivec2(focusedCoords*imageSize(focusMap)),2).xyz;
             }
         fColor.xyz /= n;
         fColor.w = 1;
@@ -191,9 +193,9 @@ void createProgram(vars::Vars&vars)
             fColor = vec4(vec3(focusLvl/float(focusLevels*(searchSubdiv+1))),1.0);
         //fColor = texture(sampler2D(lfTextures[63]),vCoord);
 
-        /*
-        ivec2 c = ivec2(vCoord*imageSize(focusMap));
-        if(c.y*imageSize(focusMap).x+c.x == 753847)
+        
+        /*ivec2 c = ivec2(vCoord*imageSize(focusMap));
+        if(c.y*imageSize(focusMap).x+c.x == (1080-845)*1920+547)
             fColor = vec4(1.0,0.0,0.0,1.0);*/
     }
     ).";
@@ -295,121 +297,116 @@ void createProgram(vars::Vars&vars)
     }
         
     vec3 hsvTrans(vec3 hsv)
-        {
-            float sv = hsv.y*hsv.z;
-            float pih = hsv.x*2*PI;
-            return vec3(sv*cos(pih), sv*sin(pih), hsv.z);
-        }
-     
-        vec3 rgb2lab(in vec3 rgb){
-            float R = rgb.x;
-            float G = rgb.y;
-            float B = rgb.z;
-            // threshold
-            float T = 0.008856;
+    {
+        float sv = hsv.y*hsv.z;
+        float pih = hsv.x*2*PI;
+        return vec3(sv*cos(pih), sv*sin(pih), hsv.z);
+    }
+ 
+    vec3 rgb2lab(in vec3 rgb){
+        float R = rgb.x;
+        float G = rgb.y;
+        float B = rgb.z;
+        // threshold
+        float T = 0.008856;
 
-            float X = R * 0.412453 + G * 0.357580 + B * 0.180423;
-            float Y = R * 0.212671 + G * 0.715160 + B * 0.072169;
-            float Z = R * 0.019334 + G * 0.119193 + B * 0.950227;
+        float X = R * 0.412453 + G * 0.357580 + B * 0.180423;
+        float Y = R * 0.212671 + G * 0.715160 + B * 0.072169;
+        float Z = R * 0.019334 + G * 0.119193 + B * 0.950227;
 
-            // Normalize for D65 white point
-            X = X / 0.950456;
-            Y = Y;
-            Z = Z / 1.088754;
+        // Normalize for D65 white point
+        X = X / 0.950456;
+        Y = Y;
+        Z = Z / 1.088754;
 
-            bool XT, YT, ZT;
-            XT = false; YT=false; ZT=false;
-            if(X > T) XT = true;
-            if(Y > T) YT = true;
-            if(Z > T) ZT = true;
+        bool XT, YT, ZT;
+        XT = false; YT=false; ZT=false;
+        if(X > T) XT = true;
+        if(Y > T) YT = true;
+        if(Z > T) ZT = true;
 
-            float Y3 = pow(Y,1.0/3.0);
-            float fX, fY, fZ;
-            if(XT){ fX = pow(X, 1.0/3.0);} else{ fX = 7.787 * X + 16.0/116.0; }
-            if(YT){ fY = Y3; } else{ fY = 7.787 * Y + 16.0/116.0 ; }
-            if(ZT){ fZ = pow(Z,1.0/3.0); } else{ fZ = 7.787 * Z + 16.0/116.0; }
+        float Y3 = pow(Y,1.0/3.0);
+        float fX, fY, fZ;
+        if(XT){ fX = pow(X, 1.0/3.0);} else{ fX = 7.787 * X + 16.0/116.0; }
+        if(YT){ fY = Y3; } else{ fY = 7.787 * Y + 16.0/116.0 ; }
+        if(ZT){ fZ = pow(Z,1.0/3.0); } else{ fZ = 7.787 * Z + 16.0/116.0; }
 
-            float L; if(YT){ L = (116.0 * Y3) - 16.0; }else { L = 903.3 * Y; }
-            float a = 500.0 * ( fX - fY );
-            float b = 200.0 * ( fY - fZ );
+        float L; if(YT){ L = (116.0 * Y3) - 16.0; }else { L = 903.3 * Y; }
+        float a = 500.0 * ( fX - fY );
+        float b = 200.0 * ( fY - fZ );
 
-            return vec3(L,a,b);
-        }
+        return vec3(L,a,b);
+    }
 
-        vec3 rgb2yuv(vec3 rgba)
-        {
-            vec3 yuv = vec3(0.0);
+    vec3 rgb2yuv(vec3 rgba)
+    {
+        vec3 yuv = vec3(0.0);
 
-            yuv.x = rgba.r * 0.299 + rgba.g * 0.587 + rgba.b * 0.114;
-            yuv.y = rgba.r * -0.169 + rgba.g * -0.331 + rgba.b * 0.5 + 0.5;
-            yuv.z = rgba.r * 0.5 + rgba.g * -0.419 + rgba.b * -0.081 + 0.5;
-            return yuv;
-        }
+        yuv.x = rgba.r * 0.299 + rgba.g * 0.587 + rgba.b * 0.114;
+        yuv.y = rgba.r * -0.169 + rgba.g * -0.331 + rgba.b * 0.5 + 0.5;
+        yuv.z = rgba.r * 0.5 + rgba.g * -0.419 + rgba.b * -0.081 + 0.5;
+        return yuv;
+    }
 
-        float colorDistance(vec3 c1, vec3 c2)
-        {
-            if(colMetric == 0)
-                return distance(c1,c2);
-            else if(colMetric == 1)
-                return (abs(c1.r-c2.r)+abs(c1.g-c2.g)+abs(c1.b-c2.b))/(c1.r+c2.r+c1.g+c2.g+c1.b+c2.b); //canberra
-            else if(colMetric == 2)
-                return max(max(abs(c1.r-c2.r), abs(c1.g-c2.g)), abs(c1.b-c2.b)); //chebyshev
-            else if(colMetric == 3)
-                return pow(pow(abs(c1.r-c2.r),5) + pow(abs(c1.g-c2.g),5) + pow(abs(c1.b-c2.b),5), 1.0/5.0); //minkowski
-            else if(colMetric == 4)
-                return distance(hsvTrans(rgb2hsv(c1)), hsvTrans(rgb2hsv(c2)));
-            else if(colMetric == 5)
-                return distance(rgb2yuv(c1), rgb2yuv(c2));
-            else if(colMetric == 6)
-                return sqrt(3*pow(c1.r-c2.r,2) + 4*pow(c1.g-c2.g,2) + 2*pow(c1.b-c2.b,2)); //weighted euclidan
-            else if(colMetric == 7)
-                return abs(c1.r-c2.r)+abs(c1.g-c2.g)+abs(c1.b-c2.b); //manhattan
-            else if(colMetric == 8)
-                return deltaE2000(rgb2lab(c1), rgb2lab(c2));
-            else 
-                return max(max(3*abs(c1.r-c2.r), 4*abs(c1.g-c2.g)), 2*abs(c1.b-c2.b)); //weighted chebyshev
-        }
+    float colorDistance(vec3 c1, vec3 c2)
+    {
+        if(colMetric == 0)
+            return distance(c1,c2);
+        else if(colMetric == 1)
+            return (abs(c1.r-c2.r)+abs(c1.g-c2.g)+abs(c1.b-c2.b))/(c1.r+c2.r+c1.g+c2.g+c1.b+c2.b); //canberra
+        else if(colMetric == 2)
+            return max(max(abs(c1.r-c2.r), abs(c1.g-c2.g)), abs(c1.b-c2.b)); //chebyshev
+        else if(colMetric == 3)
+            return pow(pow(abs(c1.r-c2.r),5) + pow(abs(c1.g-c2.g),5) + pow(abs(c1.b-c2.b),5), 1.0/5.0); //minkowski
+        else if(colMetric == 4)
+            return distance(hsvTrans(rgb2hsv(c1)), hsvTrans(rgb2hsv(c2)));
+        else if(colMetric == 5)
+            return distance(rgb2yuv(c1), rgb2yuv(c2));
+        else if(colMetric == 6)
+            return sqrt(3*pow(c1.r-c2.r,2) + 4*pow(c1.g-c2.g,2) + 2*pow(c1.b-c2.b,2)); //weighted euclidan
+        else if(colMetric == 7)
+            return abs(c1.r-c2.r)+abs(c1.g-c2.g)+abs(c1.b-c2.b); //manhattan
+        else if(colMetric == 8)
+            return deltaE2000(rgb2lab(c1), rgb2lab(c2));
+        else 
+            return max(max(3*abs(c1.r-c2.r), 4*abs(c1.g-c2.g)), 2*abs(c1.b-c2.b)); //weighted chebyshev
+    }
 
-        void main()
-        {
-            const uint pixelId = gl_WorkGroupID.x*gl_WorkGroupSize.y + gl_LocalInvocationID.y;
-            const ivec2 size = imageSize(focusMap);
-            const ivec2 outCoords = ivec2(pixelId%size.x, pixelId/size.x);
-            const vec2 inCoords = outCoords/vec2(size);
+    void main()
+    {
+        const uint pixelId = gl_WorkGroupID.x*gl_WorkGroupSize.y + gl_LocalInvocationID.y;
+        const ivec2 size = imageSize(focusMap);
+        const ivec2 outCoords = ivec2(pixelId%size.x, pixelId/size.x);
+        const vec2 inCoords = outCoords/vec2(size);
+        float dif=1.0/textureSize(sampler2D(lfTextures[0]),0).x+0.0001;
 
-            float minM2=MAX_M2;
-            int subDivLvl = 0;
+        float minM2=MAX_M2;
+        int subDivLvl = 0;
         for(int i=0; i<=searchSubdiv; i++)
         {
             float m2=0.0;
             vec3 mean = vec3(0);
             int n=0;
-            const float focusValue = focus + (i*focusLevels+gl_LocalInvocationID.x)*focusStep;
+            const vec2 focusValue = (focus + (i*focusLevels+gl_LocalInvocationID.x)*focusStep)*vec2(1.0,aspect);
             for(int x=0; x<gridSize.x; x++)
                 for(int y=0; y<gridSize.y; y++)
                 {   
                     float dist = distance(viewCoord, vec2(x,y));
                     if(dist > gridSampleDistance) continue;
-                    
+ 
                     int slice = y*int(gridSize.x)+x;
                     vec2 offset = viewCoord-vec2(x,y);
                     offset.y *=-1;
-                    vec2 focusedCoords = clamp(inCoords+offset*focusValue*vec2(1.0,aspect), 0.0, 1.0); 
+                    vec2 focusedCoords = clamp(inCoords+offset*focusValue, 0.0, 1.0); 
                     sampler2D s = sampler2D(lfTextures[slice]);
                     vec3 color = texture(s,focusedCoords).xyz;
 
-                   
                     if(sampleBlock == 1)
-                    { 
-                        float dif=1.0/textureSize(s,0).x+0.0001;
+                    {
                         color += texture(s,focusedCoords+dif).xyz;
                         color += texture(s,focusedCoords-dif).xyz;
                         color += texture(s,focusedCoords+vec2(dif, -dif)).xyz;
                         color += texture(s,focusedCoords+vec2(-dif, dif)).xyz;
-                        /*color += texture(s,focusedCoords+vec2(0, -dif)).xyz;
-                        color += texture(s,focusedCoords+vec2(dif, 0)).xyz;
-                        color += texture(s,focusedCoords+vec2(0, dif)).xyz;
-                        color += texture(s,focusedCoords+vec2(-dif, 0)).xyz;*/
                         color /= 5.0;
                     } 
                 
@@ -427,28 +424,28 @@ void createProgram(vars::Vars&vars)
             }
         }
            
-            if(checkSaddle == 1)
-            { 
-                //TODO fix when using subdivisions
-                vec2 neighbours = vec2(minM2);
-                if(gl_LocalInvocationID.x != 0)
-                    neighbours.x = shuffleUpNV(minM2,1,focusLevels); 
-                if(gl_LocalInvocationID.x != 31)
-                    neighbours.y = shuffleDownNV(minM2,1,focusLevels); 
-                float saddle = abs(minM2-neighbours.x) + abs(minM2-neighbours.y);
-                if(minM2 <= neighbours.x && minM2 <= neighbours.y)
-                    minM2 -= saddle*0.5;
-            }
-
-            float origM2 = minM2;
-            for (uint offset=focusLevels>>1; offset>0; offset>>=1)
-                minM2 = min(minM2,shuffleDownNV(minM2,offset,focusLevels));
-            float totalMinM2=readFirstInvocationARB(minM2);
-            if(totalMinM2 == origM2)
-                imageStore(focusMap, outCoords, uvec4(subDivLvl*focusLevels+gl_LocalInvocationID.x));
-            
-            STATS_EXEC
+        if(checkSaddle == 1)
+        { 
+            //TODO fix when using subdivisions
+            vec2 neighbours = vec2(minM2);
+            if(gl_LocalInvocationID.x != 0)
+                neighbours.x = shuffleUpNV(minM2,1,focusLevels);
+            if(gl_LocalInvocationID.x != 31)
+                neighbours.y = shuffleDownNV(minM2,1,focusLevels); 
+            float saddle = abs(minM2-neighbours.x) + abs(minM2-neighbours.y);
+            if(minM2 <= neighbours.x && minM2 <= neighbours.y)
+                minM2 -= saddle*0.5;
         }
+
+        float origM2 = minM2;
+        for (uint offset=focusLevels>>1; offset>0; offset>>=1)
+            minM2 = min(minM2,shuffleDownNV(minM2,offset,focusLevels));
+        float totalMinM2=readFirstInvocationARB(minM2);
+        if(totalMinM2 == origM2)
+            imageStore(focusMap, outCoords, uvec4(subDivLvl*focusLevels+gl_LocalInvocationID.x));
+        
+        STATS_EXEC
+    }
         ).";
 
         csSrc.replace(csSrc.find("LSX"), 3, std::to_string(LOCAL_SIZE_X));
@@ -467,7 +464,7 @@ void createProgram(vars::Vars&vars)
                 };).";
             statsExecCode = 
             R".(
-               if(pixelId==753847)
+               if(pixelId==(1080-845)*1920+547)
                 statistics[gl_LocalInvocationID.x] = origM2;
             ).";
         }
@@ -612,7 +609,8 @@ void createProgram(vars::Vars&vars)
         exit(1);
         */
 
-        ge::gl::setDebugMessage(nullptr, nullptr);
+        if constexpr (MEASURE_TIME)
+            ge::gl::setDebugMessage(nullptr, nullptr);
 
         auto args = vars.add<argumentViewer::ArgumentViewer>("args",argc,argv);
         auto const videoFile = args->gets("--video","","h265 compressed LF video (pix_fmt yuv420p)");
@@ -685,7 +683,8 @@ void createProgram(vars::Vars&vars)
         }
     }
 
-    SDL_Surface* flipSurface(SDL_Surface* sfc) {
+    SDL_Surface* flipSurface(SDL_Surface* sfc)
+    {
          SDL_Surface* result = SDL_CreateRGBSurface(sfc->flags, sfc->w, sfc->h,
              sfc->format->BytesPerPixel * 8, sfc->format->Rmask, sfc->format->Gmask,
              sfc->format->Bmask, sfc->format->Amask);
