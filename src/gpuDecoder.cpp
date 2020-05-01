@@ -18,6 +18,7 @@ void GpuDecoder::recreateBuffer(size_t number)
     currentBuffer->textures.clear();
     currentBuffer->textures.resize(number);
     ge::gl::glCreateTextures(GL_TEXTURE_2D, number, currentBuffer->textures.data());
+
     /*for(int i=0; i<number; i++)
     {
         currentBuffer->textureHandles[i] = ge::gl::glGetTextureHandleARB(currentBuffer->textures[i]);
@@ -79,60 +80,46 @@ std::vector<uint64_t> GpuDecoder::getFrames(size_t number)
         recreateBufferLite(number);
 
     TextureBuffer *currentBuffer = getCurrentBuffer(); 
-    int se=0;
+    if(!packet.data)
+        av_read_frame(formatContext, &packet);
+    AVFrame *frame = av_frame_alloc();
+    if(!frame)
+        throw std::runtime_error("Cannot allocate packet/frame");
     for(int i=0; i<number; i++)
-    {
-        bool send = true;
-        while(send)
+    { 
+        int err=0;
+        while(err == 0)
         {
             if(packet.stream_index == videoStreamId)
-                if(avcodec_send_packet(codecContext, &packet) != 0)
-                    break;
-                else
-                {std::cerr << "sent " << se << std::endl;se++;}
-
+                if((err = avcodec_send_packet(codecContext, &packet)) != 0)
+                     break;
+            
             av_packet_unref(&packet);
-            send = (av_read_frame(formatContext, &packet) == 0);
+            err = av_read_frame(formatContext, &packet);
+            if(err == AVERROR_EOF)
+            {
+                packet.data=NULL;
+                packet.size=0;
+            }
         }
 
         bool waitForFrame = true;
         while(waitForFrame)
         {
-            AVFrame *frame = av_frame_alloc();
-            if(!frame)
-                throw std::runtime_error("Cannot allocate packet/frame");
-
             int err = avcodec_receive_frame(codecContext, frame);
-            if(err == AVERROR(EAGAIN))
-                avcodec_send_packet(codecContext, &packet);
-            else if(err == AVERROR_EOF)
+            if(err == AVERROR_EOF)
             {
-                std::cerr << "eof in "<< i << std::endl; 
-
-                //av_frame_free(&frame);
-                av_packet_unref(&packet);
-                packet.data=NULL;
-                packet.size=0;
-                avcodec_send_packet(codecContext, &packet);
-                int aaa=0;    
-                while(aaa!=AVERROR_EOF)
-                {
-                    if(frame->format == pixFmt) std::cerr <<"yes";
-                    av_frame_free(&frame);
-                    frame = av_frame_alloc();
-                    aaa = avcodec_receive_frame(codecContext, frame);
-                }
+                //av_packet_unref(&packet);
                 waitForFrame = false;                
                 //break;
-                seek(0);
-                std::cerr<<"END";
+                //seek(0);
+//                std::cerr<<"End of file at recieve frame" << std::endl;
             }
             else if(err < 0)
                 throw std::runtime_error("Cannot receive frame");
 
             if(frame->format == pixFmt)
-            {std::cerr << i << std::endl; 
-
+            {
                 if(vdp_video_mixer_render(mixer, VDP_INVALID_HANDLE, nullptr, VDP_VIDEO_MIXER_PICTURE_STRUCTURE_FRAME, 0, nullptr, (VdpVideoSurface)(uintptr_t)frame->data[3], 0, nullptr, &flipRect, currentBuffer->vdpSurfaces[i], nullptr, nullptr, 0, nullptr) != VDP_STATUS_OK)
                     throw std::runtime_error("VDP mixer error!");
 
@@ -141,20 +128,12 @@ std::vector<uint64_t> GpuDecoder::getFrames(size_t number)
                 ge::gl::glVDPAUSurfaceAccessNV(currentBuffer->nvSurfaces[i], GL_READ_ONLY);
                 ge::gl::glVDPAUMapSurfacesNV (1, &currentBuffer->nvSurfaces[i]);
           
-                /* 
-                ge::gl::glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_BASE_LEVEL, 0);
-                ge::gl::glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, 50);
-                ge::gl::glTextureParameteri (currentBuffer->textures[i], GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-                ge::gl::glTextureParameteri (currentBuffer->textures[i], GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
-                ge::gl::glGenerateTextureMipmap(currentBuffer->textures[i]);
-                */
-
                 currentBuffer->textureHandles[i] = ge::gl::glGetTextureHandleARB(currentBuffer->textures[i]);
                 waitForFrame = false;
             } 
-            av_frame_free(&frame);
         }    
     }
+            av_frame_free(&frame);
     return currentBuffer->textureHandles; 
 }
 
@@ -232,8 +211,5 @@ GpuDecoder::GpuDecoder(const char* path)
 
     if(vdp_video_mixer_create(vdpauContext->device, 0, nullptr, 3, params, param_vals, &mixer) != VDP_STATUS_OK)
         throw std::runtime_error("Cannot create VDPAU mixer.");
-
-    //start reading
-    av_read_frame(formatContext, &packet);
 }
 

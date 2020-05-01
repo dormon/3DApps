@@ -56,5 +56,5 @@ class GpuDecoder
         AVPixelFormat pixFmt;
         VdpRect flipRect;
         AVPacket packet;
-        
+               
 };
