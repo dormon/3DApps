@@ -98,13 +98,13 @@ void createProgram(vars::Vars&vars)
     #extension GL_ARB_gpu_shader_int64 : require
     #extension GL_ARB_bindless_texture : require
 
-    layout(bindless_image)uniform layout(rgba8) readonly image2D lf;
+    uniform sampler2D lf;
     out vec4 fColor;
     in vec2 vCoord;
 
     void main()
     {
-        fColor = imageLoad(lf, ivec2(vCoord*imageSize(lf)));
+        fColor = texture(lf, vCoord);
     }
     ).";
     //#################################################################
@@ -557,15 +557,31 @@ void createProgram(vars::Vars&vars)
 
     //#################################################################
     std::string csPostSrc = R".(
+    #extension GL_ARB_gpu_shader_int64 : require
+    #extension GL_ARB_bindless_texture : require
+    layout(local_size_x=LSX*LSY)in;
+    uniform sampler2D lf;
+    layout(bindless_image)uniform layout(rgba8) writeonly image2D postLf;
+    layout(bindless_image)uniform layout(r8ui) readonly uimage2D focusMap;
 
-    uniform int dof;
+    const uint focusLevels = 32;
+    //const float weights[5]= {0.227027, 0.};
     uniform float dofDistance;
     uniform float dofRange;
+    uniform int searchSubdiv;
+    uniform int pass;
 
+    void main()
+    { 
+        const ivec2 size = textureSize(lf,0);
+        const ivec2 coords = ivec2(gl_GlobalInvocationID.x%size.x, gl_GlobalInvocationID.x/size.x);
+        const vec2 normalizedCoords = coords/vec2(size);
+        float normalizedFocus = int(imageLoad(focusMap, ivec2(normalizedCoords*imageSize(focusMap))).x)/(float(focusLevels)*(searchSubdiv+1));
+        float factor = abs(dofDistance-normalizedFocus)*(1.0-dofRange);
 
-                    //float factor = abs(dofDistance-normalizedFocus)*(1.0-dofRange);
-        if (dof != 0 || showFocusMap !=0) 
-            normalizedFocus = focusLvl/float(focusLevels*(searchSubdiv+1));
+        vec4 color = texture(lf, normalizedCoords);
+        imageStore(postLf, coords, color);
+    }
     ).";    
 
         std::string statsInitCode{""}; 
@@ -591,6 +607,7 @@ void createProgram(vars::Vars&vars)
 
         addProgram(vars, "mapProgram", csMapSrc, "");
         addProgram(vars, "lfProgram", csLfSrc, "");
+        addProgram(vars, "postProgram", csPostSrc, "");
         addProgram(vars, "drawProgram", vsSrc, fsSrc);
     }
 
@@ -626,7 +643,7 @@ void createProgram(vars::Vars&vars)
         SDL_GLContext c = SDL_GL_CreateContext(*vars.get<SDL_Window*>("mainWindow")); 
         SDL_GL_MakeCurrent(*vars.get<SDL_Window*>("mainWindow"),c);
         ge::gl::init(SDL_GL_GetProcAddress);
-        //ge::gl::setHighDebugMessage();
+        ge::gl::setHighDebugMessage();
 
         auto decoder = std::make_unique<GpuDecoder>(vars.getString("videoFile").c_str());
         auto lfSize = glm::uvec2(*vars.reCreate<unsigned int>("lf.width",decoder->getWidth()), *vars.reCreate<unsigned int>("lf.height", decoder->getHeight()));
@@ -639,7 +656,12 @@ void createProgram(vars::Vars&vars)
         auto focusMapTexture = ge::gl::Texture(GL_TEXTURE_2D,GL_R8UI,1,focusMapSize.x,focusMapSize.y);
         auto focusMap = vars.add<GLuint64>("focusMap.image",ge::gl::glGetImageHandleARB(focusMapTexture.getId(), 0, GL_FALSE, 0, GL_R8UI));      
         auto lfTexture = ge::gl::Texture(GL_TEXTURE_2D,GL_RGBA8,1,lfSize.x,lfSize.y);
-        auto lf = vars.add<GLuint64>("lf.image",ge::gl::glGetImageHandleARB(lfTexture.getId(), 0, GL_FALSE, 0, GL_RGBA8));
+        vars.add<GLuint64>("lf.image",ge::gl::glGetImageHandleARB(lfTexture.getId(), 0, GL_FALSE, 0, GL_RGBA8)); 
+        vars.add<GLuint64>("lf.texture",ge::gl::glGetTextureHandleARB(lfTexture.getId())); 
+
+        auto postLfTexture = ge::gl::Texture(GL_TEXTURE_2D,GL_RGBA8,1,lfSize.x,lfSize.y);
+        vars.add<GLuint64>("lf.postTexture",ge::gl::glGetTextureHandleARB(postLfTexture.getId()));
+        vars.add<GLuint64>("lf.postImage",ge::gl::glGetImageHandleARB(postLfTexture.getId(), 0, GL_FALSE, 0, GL_RGBA8));
 
         auto rdyMutex = vars.get<std::mutex>("rdyMutex");
         auto rdyCv = vars.get<std::condition_variable>("rdyCv");
@@ -717,6 +739,9 @@ void createProgram(vars::Vars&vars)
         }
         ge::gl::glMakeImageHandleResidentARB(*vars.get<GLuint64>("focusMap.image"), GL_READ_WRITE);
         ge::gl::glMakeImageHandleResidentARB(*vars.get<GLuint64>("lf.image"), GL_READ_WRITE);
+        ge::gl::glMakeImageHandleResidentARB(*vars.get<GLuint64>("lf.postImage"), GL_READ_WRITE);
+        ge::gl::glMakeTextureHandleResidentARB(*vars.get<GLuint64>("lf.texture"));
+        ge::gl::glMakeTextureHandleResidentARB(*vars.get<GLuint64>("lf.postTexture"));
 
         SDL_SetWindowSize(window->getWindow(),vars.getInt32("lf.width"), vars.getInt32("lf.height"));
 
@@ -874,6 +899,12 @@ void createProgram(vars::Vars&vars)
         auto query2 = ge::gl::AsynchronousQuery(GL_TIME_ELAPSED, GL_QUERY_RESULT, ge::gl::AsynchronousQuery::UINT64);
         if constexpr (MEASURE_TIME) query2.begin();
 
+        
+        auto lfImage = vars.get<GLuint64>("lf.image"); 
+        auto postLfImage = vars.get<GLuint64>("lf.postImage"); 
+        auto lfTexture = vars.get<GLuint64>("lf.texture"); 
+        auto postLfTexture = vars.get<GLuint64>("lf.postTexture"); 
+
         program = vars.get<ge::gl::Program>("lfProgram");
         program
         ->set1f("focus",vars.getFloat("focus"))
@@ -887,23 +918,42 @@ void createProgram(vars::Vars&vars)
         ->use();
         ge::gl::glProgramUniformHandleui64vARB(program->getId(), program->getUniformLocation("lfTextures"), vars.getInt32("lfCount"), vars.getVector<GLuint64>(currentTexturesName).data());
         ge::gl::glProgramUniformHandleui64vARB(program->getId(), program->getUniformLocation("focusMap"), 1, vars.get<GLuint64>("focusMap.image"));
-        ge::gl::glProgramUniformHandleui64vARB(program->getId(), program->getUniformLocation("lf"), 1, vars.get<GLuint64>("lf.image"));
-
+        ge::gl::glProgramUniformHandleui64vARB(program->getId(), program->getUniformLocation("lf"), 1, lfImage);
 
         ge::gl::glDispatchCompute(*vars.get<unsigned int>("lf.width") * *vars.get<unsigned int>("lf.height"),1,1);    
         ge::gl::glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
         ge::gl::glFinish();
 
-        /*->set1i("dof",vars.getBool("dof"))
-        ->set1f("dofDistance",vars.getFloat("dofDistance"))
-        ->set1f("dofRange",vars.getFloat("dofRange"))
-*/
+        if(vars.getBool("dof"))
+        {
+            program = vars.get<ge::gl::Program>("postProgram");
+            program
+            //->set1i("searchSubdiv",vars.getInt32("searchSubdiv"))
+            //->set1f("dofDistance",vars.getFloat("dofDistance"))
+            //->set1f("dofRange",vars.getFloat("dofRange"))
+            ->use();
+            ge::gl::glProgramUniformHandleui64vARB(program->getId(), program->getUniformLocation("focusMap"), 1, vars.get<GLuint64>("focusMap.image"));
+            
+            for(int i=0; i<3; i++)
+            {  
+                ge::gl::glProgramUniformHandleui64vARB(program->getId(), program->getUniformLocation("lf"), 1, lfTexture);
+                ge::gl::glProgramUniformHandleui64vARB(program->getId(), program->getUniformLocation("postLf"), 1, postLfImage);
+                //program->set1i("pass", i);
+                ge::gl::glDispatchCompute(*vars.get<unsigned int>("lf.width") * *vars.get<unsigned int>("lf.height"),1,1);
+                ge::gl::glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
+                ge::gl::glFinish();
+                std::swap(lfImage, postLfImage);
+                std::swap(lfTexture, postLfTexture);
+            }
+        }
+        else
+            std::swap(lfTexture,postLfTexture);
 
         program = vars.get<ge::gl::Program>("drawProgram");
         program
         ->set1f("aspect",aspect)
         ->setMatrix4fv("mvp",glm::value_ptr(projection->getProjection()*view->getView()));
-        ge::gl::glProgramUniformHandleui64vARB(program->getId(), program->getUniformLocation("lf"), 1, vars.get<GLuint64>("lf.image"));
+        ge::gl::glProgramUniformHandleui64vARB(program->getId(), program->getUniformLocation("lf"), 1, postLfTexture);
         program->use();
 
         ge::gl::glDrawArrays(GL_TRIANGLE_STRIP,0,4);
