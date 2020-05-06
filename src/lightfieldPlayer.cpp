@@ -457,6 +457,7 @@ void createProgram(vars::Vars&vars)
                     sampler2D s = sampler2D(lfTextures[slice]);
                     vec3 color = texture(s,focusedCoords).xyz;
 
+                    //TODO halfpixel sample jako kawase 4
                     if(sampleBlock == 1)
                     {
                      /*   color += texture(s,focusedCoords+dif).xyz;
@@ -564,7 +565,7 @@ void createProgram(vars::Vars&vars)
     layout(bindless_image)uniform layout(rgba8) writeonly image2D postLf;
     layout(bindless_image)uniform layout(r8ui) readonly uimage2D focusMap;
 
-    const uint focusLevels = 32;
+    const int focusLevels = 32;
     //const float weights[5]= {0.227027, 0.};
     uniform float dofDistance;
     uniform float dofRange;
@@ -576,10 +577,27 @@ void createProgram(vars::Vars&vars)
         const ivec2 size = textureSize(lf,0);
         const ivec2 coords = ivec2(gl_GlobalInvocationID.x%size.x, gl_GlobalInvocationID.x/size.x);
         const vec2 normalizedCoords = coords/vec2(size);
-        float normalizedFocus = int(imageLoad(focusMap, ivec2(normalizedCoords*imageSize(focusMap))).x)/(float(focusLevels)*(searchSubdiv+1));
-        float factor = abs(dofDistance-normalizedFocus)*(1.0-dofRange);
-
-        vec4 color = texture(lf, normalizedCoords);
+        vec2 halfPixelOffset = 0.5/size;
+        
+        int totalLevels = focusLevels*(searchSubdiv+1);
+        int focusLevel = int(round(dofDistance*totalLevels));
+        int kernelSize = abs(focusLevel - int(imageLoad(focusMap, ivec2(normalizedCoords*imageSize(focusMap))).x));
+        vec4 color = texture(lf, normalizedCoords)*(kernelSize+1);
+        int weights = kernelSize+1;
+        for(int i=0; i<kernelSize; i++)
+        {
+            vec2 pixelOffset = vec2(3*halfPixelOffset + 4*i*halfPixelOffset);
+            if(pass==0)
+                pixelOffset.y = 0;
+            else
+                pixelOffset.x = 0;
+            color += texture(lf, normalizedCoords + pixelOffset)*(kernelSize-i);
+            color += texture(lf, normalizedCoords - pixelOffset)*(kernelSize-i);
+            weights += 2*(kernelSize-i);
+        }
+        if(kernelSize>0)
+            color /= float(weights);
+        color.w = 1.0;
         imageStore(postLf, coords, color);
     }
     ).";    
@@ -928,17 +946,17 @@ void createProgram(vars::Vars&vars)
         {
             program = vars.get<ge::gl::Program>("postProgram");
             program
-            //->set1i("searchSubdiv",vars.getInt32("searchSubdiv"))
-            //->set1f("dofDistance",vars.getFloat("dofDistance"))
+            ->set1i("searchSubdiv",vars.getInt32("searchSubdiv"))
+            ->set1f("dofDistance",vars.getFloat("dofDistance"))
             //->set1f("dofRange",vars.getFloat("dofRange"))
             ->use();
             ge::gl::glProgramUniformHandleui64vARB(program->getId(), program->getUniformLocation("focusMap"), 1, vars.get<GLuint64>("focusMap.image"));
             
-            for(int i=0; i<3; i++)
+            for(int i=0; i<2; i++)
             {  
                 ge::gl::glProgramUniformHandleui64vARB(program->getId(), program->getUniformLocation("lf"), 1, lfTexture);
                 ge::gl::glProgramUniformHandleui64vARB(program->getId(), program->getUniformLocation("postLf"), 1, postLfImage);
-                //program->set1i("pass", i);
+                program->set1i("pass", i);
                 ge::gl::glDispatchCompute(*vars.get<unsigned int>("lf.width") * *vars.get<unsigned int>("lf.height"),1,1);
                 ge::gl::glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
                 ge::gl::glFinish();
@@ -946,14 +964,12 @@ void createProgram(vars::Vars&vars)
                 std::swap(lfTexture, postLfTexture);
             }
         }
-        else
-            std::swap(lfTexture,postLfTexture);
 
         program = vars.get<ge::gl::Program>("drawProgram");
         program
         ->set1f("aspect",aspect)
         ->setMatrix4fv("mvp",glm::value_ptr(projection->getProjection()*view->getView()));
-        ge::gl::glProgramUniformHandleui64vARB(program->getId(), program->getUniformLocation("lf"), 1, postLfTexture);
+        ge::gl::glProgramUniformHandleui64vARB(program->getId(), program->getUniformLocation("lf"), 1, lfTexture);
         program->use();
 
         ge::gl::glDrawArrays(GL_TRIANGLE_STRIP,0,4);
@@ -988,8 +1004,8 @@ void createProgram(vars::Vars&vars)
         ImGui::Checkbox("Depth of field", &vars.getBool("dof"));
         if(vars.getBool("dof"))
         {
-            ImGui::DragFloat("DOF distance", &vars.getFloat("dofDistance"), 0.00001f, 0.0f, 1.0, "%.6f");
-            ImGui::DragFloat("DOF range", &vars.getFloat("dofRange"), 0.00001f, 0.0f, 1.0, "%.6f");
+            ImGui::DragFloat("DOF distance", &vars.getFloat("dofDistance"), 0.01f, 0.0f, 1.0, "%.6f");
+            ImGui::DragFloat("DOF range", &vars.getFloat("dofRange"), 0.01f, 0.0f, 1.0, "%.6f");
 
         }
         if (ImGui::Button("Shot"))    
