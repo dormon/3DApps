@@ -277,7 +277,7 @@ void createProgram(vars::Vars&vars)
     uniform float focusStep;
     uniform float focus;
     uniform float aspect;
-    uniform float blockRadius;
+    uniform int blockRadius;
     uniform float gridSampleDistance;
     uniform int colMetric;
     uniform int searchSubdiv;
@@ -434,7 +434,7 @@ void createProgram(vars::Vars&vars)
         const ivec2 size = imageSize(focusMap);
         const ivec2 outCoords = ivec2(pixelId%size.x, pixelId/size.x);
         const vec2 inCoords = outCoords/vec2(size);
-        float dif=(1.0/textureSize(sampler2D(lfTextures[0]),0).x)*blockRadius;
+        const vec2 halfPixelOffset = (vec2(0.5)/textureSize(sampler2D(lfTextures[0]),0))*blockRadius;
 
         float minM2=MAX_M2;
         int subDivLvl = 0;
@@ -455,12 +455,26 @@ void createProgram(vars::Vars&vars)
                     offset.y *=-1;
                     vec2 focusedCoords = clamp(inCoords+offset*focusValue, 0.0, 1.0); 
                     sampler2D s = sampler2D(lfTextures[slice]);
-                    vec3 color = texture(s,focusedCoords).xyz;
+                    vec4 color = vec4(0);
 
                     //TODO halfpixel sample jako kawase 4
                     if(sampleBlock == 1)
                     {
-                     /*   color += texture(s,focusedCoords+dif).xyz;
+                        vec2 offset = halfPixelOffset;
+                        if(gl_GlobalInvocationID.x%2 == 0)
+                        {
+                            color = texture(s, focusedCoords+offset); 
+                            color += texture(s, focusedCoords-offset);
+                        }
+                        else
+                        {
+                            offset *= vec2(-1,1); 
+                            color = texture(s, focusedCoords+offset);
+                            color += texture(s, focusedCoords-offset);
+                        }
+                        color /= 2.0; 
+
+                        /*color += texture(s,focusedCoords+dif).xyz;
                         color += texture(s,focusedCoords-dif).xyz;
                         color += texture(s,focusedCoords+vec2(dif, -dif)).xyz;
                         color += texture(s,focusedCoords+vec2(-dif, dif)).xyz;
@@ -470,7 +484,7 @@ void createProgram(vars::Vars&vars)
                         color += texture(s,focusedCoords-vec2(dif, 0)).xyz;
                         color /= 9.0;*/
 
-                        uint modulo = gl_GlobalInvocationID.x%4;
+                        /*uint modulo = gl_GlobalInvocationID.x%4;
                         //modulo = 10;
                         if(modulo == 0)
                         {
@@ -492,14 +506,16 @@ void createProgram(vars::Vars&vars)
                         color += texture(s,focusedCoords+vec2(dif, 0)).xyz;
                         color += texture(s,focusedCoords-vec2(dif, 0)).xyz;
                         }                        
-                        color /= 3.0;
-                    } 
+                        color /= 3.0;*/
+                    }
+                    else 
+                        color = texture(s,focusedCoords);
                 
                     n++;
-                    vec3 delta = color-mean;
-                    float d = colorDistance(color, mean);
+                    vec3 delta = color.xyz-mean;
+                    float d = colorDistance(color.xyz, mean);
                     mean += delta/n;
-                    m2 += d*colorDistance(color,mean);
+                    m2 += d*colorDistance(color.xyz,mean);
                 } 
             m2 /= n-1;
             if(m2<minM2)
@@ -566,7 +582,6 @@ void createProgram(vars::Vars&vars)
     layout(bindless_image)uniform layout(r8ui) readonly uimage2D focusMap;
 
     const int focusLevels = 32;
-    //const float weights[5]= {0.227027, 0.};
     uniform float dofDistance;
     uniform float dofRange;
     uniform int searchSubdiv;
@@ -582,6 +597,7 @@ void createProgram(vars::Vars&vars)
         int totalLevels = focusLevels*(searchSubdiv+1);
         int focusLevel = int(round(dofDistance*totalLevels));
         int kernelSize = abs(focusLevel - int(imageLoad(focusMap, ivec2(normalizedCoords*imageSize(focusMap))).x));
+        kernelSize = int(round(kernelSize*dofRange));
         vec4 color = texture(lf, normalizedCoords)*(kernelSize+1);
         int weights = kernelSize+1;
         for(int i=0; i<kernelSize; i++)
@@ -686,12 +702,12 @@ void createProgram(vars::Vars&vars)
         int frameNum = 1; 
         while(vars.getBool("mainRuns"))
         {    
-            auto seekFrame = vars.get<int>("seekFrame");
-            if(*seekFrame > -1)
+            auto seekFrame = vars.getInt32("seekFrame");
+            if(seekFrame > -1)
             {
-                decoder->seek(*seekFrame*vars.getInt32("lfCount"));
-                frameNum = *seekFrame;
-                *seekFrame = -1;
+                decoder->seek(seekFrame*vars.getInt32("lfCount"));
+                frameNum = seekFrame;
+                seekFrame = -1;
             }
 
             if(frameNum > length)
@@ -742,7 +758,7 @@ void createProgram(vars::Vars&vars)
         vars.add<SDL_Window*>("mainWindow", window->getWindow());
         SDL_GL_SetAttribute(SDL_GL_SHARE_WITH_CURRENT_CONTEXT, 1);  
        
-        vars.add<int>("seekFrame",-1); 
+        vars.addInt32("seekFrame",-1); 
         vars.addBool("mainRuns", true);
         vars.addBool("pause", false);
         vars.addBool("printTimes", false);
@@ -784,7 +800,7 @@ void createProgram(vars::Vars&vars)
         vars.addBool("dof", false);
         vars.addFloat("dofDistance",0.0f);
         vars.addFloat("dofRange",0.0f);
-        vars.addFloat("blockRadius",1.0f);
+        vars.addInt32("blockRadius",1);
         vars.addInt32("colMetric", 2);
         vars.addInt32("searchSubdiv", 0);
         vars.add<std::map<SDL_Keycode, bool>>("input.keyDown");
@@ -875,7 +891,7 @@ void createProgram(vars::Vars&vars)
         //->set2uiv("gridSize",glm::value_ptr(*vars.get<glm::uvec2>("gridSize")))
         ->set1f("focus",vars.getFloat("focus"))
         ->set1f("focusStep",vars.getFloat("focusStep"))
-        ->set1f("blockRadius",vars.getFloat("blockRadius"))
+        ->set1i("blockRadius",vars.getInt32("blockRadius"))
         ->set1f("gridSampleDistance",vars.getFloat("gridSampleDistance"))
         ->set2fv("viewCoord",glm::value_ptr(viewCoord))
         ->set1i("colMetric",vars.getInt32("colMetric"))
@@ -948,7 +964,7 @@ void createProgram(vars::Vars&vars)
             program
             ->set1i("searchSubdiv",vars.getInt32("searchSubdiv"))
             ->set1f("dofDistance",vars.getFloat("dofDistance"))
-            //->set1f("dofRange",vars.getFloat("dofRange"))
+            ->set1f("dofRange",vars.getFloat("dofRange"))
             ->use();
             ge::gl::glProgramUniformHandleui64vARB(program->getId(), program->getUniformLocation("focusMap"), 1, vars.get<GLuint64>("focusMap.image"));
             
@@ -984,7 +1000,7 @@ void createProgram(vars::Vars&vars)
         drawImguiVars(vars);
         ImGui::Begin("Playback");
         if(ImGui::SliderInt("Timeline", vars.get<int>("frameNum"), 1, vars.getUint32("length")))
-            vars.reCreate<int>("seekFrame", *vars.get<int>("frameNum"));
+            vars.getInt32("seekFrame") = vars.getInt32("frameNum");
         ImGui::Selectable("Pause", &vars.getBool("pause"));
         ImGui::DragFloat("Focus", &vars.getFloat("focus"),0.00001f, -10, 10, "%.5f");
         ImGui::DragFloat("Focus step", &vars.getFloat("inputFocusStep"),0.000001f,-10, 10, "%.6f");
@@ -997,7 +1013,7 @@ void createProgram(vars::Vars&vars)
             ImGui::Checkbox("Check borders", &vars.getBool("checkBorders"));
         ImGui::Checkbox("Sample block", &vars.getBool("sampleBlock"));
         if(vars.getBool("sampleBlock"))
-            ImGui::DragFloat("Block radius", &vars.getFloat("blockRadius"),0.01f, 1, 10, "%.3f");
+            ImGui::DragInt("Block radius", &vars.getInt32("blockRadius"),2, 1, 17);
         ImGui::InputInt("Alternative col metric", &vars.getInt32("colMetric"));
         ImGui::DragInt("Search subdivisions", &vars.getInt32("searchSubdiv"),0,0,7); 
         vars.getFloat("focusStep")=vars.getFloat("inputFocusStep")/(vars.getInt32("searchSubdiv")+1);
