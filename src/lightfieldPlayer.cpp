@@ -216,6 +216,7 @@ void createProgram(vars::Vars&vars)
         else
             focusLvl = int(imageLoad(focusMap, ivec2(inCoords*imageSize(focusMap))).x);
         float focusValue = focus+focusLvl*focusStep;
+        //float focusValue = focus+dot(textureGather(sampler2D(focusMap), inCoords*imageSize(focusMap), vec4(0.25)))*focusStep;
  
         vec4 color = vec4(0,0,0,0); 
         int n=0;
@@ -240,8 +241,6 @@ void createProgram(vars::Vars&vars)
         if(showFocusMap != 0)
             color = vec4(vec3(focusLvl/float(focusLevels*(searchSubdiv+1))),1.0);
         //fColor = texture(sampler2D(lfTextures[48]),vCoord);
-        //fColor.xyz = textureLod(sampler2D(lfTextures[50]),vCoord,20).xyz;
-        //fColor.xyz = texelFetch(sampler2D(lfTextures[48]),ivec2(vCoord*imageSize(focusMap)),1).xyz;
 
        /* 
         ivec2 c = ivec2(vCoord*imageSize(focusMap));
@@ -395,7 +394,7 @@ void createProgram(vars::Vars&vars)
     }
 
     vec3 rgb2yuv(vec3 rgba)
-    {
+            {
         vec3 yuv = vec3(0.0);
 
         yuv.x = rgba.r * 0.299 + rgba.g * 0.587 + rgba.b * 0.114;
@@ -885,7 +884,9 @@ void createProgram(vars::Vars&vars)
         float coox = (glm::clamp(centerRay.x*-1,-range*aspect,range*aspect)/(range*aspect)+1)/2.;
         float cooy = (glm::clamp(centerRay.y,-range,range)/range+1)/2.;
         glm::vec2 viewCoord = glm::vec2(gridIndex)-glm::vec2(glm::clamp(coox*(gridIndex.x),0.0f,static_cast<float>(gridIndex.x)),glm::clamp(cooy*(gridIndex.y),0.0f,static_cast<float>(gridIndex.y)));
-        
+        GLuint perPixelCSSize = (*vars.get<unsigned int>("lf.width") * *vars.get<unsigned int>("lf.height"))/(LOCAL_SIZE_X*LOCAL_SIZE_Y);        
+
+
         auto program = vars.get<ge::gl::Program>("mapProgram");
         program
         //->set2uiv("gridSize",glm::value_ptr(*vars.get<glm::uvec2>("gridSize")))
@@ -917,7 +918,7 @@ void createProgram(vars::Vars&vars)
         if constexpr (MEASURE_TIME)
         {
             query.end();
-            vars.reCreate<float>("csElapsed", query.getui64()/1000000.0);
+            vars.reCreate<float>("elapsed.map", query.getui64()/1000000.0);
         } 
         
         if constexpr (STATISTICS)
@@ -929,10 +930,6 @@ void createProgram(vars::Vars&vars)
                 std::cerr << i*vars.getFloat("focusStep")+vars.getFloat("focus") << "\t" << ptr[i] << std::endl;
             vars.get<ge::gl::Buffer>("statistics")->unmap();
         }
-
-        auto query2 = ge::gl::AsynchronousQuery(GL_TIME_ELAPSED, GL_QUERY_RESULT, ge::gl::AsynchronousQuery::UINT64);
-        if constexpr (MEASURE_TIME) query2.begin();
-
         
         auto lfImage = vars.get<GLuint64>("lf.image"); 
         auto postLfImage = vars.get<GLuint64>("lf.postImage"); 
@@ -954,9 +951,19 @@ void createProgram(vars::Vars&vars)
         ge::gl::glProgramUniformHandleui64vARB(program->getId(), program->getUniformLocation("focusMap"), 1, vars.get<GLuint64>("focusMap.image"));
         ge::gl::glProgramUniformHandleui64vARB(program->getId(), program->getUniformLocation("lf"), 1, lfImage);
 
-        ge::gl::glDispatchCompute(*vars.get<unsigned int>("lf.width") * *vars.get<unsigned int>("lf.height"),1,1);    
+        auto query2 = ge::gl::AsynchronousQuery(GL_TIME_ELAPSED, GL_QUERY_RESULT, ge::gl::AsynchronousQuery::UINT64);
+        if constexpr (MEASURE_TIME) query2.begin();
+
+        ge::gl::glDispatchCompute(perPixelCSSize,1,1);    
         ge::gl::glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
         ge::gl::glFinish();
+
+        if constexpr (MEASURE_TIME)
+        {
+            query2.end();
+            vars.reCreate<float>("elapsed.lightfield", query2.getui64()/1000000.0);
+        }
+ 
 
         if(vars.getBool("dof"))
         {
@@ -968,16 +975,25 @@ void createProgram(vars::Vars&vars)
             ->use();
             ge::gl::glProgramUniformHandleui64vARB(program->getId(), program->getUniformLocation("focusMap"), 1, vars.get<GLuint64>("focusMap.image"));
             
+            auto query3 = ge::gl::AsynchronousQuery(GL_TIME_ELAPSED, GL_QUERY_RESULT, ge::gl::AsynchronousQuery::UINT64);
+            if constexpr (MEASURE_TIME) query3.begin();
+
             for(int i=0; i<2; i++)
             {  
                 ge::gl::glProgramUniformHandleui64vARB(program->getId(), program->getUniformLocation("lf"), 1, lfTexture);
                 ge::gl::glProgramUniformHandleui64vARB(program->getId(), program->getUniformLocation("postLf"), 1, postLfImage);
                 program->set1i("pass", i);
-                ge::gl::glDispatchCompute(*vars.get<unsigned int>("lf.width") * *vars.get<unsigned int>("lf.height"),1,1);
+                ge::gl::glDispatchCompute(perPixelCSSize,1,1);
                 ge::gl::glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
                 ge::gl::glFinish();
                 std::swap(lfImage, postLfImage);
                 std::swap(lfTexture, postLfTexture);
+            }
+
+            if constexpr (MEASURE_TIME)
+            {
+                query3.end();
+                vars.reCreate<float>("elapsed.post", query3.getui64()/1000000.0);
             }
         }
 
@@ -988,15 +1004,18 @@ void createProgram(vars::Vars&vars)
         ge::gl::glProgramUniformHandleui64vARB(program->getId(), program->getUniformLocation("lf"), 1, lfTexture);
         program->use();
 
+        auto query4 = ge::gl::AsynchronousQuery(GL_TIME_ELAPSED, GL_QUERY_RESULT, ge::gl::AsynchronousQuery::UINT64);
+        if constexpr (MEASURE_TIME) query4.begin();
+
         ge::gl::glDrawArrays(GL_TRIANGLE_STRIP,0,4);
         vars.get<ge::gl::VertexArray>("emptyVao")->unbind();
-        
+         
         if constexpr (MEASURE_TIME)
         {
-            query2.end();
-            vars.reCreate<float>("drawElapsed", query2.getui64()/1000000.0);
-        } 
-     
+            query4.end();
+            vars.reCreate<float>("elapsed.draw", query4.getui64()/1000000.0);
+        }
+
         drawImguiVars(vars);
         ImGui::Begin("Playback");
         if(ImGui::SliderInt("Timeline", vars.get<int>("frameNum"), 1, vars.getUint32("length")))
@@ -1047,7 +1066,7 @@ void createProgram(vars::Vars&vars)
 
     ge::gl::glFinish();
     auto time = vars.get<Timer<double>>("timer")->elapsedFromStart();
-    vars.addOrGetFloat("elapsed") = time;
+    vars.addOrGetFloat("elapsed.total") = time;
     //std::cerr << time << std::endl;
     if(time > FRAME_LIMIT)
         //std::cerr << "Lag" << std::endl;
