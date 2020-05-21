@@ -283,6 +283,7 @@ void createProgram(vars::Vars&vars)
     uniform int sampleBlock;
     uniform int checkSaddle;
     uniform int checkBorders;
+    uniform int sampleMode;
 
     const float PI = 3.141592653589793238462643;
     vec3 lab2lch(vec3 Lab)
@@ -434,6 +435,7 @@ void createProgram(vars::Vars&vars)
         const ivec2 outCoords = ivec2(pixelId%size.x, pixelId/size.x);
         const vec2 inCoords = outCoords/vec2(size);
         const vec2 halfPixelOffset = (vec2(0.5)/textureSize(sampler2D(lfTextures[0]),0))*blockRadius;
+        const vec2 pixelOffset = (vec2(1.0)/textureSize(sampler2D(lfTextures[0]),0))*blockRadius;
 
         float minM2=MAX_M2;
         int subDivLvl = 0;
@@ -459,53 +461,61 @@ void createProgram(vars::Vars&vars)
                     //TODO halfpixel sample jako kawase 4
                     if(sampleBlock == 1)
                     {
-                        vec2 offset = halfPixelOffset;
-                        if(gl_GlobalInvocationID.x%2 == 0)
+                        if(sampleMode == 0)
                         {
-                            color = texture(s, focusedCoords+offset); 
-                            color += texture(s, focusedCoords-offset);
-                        }
-                        else
+                            vec2 offset = halfPixelOffset;
+                            if(gl_GlobalInvocationID.x%2 == 0)
+                            {
+                                color = texture(s, focusedCoords+offset); 
+                                color += texture(s, focusedCoords-offset);
+                            }
+                            else
+                            {
+                                offset *= vec2(-1,1); 
+                                color = texture(s, focusedCoords+offset);
+                                color += texture(s, focusedCoords-offset);
+                            }
+                            color /= 2.0;
+                        } 
+                        else if(sampleMode == 1)
                         {
-                            offset *= vec2(-1,1); 
-                            color = texture(s, focusedCoords+offset);
-                            color += texture(s, focusedCoords-offset);
+                            color = texture(s,focusedCoords);
+                            color += texture(s,focusedCoords+pixelOffset);
+                            color += texture(s,focusedCoords-pixelOffset);
+                            color += texture(s,focusedCoords+vec2(1, -1)*pixelOffset);
+                            color += texture(s,focusedCoords+vec2(-1, 1)*pixelOffset);
+                            color += texture(s,focusedCoords+vec2(0,1)*pixelOffset);
+                            color += texture(s,focusedCoords-vec2(0,1)*pixelOffset);
+                            color += texture(s,focusedCoords+vec2(1, 0)*pixelOffset);
+                            color += texture(s,focusedCoords-vec2(1, 0)*pixelOffset);
+                            color /= 9.0;
                         }
-                        color /= 2.0; 
-
-                        /*color += texture(s,focusedCoords+dif).xyz;
-                        color += texture(s,focusedCoords-dif).xyz;
-                        color += texture(s,focusedCoords+vec2(dif, -dif)).xyz;
-                        color += texture(s,focusedCoords+vec2(-dif, dif)).xyz;
-                        color += texture(s,focusedCoords+vec2(0,dif)).xyz;
-                        color += texture(s,focusedCoords-vec2(0,dif)).xyz;
-                        color += texture(s,focusedCoords+vec2(dif, 0)).xyz;
-                        color += texture(s,focusedCoords-vec2(dif, 0)).xyz;
-                        color /= 9.0;*/
-
-                        /*uint modulo = gl_GlobalInvocationID.x%4;
-                        //modulo = 10;
-                        if(modulo == 0)
+                        else if(sampleMode == 2)
                         {
-                        color += texture(s,focusedCoords+dif).xyz;
-                        color += texture(s,focusedCoords-dif).xyz;
+                            uint modulo = gl_GlobalInvocationID.x%4;
+                            color = texture(s,focusedCoords);
+                            if(modulo == 0)
+                            {
+                            color += texture(s,focusedCoords+pixelOffset);
+                            color += texture(s,focusedCoords-pixelOffset);
+                            }
+                            else if(modulo == 1)
+                            {
+                            color += texture(s,focusedCoords+vec2(1, -1)*pixelOffset);
+                            color += texture(s,focusedCoords+vec2(-1, 1)*pixelOffset);
+                            }
+                            else if(modulo == 2)
+                            { 
+                            color += texture(s,focusedCoords+vec2(0,1)*pixelOffset);
+                            color += texture(s,focusedCoords-vec2(0,1)*pixelOffset);
+                            }
+                            else if(modulo == 3)
+                            {
+                            color += texture(s,focusedCoords+vec2(1, 0)*pixelOffset);
+                            color += texture(s,focusedCoords-vec2(1, 0)*pixelOffset);
+                            }                        
+                            color /= 3.0;
                         }
-                        else if(modulo == 1)
-                        {
-                        color += texture(s,focusedCoords+vec2(dif, -dif)).xyz;
-                        color += texture(s,focusedCoords+vec2(-dif, dif)).xyz;
-                        }
-                        else if(modulo == 2)
-                        { 
-                        color += texture(s,focusedCoords+vec2(0,dif)).xyz;
-                        color += texture(s,focusedCoords-vec2(0,dif)).xyz;
-                        }
-                        else if(modulo == 3)
-                        {
-                        color += texture(s,focusedCoords+vec2(dif, 0)).xyz;
-                        color += texture(s,focusedCoords-vec2(dif, 0)).xyz;
-                        }                        
-                        color /= 3.0;*/
                     }
                     else 
                         color = texture(s,focusedCoords);
@@ -535,7 +545,7 @@ void createProgram(vars::Vars&vars)
             float saddle = abs(minM2-neighbours.x) + abs(minM2-neighbours.y);
             if(minM2 <= neighbours.x && minM2 <= neighbours.y)
                 minM2 -= saddle*0.5;
-            }
+        }
         
         if(checkBorders == 1 && anyThreadNV(minM2<0.0)) 
         {
@@ -800,6 +810,7 @@ void createProgram(vars::Vars&vars)
         vars.addFloat("dofDistance",0.0f);
         vars.addFloat("dofRange",0.0f);
         vars.addInt32("blockRadius",1);
+        vars.addInt32("sampleMode",0);
         vars.addInt32("colMetric", 2);
         vars.addInt32("searchSubdiv", 0);
         vars.add<std::map<SDL_Keycode, bool>>("input.keyDown");
@@ -893,6 +904,7 @@ void createProgram(vars::Vars&vars)
         ->set1f("focus",vars.getFloat("focus"))
         ->set1f("focusStep",vars.getFloat("focusStep"))
         ->set1i("blockRadius",vars.getInt32("blockRadius"))
+        ->set1i("sampleMode",vars.getInt32("sampleMode"))
         ->set1f("gridSampleDistance",vars.getFloat("gridSampleDistance"))
         ->set2fv("viewCoord",glm::value_ptr(viewCoord))
         ->set1i("colMetric",vars.getInt32("colMetric"))
@@ -1032,7 +1044,10 @@ void createProgram(vars::Vars&vars)
             ImGui::Checkbox("Check borders", &vars.getBool("checkBorders"));
         ImGui::Checkbox("Sample block", &vars.getBool("sampleBlock"));
         if(vars.getBool("sampleBlock"))
+        {
             ImGui::DragInt("Block radius", &vars.getInt32("blockRadius"),2, 1, 17);
+            ImGui::DragInt("Sample mode", &vars.getInt32("sampleMode"),1, 0, 2);
+        }
         ImGui::InputInt("Alternative col metric", &vars.getInt32("colMetric"));
         ImGui::DragInt("Search subdivisions", &vars.getInt32("searchSubdiv"),0,0,7); 
         vars.getFloat("focusStep")=vars.getFloat("inputFocusStep")/(vars.getInt32("searchSubdiv")+1);
