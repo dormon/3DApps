@@ -32,6 +32,44 @@
 
 #define ___ std::cerr << __FILE__ << " " << __LINE__ << std::endl
 
+
+SDL_Surface* flipSurface(SDL_Surface* sfc) {
+     SDL_Surface* result = SDL_CreateRGBSurface(sfc->flags, sfc->w, sfc->h,
+         sfc->format->BytesPerPixel * 8, sfc->format->Rmask, sfc->format->Gmask,
+         sfc->format->Bmask, sfc->format->Amask);
+     const auto pitch = sfc->pitch;
+     const auto pxlength = pitch*(sfc->h - 1);
+     auto pixels = static_cast<unsigned char*>(sfc->pixels) + pxlength;
+     auto rpixels = static_cast<unsigned char*>(result->pixels) ;
+     for(auto line = 0; line < sfc->h; ++line) {
+         memcpy(rpixels,pixels,pitch);
+         pixels -= pitch;
+         rpixels += pitch;
+     }
+     return result;
+}
+
+void screenShot(std::string filename, int w, int h)
+{
+#if SDL_BYTEORDER == SDL_BIG_ENDIAN
+    Uint32 rmask = 0xff000000;
+    Uint32 gmask = 0x00ff0000;
+    Uint32 bmask = 0x0000ff00;
+    Uint32 amask = 0x000000ff;  
+#else
+    Uint32 rmask = 0x000000ff;
+    Uint32 gmask = 0x0000ff00;
+    Uint32 bmask = 0x00ff0000;
+    Uint32 amask = 0xff000000;
+#endif
+    SDL_Surface *ss = SDL_CreateRGBSurface(0, w, h, 24, rmask, gmask, bmask, amask);
+    ge::gl::glReadPixels(0, 0, w, h, GL_RGB, GL_UNSIGNED_BYTE, ss->pixels);
+    SDL_Surface *s = flipSurface(ss);
+    SDL_SaveBMP(s, filename.c_str());
+    SDL_FreeSurface(s); 
+    SDL_FreeSurface(ss); 
+}
+
 class Holo: public simple3DApp::Application{
  public:
   Holo(int argc, char* argv[]) : Application(argc, argv) {}
@@ -224,7 +262,7 @@ R".(
 
   void main(){
 
-    vec3  diffuseColor   = hue(vID*3.14159254f);//vec3(0.5,0.5,0.5);
+    vec3  diffuseColor   = vec3(0.5);//hue(vID*3.14159254f);//vec3(0.5,0.5,0.5);
     vec3  specularColor  = vec3(1);
     float specularFactor = 1;
 
@@ -687,7 +725,7 @@ class Quilt{
       ge::gl::glGetIntegerv(GL_VIEWPORT,origViewport);
 
       fbo->bind();
-      ge::gl::glClearColor(1,0,0,1);
+      ge::gl::glClearColor(0,1,0,1);
       ge::gl::glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
       size_t counter = 0;
 
@@ -800,9 +838,11 @@ void Holo::draw(){
   vars.get<ge::gl::VertexArray>("emptyVao")->bind();
 
   auto drawScene = [&](glm::mat4 const&view,glm::mat4 const&proj){
-    vars.get<ge::gl::VertexArray>("emptyVao")->bind();
-    drawGrid(vars,view,proj);
-    vars.get<ge::gl::VertexArray>("emptyVao")->unbind();
+    if(vars.addOrGetBool("drawGrid",true)){
+      vars.get<ge::gl::VertexArray>("emptyVao")->bind();
+      drawGrid(vars,view,proj);
+      vars.get<ge::gl::VertexArray>("emptyVao")->unbind();
+    }
     //vars.get<ge::gl::VertexArray>("emptyVao")->bind();
     //drawTriangles(vars,view,proj);
     //vars.get<ge::gl::VertexArray>("emptyVao")->bind();
@@ -846,6 +886,9 @@ void Holo::draw(){
 
 void Holo::init(){
   auto args = vars.add<argumentViewer::ArgumentViewer>("args",argc,argv);
+  auto const windowSize = args->getu32v("--window-size",{1024,1024});
+  auto const notResizable = args->isPresent("--notResizable");
+
   auto const quiltFile = args->gets("--quilt","","quilt image 5x9");
   auto const modelFile = args->gets("--model","","model file");
   auto const showHelp = args->isPresent("-h","shows help");
@@ -853,6 +896,11 @@ void Holo::init(){
     std::cerr << args->toStr();
     exit(0);
   }
+
+
+  if(notResizable)
+    SDL_SetWindowResizable(window->getWindow(),SDL_FALSE);
+  window->setSize(windowSize[0],windowSize[1]);
 
   vars.addString("quiltFileName",quiltFile);
   vars.addString("modelFileName",modelFile);
@@ -917,6 +965,10 @@ void Holo::key(SDL_Event const& event, bool DOWN) {
       window->setFullscreen(sdl2cpp::Window::FULLSCREEN_DESKTOP);
     else
       window->setFullscreen(sdl2cpp::Window::WINDOW);
+  }
+  if(event.key.keysym.sym == SDLK_p && DOWN){
+    auto const windowSize     = vars.get<glm::uvec2>("windowSize");
+    screenShot("screenshot",windowSize->x,windowSize->y);
   }
 }
 
