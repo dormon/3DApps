@@ -13,6 +13,45 @@
 #include <VarsGLMDecorator/VarsGLMDecorator.h>
 
 
+std::string const doesLineInterectSubFrustum = R".(
+bool doesLineInterectSubFrustum(in vec4 A,in vec4 B,in vec3 minCorner,in vec3 maxCorner){
+  float tt[2] = {0.f,1.f};
+  float M;
+  float N;
+  uint doMin;
+
+  #define MINIMIZE()\
+  M/=N;\
+  doMin = uint(N<0.f);\
+  N=(tt[doMin]-M)*(-1.f+2.f*doMin);\
+  tt[doMin] = float(N<0)*tt[doMin] + float(N>=0)*M
+  
+  M = +A.w*minCorner[0]-A[0];
+  N = +B[0]-A[0]-(B.w-A.w)*minCorner[0];
+  MINIMIZE();
+  M = +A.w*minCorner[1]-A[1];
+  N = +B[1]-A[1]-(B.w-A.w)*minCorner[1];
+  MINIMIZE();
+  M = +A.w*minCorner[2]-A[2];
+  N = +B[2]-A[2]-(B.w-A.w)*minCorner[2];
+  MINIMIZE();
+
+  M = -A.w*maxCorner[0]+A[0];
+  N = -B[0]+A[0]+(B.w-A.w)*maxCorner[0];
+  MINIMIZE();
+  M = -A.w*maxCorner[1]+A[1];
+  N = -B[1]+A[1]+(B.w-A.w)*maxCorner[1];
+  MINIMIZE();
+  M = -A.w*maxCorner[2]+A[2];
+  N = -B[2]+A[2]+(B.w-A.w)*maxCorner[2];
+  MINIMIZE();
+  
+#undef MINIMIZE
+  return tt[0] <= tt[1];
+}
+
+).";
+
 using DVars = VarsGLMDecorator<vars::Vars>;
 
 void prepareDrawPointCloud(vars::Vars&vars){
@@ -1100,6 +1139,137 @@ void drawFrustum(vars::Vars&vars){
   vao->unbind();
 }
 
+void prepareDrawTriangle(vars::Vars&vars){
+  if(notChanged(vars,"all",__FUNCTION__,{}))return;
+  std::string const vsSrc = R".(
+  uniform mat4 view = mat4(1);
+  uniform mat4 proj = mat4(1);
+
+  uniform vec3 tA = vec3(0,0,0);
+  uniform vec3 tB = vec3(1,0,0);
+  uniform vec3 tC = vec3(0,1,0);
+
+  uniform float LL = -1.f;
+  uniform float RR = +1.f;
+  uniform float BB = -1.f;
+  uniform float TT = +1.f;
+  uniform float NN = +1.f;
+  uniform float FF = +10.f;
+
+  uniform float ax = 0.f;
+  uniform float bx = 1.f;
+  uniform float ay = 0.f;
+  uniform float by = 1.f;
+  uniform float az = 1.f;
+  uniform float bz = 10.f;
+
+  out vec3 vColor;
+  void main(){
+
+    mat4 prj = mat4(0);
+    prj[0][0] = 2*NN/(RR-LL);
+    prj[0][1] = 0;
+    prj[0][2] = 0;
+    prj[0][3] = 0;
+
+    prj[1][0] = 0;
+    prj[1][1] = 2*NN/(TT-BB);
+    prj[1][2] = 0;
+    prj[1][3] = 0;
+
+    prj[2][0] = (RR+LL)/(RR-LL);
+    prj[2][1] = (TT+BB)/(TT-BB);
+    prj[2][2] = -(FF+NN)/(FF-NN);
+    prj[2][3] = -1;
+
+    prj[3][0] = 0;
+    prj[3][1] = 0;
+    prj[3][2] = -2*FF*NN/(FF-NN);
+    prj[3][3] = 0;
+
+    vec3 minCorner = -1+2*vec3(ax,ay,(1/az-1/NN)/(1/FF-1/NN));
+    vec3 maxCorner = -1+2*vec3(bx,by,(1/bz-1/NN)/(1/FF-1/NN));
+
+    if(minCorner.x == 1337)return;
+    if(all(lessThanEqual(tA,vec3(-1e10))))return;
+    if(all(lessThanEqual(tB,vec3(-1e10))))return;
+    if(all(lessThanEqual(tC,vec3(-1e10))))return;
+
+    vec4 tAA = prj*vec4(tA,1);
+    vec4 tBB = prj*vec4(tB,1);
+    vec4 tCC = prj*vec4(tC,1);
+    vColor = vec3(0,.5,0);
+    if(doesLineInterectSubFrustum(tAA,tBB,minCorner,maxCorner))vColor = vec3(1,1,1);
+    if(doesLineInterectSubFrustum(tBB,tCC,minCorner,maxCorner))vColor = vec3(1,1,1);
+    if(doesLineInterectSubFrustum(tCC,tAA,minCorner,maxCorner))vColor = vec3(1,1,1);
+
+    if(gl_VertexID == 0)gl_Position = proj*view*vec4(tA,1);
+    if(gl_VertexID == 1)gl_Position = proj*view*vec4(tB,1);
+    if(gl_VertexID == 2)gl_Position = proj*view*vec4(tC,1);
+  }
+  ).";
+
+  std::string const fsSrc = R".(
+  #version 450
+  out vec4 fColor;
+  in  vec3 vColor;
+  void main(){
+    fColor = vec4(vColor,1);
+  }
+  ).";
+  
+  auto vs = std::make_shared<ge::gl::Shader>(GL_VERTEX_SHADER,
+      "#version 450\n",
+      doesLineInterectSubFrustum,
+      vsSrc);
+  auto fs = std::make_shared<ge::gl::Shader>(GL_FRAGMENT_SHADER,fsSrc);
+
+  vars.reCreate<ge::gl::Program>("drawTriangleProgram",vs,fs);
+  
+  vars.reCreate<ge::gl::VertexArray>("drawTriangleVAO");
+}
+void drawTriangle(vars::Vars&vars){
+
+  prepareDrawTriangle(vars);
+
+  auto prg = vars.get<ge::gl::Program>("drawTriangleProgram");
+  auto vao = vars.get<ge::gl::VertexArray>("drawTriangleVAO");
+
+  auto view = vars.getReinterpret<basicCamera::CameraTransform>("view")->getView();
+  auto proj = vars.get<basicCamera::PerspectiveCamera>("projection")->getProjection();
+
+  vao->bind();
+  prg->use();
+  prg->setMatrix4fv("view",glm::value_ptr(view));
+  prg->setMatrix4fv("proj",glm::value_ptr(proj));
+
+  prg->set1f("LL",vars.getFloat("LL"));
+  prg->set1f("RR",vars.getFloat("RR"));
+  prg->set1f("BB",vars.getFloat("BB"));
+  prg->set1f("TT",vars.getFloat("TT"));
+  prg->set1f("NN",vars.getFloat("NN"));
+  prg->set1f("FF",vars.getFloat("FF"));
+
+  prg->set1f("ax",vars.getFloat("ax"));
+  prg->set1f("bx",vars.getFloat("bx"));
+  prg->set1f("ay",vars.getFloat("ay"));
+  prg->set1f("by",vars.getFloat("by"));
+  prg->set1f("az",vars.getFloat("az"));
+  prg->set1f("bz",vars.getFloat("bz"));
+
+  prg->set3fv("tA",(float*)vars.addOrGet<glm::vec3>("tA",0.f,0.f,-2.f));
+  prg->set3fv("tB",(float*)vars.addOrGet<glm::vec3>("tB",1.f,0.f,-2.f));
+  prg->set3fv("tC",(float*)vars.addOrGet<glm::vec3>("tC",0.f,1.f,-2.f));
+
+  addVarsLimits3F(vars,"tA"    ,-10,10,0.1);
+  addVarsLimits3F(vars,"tB"    ,-10,10,0.1);
+  addVarsLimits3F(vars,"tC"    ,-10,10,0.1);
+
+  ge::gl::glDrawArrays(GL_TRIANGLES,0,3);
+
+  vao->unbind();
+}
+
 void prepareDrawSamples(vars::Vars&vars){
   if(notChanged(vars,"all",__FUNCTION__,{}))return;
 
@@ -1202,7 +1372,7 @@ vec4 edgeBClipSpace = vec4(0);
 vec4 lightClipSpace = vec4(0);
 int edgeMult = 1;
 
-int computeBridge(in vec3 bridgeStart,in vec3 bridgeEnd){
+int computeBridge(in vec4 bridgeStart,in vec4 bridgeEnd){
   // m n c 
   // - - 0
   // 0 - 1
@@ -1218,19 +1388,19 @@ int computeBridge(in vec3 bridgeStart,in vec3 bridgeEnd){
   // m<0 xor n<0
 
   int result = edgeMult;
-  float ss = dot(edgePlane,vec4(bridgeStart,1));
-  float es = dot(edgePlane,vec4(bridgeEnd  ,1));
+  float ss = dot(edgePlane,bridgeStart);
+  float es = dot(edgePlane,bridgeEnd  );
   if((ss<0)==(es<0))return 0;
   result *= 1-2*int(ss<0.f);
 
-  vec4 samplePlane    = getClipPlaneSkala(vec4(bridgeStart,1),vec4(bridgeEnd,1),lightClipSpace);
+  vec4 samplePlane    = getClipPlaneSkala(bridgeStart,bridgeEnd,lightClipSpace);
   ss = dot(samplePlane,edgeAClipSpace);
   es = dot(samplePlane,edgeBClipSpace);
   ss*=es;
   if(ss>0.f)return 0;
   result *= 1+int(ss<0.f);
 
-  vec4 trianglePlane  = getClipPlaneSkala(vec4(bridgeStart,1),vec4(bridgeEnd,1),vec4(bridgeStart,1) + (edgeBClipSpace-edgeAClipSpace));
+  vec4 trianglePlane  = getClipPlaneSkala(bridgeStart,bridgeEnd,bridgeStart + (edgeBClipSpace-edgeAClipSpace));
   trianglePlane *= sign(dot(trianglePlane,lightClipSpace));
   if(dot(trianglePlane,edgeAClipSpace)<=0)return 0;
 
@@ -1248,7 +1418,7 @@ int compBrid(
   edgeAClipSpace  = aa;
   edgeBClipSpace  = bb;
   lightClipSpace  = ll;
-  return computeBridge(startSample,endSample);
+  return computeBridge(vec4(startSample,1),vec4(endSample,1));
 }
 
   bool sampleCollision(
@@ -1495,10 +1665,11 @@ void EmptyProject::draw(){
 
   vars.get<ge::gl::VertexArray>("emptyVao")->unbind();
 
-  if(vars.addOrGetBool("drawPointCloud",true))drawPointCloud(vars);
-  if(vars.addOrGetBool("drasSide"      ,true))drawSide      (vars);
+  if(vars.addOrGetBool("drawTriangle"  ,true))drawTriangle  (vars);
+  if(vars.addOrGetBool("drawPointCloud",false))drawPointCloud(vars);
+  if(vars.addOrGetBool("drasSide"      ,false))drawSide      (vars);
   if(vars.addOrGetBool("drawFrustum"   ,true))drawFrustum   (vars);
-  if(vars.addOrGetBool("drawSamples"   ,true))drawSamples   (vars);
+  if(vars.addOrGetBool("drawSamples"   ,false))drawSamples   (vars);
 
   drawImguiVars(vars);
 
