@@ -52,6 +52,105 @@ bool doesLineInterectSubFrustum(in vec4 A,in vec4 B,in vec3 minCorner,in vec3 ma
 
 ).";
 
+std::string const doesSubFrustumDiagonalIntersectClipSpaceTriangle = R".(
+// 2) one of main diagonals of frustum intersects shadow volume side
+// corners of frustum in clip-space:
+// C0 = (-1,-1,-1,1)
+// C1 = (+1,-1,-1,1)
+// C2 = (-1,+1,-1,1)
+// C3 = (+1,+1,-1,1)
+// C4 = (-1,-1,-1,1)
+// C5 = (+1,-1,-1,1)
+// C6 = (-1,+1,-1,1)
+// C7 = (+1,+1,-1,1)
+//
+// C(i) = (-1+2*((i>>0)&1),-1+2*((i>>1)&1),-1+2*((i>>2)&1),1)
+//
+// If main diagonal intersect triangle in point X then:
+// ax+(bx-ax)*X.x ==  ay+(by-ay)*+X.y ==  az+(bz-az)*+X.z   C0->C7
+// ax+(bx-ax)*X.x ==  ay+(by-ay)*-X.y ==  az+(bz-az)*-X.z   C1->C6
+// X.x == -X.y ==  X.z   C2->C5
+// X.x ==  X.y == -X.z   C3->C4
+//
+// triagnle ABC
+// edge: A->B, A=(Ax,Ay,Az,Aw), B=(Bx,By,Bz,Bw), C=(Cx,Cy,Cz,Cz)
+//
+// M(t) = (1-t)*A+t*B
+// O(t) = (1-t)*C+t*D
+// X(t,l) = (1-l)*M(t) + l*O(t)
+// X(t,l) = (1-l)*(1-t)*A + (1-l)*t*B + l*(1-t)*C + l*t*D
+// X(t,l) = A -l*A -t*A + t*l*A + t*B - t*l*B + l*C - t*l*C + t*l*D
+// X(t,l) = A + l*(C-A) + t*(B-A) + t*l*(A-B-C+D)
+// X(t,l) = A + l*((Ax-Lx,Ay-Ly,Az-Lz,0)-(Ax,Ay,Az,1)) + t*(B-A) + t*l*(A-B-C+D)
+// X(t,l) = A + l*((-Lx,-Ly,-Lz,-1)) + t*(B-A) + t*l*(A-B-C+D)
+// X(t,l) = A - l*L + t*(B-A) + t*l*(A-B-C+D)
+// X(t,l) = A - l*L + t*(B-A) + t*l*((Ax,Ay,Az,1)-(Bx,By,Bz,1)-(Ax-Lx,Ay-Ly,Az-Lz,0)+(Bx-Lx,By-Ly,Bz-Lz,0))
+// X(t,l) = A - l*L + t*(B-A) + t*l*((Ax-Bx,Ay-By,Az-Bz,0)-(Ax-Lx,Ay-Ly,Az-Lz,0)+(Bx-Lx,By-Ly,Bz-Lz,0))
+// X(t,l) = A - l*L + t*(B-A) + t*l*((Lx-Bx,Ly-By,Lz-Bz,0)+(Bx-Lx,By-Ly,Bz-Lz,0))
+// X(t,l) = A - l*L + t*(B-A) + t*l*0
+// X(t,l) = A - l*L + t*(B-A)
+//
+// X(t,l)x == X(t,l)y
+//
+// X(t,l)x ==  X(t,l)y && X(t,l)x ==  X(t,l)z    C0->C7
+// X(t,l)x == -X(t,l)y && X(t,l)x == -X(t,l)z    C1->C6
+// X(t,l)x == -X(t,l)y && X(t,l)x ==  X(t,l)z    C2->C5
+// X(t,l)x ==  X(t,l)y && X(t,l)x == -X(t,l)z    C3->C4
+//
+// X(t,l)x*(bx-ax)+ax == H*X(t,l)y*(by-ay)+ay && X(t,l)x == G*X(t,l)z, a,b in {-1,1}
+//
+// [Ax - l*Lx + t*(Bx-Ax)]*(bx-ax)+ax == [Ay - l*Ly + t*(By-Ay)]*H*(by-ay)+ay
+// [Ax - l*Lx + t*(Bx-Ax)]*sx+ax == [Ay - l*Ly + t*(By-Ay)]*H*sy+ay
+// (Ax*sx-aAy*sy+ax-ay) + l*(HLy*sy-Lx*sx) + t*((Bx-Ax)*sx-(By-Ay)*H*sy) = 0
+// t*((Bx-Ax)*sx-(By-Ay)*H*sy) + l*(HLy*sy-Lx*sx) = -(Ax*sx-HAy*sy+ax-ay)
+//
+// [Ax - l*Lx + t*(Bx-Ax)]*sy+ax == [Ay - l*Ly + t*(By-Ay)]*H*sx+ay
+//
+// t*[(Bx-Ax)*sy-(By-Ay)*H*sx] + l*[Ly*H*sx-Lx*sy] = Ay*H*sx-Ax*sy+ay-ax
+//
+//
+// [Ax - l*Lx + t*(Bx-Ax)]*(bx-ax)+ax == [GAz - Gl*Lz + Gt*(Bz-Az)]*(bz-az)+az
+// t*((Bx-Ay)*sx-(Bz-Az)*G*sz) + l*(GLz*sz-Lx*sz) = -(Ax*sx-G*Az*sz+ax-az)
+//
+// t*((Bx-Ax)*sx-(By-Ay)*H*sy) + l*(HLy*sy-Lx*sx) = -(Ax*sx-HAy*sy+ax-ay)
+// t*((Bx-Ax)*sx-(Bz-Az)*G*sz) + l*(GLz*sz-Lx*sx) = -(Ax*sx-G*Az*sz+ax-az)
+//
+// t*u + l*v = w
+// t*x + l*y = z
+//
+//     |w v|  / |u v|
+// t = |z y| /  |x y|
+//
+// l = (w-t*u)/v
+bool doesDiagonalIntersectShadowVolumeSide2(in vec4 A,in vec4 B,in vec4 L,in uint d,in vec3 minCorner,in vec3 maxCorner){
+  vec3 s = maxCorner-minCorner;
+
+  float H = -1.f + 2.f*float(d/2u);
+  float G = -1.f + 2.f*float(d&1u);
+
+  float u = (B.x - A.x)*s.y - (B.y - A.y)*H*s.x;
+  float v = H*L.y*s.x - L.x*s.y;
+  float w = -A.x*s.y + H*A.y*s.x - minCorner.x + minCorner.y;
+
+  float x = (B.x - A.x)*s.z - (B.z - A.z)*G*s.x;
+  float y = G*L.z*s.x - L.x*s.z;
+  float z = -A.x*s.z + G*A.z*s.x - minCorner.x + minCorner.z;
+
+  float divisor  = u*y - x*v;
+  float dividend = w*y - z*v;
+  if(divisor == 0.f)return false;
+  float t = (w*y - z*v) / (u*y - x*v);
+  if(t < 0.f || t > 1.f)return false;
+  if(v == 0.f)return false;
+  float l = (w-t*u)/v;
+  if(l < 0.f || l > 1.f)return false;
+
+  vec4 pp = mix(A,B,t)-L*l;
+  return all(greaterThanEqual(pp.xyz,pp.www*minCorner))&&all(lessThanEqual(pp.xyz,pp.www*maxCorner));
+  //return true;
+}
+).";
+
 using DVars = VarsGLMDecorator<vars::Vars>;
 
 void prepareDrawPointCloud(vars::Vars&vars){
@@ -893,7 +992,46 @@ bool silhouetteStatus(){//vec3 minCorner,vec3 aabbSize){
   return false;
 }
 
-bool doesDiagonal(uint d){
+bool doesSubFrustumDiagonalIntersectSide(in vec3 minCorner,in vec3 maxCorner,in vec4 AA,in vec4 BB,in vec4 LI,in vec4 p){
+  if(sign(p.x)*sign(p.z) < 0){
+    float z = minCorner.x;
+    minCorner.x = maxCorner.x;
+    maxCorner.x = z;
+  }
+  if(sign(p.y)*sign(p.z) < 0){
+    float z = minCorner.y;
+    minCorner.y = maxCorner.y;
+    maxCorner.y = z;
+  }
+
+  float s = -dot(p,vec4(minCorner,1))/dot(maxCorner-minCorner,p.xyz);
+  if(s<0)return false;
+  if(s>1)return false;
+
+  vec3 cc = minCorner+s*(maxCorner-minCorner);
+
+  float u = (BB.x-AA.x)-(BB.w-AA.w)*cc.x;
+  float v = -LI.x+LI.w*cc.x;
+  float w = -AA.x+cc.x*AA.w;
+
+  float x = (BB.y-AA.y)-(BB.w-AA.w)*cc.y;
+  float y = -LI.y+LI.w*cc.y;
+  float z = -AA.y+cc.y*AA.w;
+
+  float divisor  = u*y - x*v;
+  float dividend = w*y - z*v;
+
+  if(divisor == 0.f)return false;
+  float t = dividend/divisor;
+  if(t < 0.f || t > 1.f)return false;
+  if(v == 0.f)return false;
+  float l = (w-t*u)/v;
+  if(l < 0.f || l > 1.f)return false;
+
+  return true;
+}
+
+bool doesDiagonal(){//uint d){
   mat4 prj = mat4(0);
   prj[0][0] = 2*NN/(RR-LL);
   prj[0][1] = 0;
@@ -922,58 +1060,13 @@ bool doesDiagonal(uint d){
   vec3 minCorner = -1+2*vec3(ax,ay,(1/az-1/NN)/(1/FF-1/NN));
   vec3 maxCorner = -1+2*vec3(bx,by,(1/bz-1/NN)/(1/FF-1/NN));
 
-
-  if((d&1u) != 0u){
-    float z = minCorner.x;
-    minCorner.x = maxCorner.x;
-    maxCorner.x = z;
-  }
-  if((d&2u) != 0u){
-    float z = minCorner.y;
-    minCorner.y = maxCorner.y;
-    maxCorner.y = z;
-  }
-
-  float s = -dot(p,vec4(minCorner,1))/dot(maxCorner-minCorner,p.xyz);
-
-  vec3 cc = minCorner+s*(maxCorner-minCorner);
-
   vec4 AA = prj*vec4(A,1);
   vec4 BB = prj*vec4(B,1);
   vec4 LI = prj*light;
-#line 8000
-  float u = (BB.x-AA.x)-(BB.w-AA.w)*cc.x;
-  float v = -LI.x+LI.w*cc.x;
-  float w = -AA.x+cc.x*AA.w;
 
-  float x = (BB.y-AA.y)-(BB.w-AA.w)*cc.y;
-  float y = -LI.y+LI.w*cc.y;
-  float z = -AA.y+cc.y*AA.w;
-
-  float divisor  = u*y - x*v;
-  float dividend = w*y - z*v;
-  if(divisor == 0.f)return false;
-  float t = (w*y - z*v) / (u*y - x*v);
-  if(t < 0.f || t > 1.f)return false;
-  if(v == 0.f)return false;
-  float l = (w-t*u)/v;
-  if(l < 0.f || l > 1.f)return false;
-
-  if((d&1u) != 0u){
-    float z = minCorner.x;
-    minCorner.x = maxCorner.x;
-    maxCorner.x = z;
-  }
-  if((d&2u) != 0u){
-    float z = minCorner.y;
-    minCorner.y = maxCorner.y;
-    maxCorner.y = z;
-  }
-
-  vec4 pp = mix(AA,BB,t)-LI*l;
-  return all(greaterThanEqual(pp.xyz,pp.www*minCorner))&&all(lessThanEqual(pp.xyz,pp.www*maxCorner));
-  //return true;
+  return doesSubFrustumDiagonalIntersectSide(minCorner,maxCorner,AA,BB,LI,p);//,d);
 }
+
 
 bool silhouetteStatus2(){
   mat4 prj = mat4(0);
@@ -1006,10 +1099,11 @@ bool silhouetteStatus2(){
   if(doesLineInterectSubFrustum(AA,BB   ,minCorner,maxCorner))return true;
   if(doesLineInterectSubFrustum(AA,AA-LI,minCorner,maxCorner))return true;
   if(doesLineInterectSubFrustum(BB,BB-LI,minCorner,maxCorner))return true;
-  if(doesDiagonal(0))return true;
-  if(doesDiagonal(1))return true;
-  if(doesDiagonal(2))return true;
-  if(doesDiagonal(3))return true;
+  if(doesDiagonal())return true;
+  //if(doesDiagonal(0))return true;
+  //if(doesDiagonal(1))return true;
+  //if(doesDiagonal(2))return true;
+  //if(doesDiagonal(3))return true;
 
   return false;
 }
@@ -1665,9 +1759,9 @@ void EmptyProject::draw(){
 
   vars.get<ge::gl::VertexArray>("emptyVao")->unbind();
 
-  if(vars.addOrGetBool("drawTriangle"  ,true))drawTriangle  (vars);
+  if(vars.addOrGetBool("drawTriangle"  ,false))drawTriangle  (vars);
   if(vars.addOrGetBool("drawPointCloud",false))drawPointCloud(vars);
-  if(vars.addOrGetBool("drasSide"      ,false))drawSide      (vars);
+  if(vars.addOrGetBool("drasSide"      ,true))drawSide      (vars);
   if(vars.addOrGetBool("drawFrustum"   ,true))drawFrustum   (vars);
   if(vars.addOrGetBool("drawSamples"   ,false))drawSamples   (vars);
 
