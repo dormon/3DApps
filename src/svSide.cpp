@@ -20,11 +20,16 @@ bool doesLineInterectSubFrustum(in vec4 A,in vec4 B,in vec3 minCorner,in vec3 ma
   float N;
   uint doMin;
 
+  //#define MINIMIZE()\
+  //M/=N;\
+  //doMin = uint(N<0.f);\
+  //N=(tt[doMin]-M)*(-1.f+2.f*doMin);\
+  //tt[doMin] = float(N<0)*tt[doMin] + float(N>=0)*M
+
   #define MINIMIZE()\
-  M/=N;\
-  doMin = uint(N<0.f);\
-  N=(tt[doMin]-M)*(-1.f+2.f*doMin);\
-  tt[doMin] = float(N<0)*tt[doMin] + float(N>=0)*M
+  if(N == 0.f && M >= 0.f)return false;\
+  if(N > 0.f)tt[0] = max(tt[0],M/N);\
+  if(N < 0.f)tt[1] = min(tt[1],M/N)
   
   M = +A.w*minCorner[0]-A[0];
   N = +B[0]-A[0]-(B.w-A.w)*minCorner[0];
@@ -48,6 +53,117 @@ bool doesLineInterectSubFrustum(in vec4 A,in vec4 B,in vec3 minCorner,in vec3 ma
   
 #undef MINIMIZE
   return tt[0] <= tt[1];
+}
+
+).";
+
+std::string const doesSubFrustumDiagonalIntersectSide = R".(
+bool doesSubFrustumDiagonalIntersectSide(in vec3 minCorner,in vec3 maxCorner,in vec4 A,in vec4 B,in vec4 L,in vec4 plane){
+  if(sign(plane.x)*sign(plane.z) < 0){
+    float z = minCorner.x;
+    minCorner.x = maxCorner.x;
+    maxCorner.x = z;
+  }
+  if(sign(plane.y)*sign(plane.z) < 0){
+    float z = minCorner.y;
+    minCorner.y = maxCorner.y;
+    maxCorner.y = z;
+  }
+
+  float s = -dot(plane,vec4(minCorner,1))/dot(maxCorner-minCorner,plane.xyz);
+  if(s<0)return false;
+  if(s>1)return false;
+
+  vec3 D = minCorner+s*(maxCorner-minCorner);
+
+  // X(t,l)                    = A+t(B-A)-lL
+  // Di*X(t,l)w                = X(t,l)i
+  // Di(Aw+t(Bw-Aw)-lLw)       = Ai+t(Bi-Ai)-lLi
+  // DiAw + tDi(Bw-Aw) - lDiLw = Ai + t(Bi-Ai) - lLi
+  // DiAw-Ai = t[(Bi-Ai)-Di(Bw-Aw)] + l[DiLw-Li]
+  //
+  // DxAw-Ax = t[(Bx-Ax)-Dx(Bw-Aw)] + l[DxLw-Lx] 
+  // DyAw-Ay = t[(By-Ay)-Dy(Bw-Aw)] + l[DyLw-Ly] 
+  //
+  // w = tu + lv
+  // z = tx + ly
+
+  float u = (B.x-A.x)-(B.w-A.w)*D.x;
+  float v = -L.x+L.w*D.x;
+  float w = -A.x+D.x*A.w;
+
+  float x = (B.y-A.y)-(B.w-A.w)*D.y;
+  float y = -L.y+L.w*D.y;
+  float z = -A.y+D.y*A.w;
+
+  float divisor  = u*y - x*v;
+  float dividend = w*y - z*v;
+
+  if(divisor == 0.f)return false;
+  float t = dividend/divisor;
+  if(t < 0.f || t > 1.f)return false;
+  if(v == 0.f)return false;
+  float l = (w-t*u)/v;
+  if(l < 0.f || l > 1.f)return false;
+
+  return true;
+}
+).";
+
+std::string const doesSubFrustumDiagonalIntersectTriangle = R".(
+bool doesSubFrustumDiagonalIntersectTriangle(in vec3 minCorner,in vec3 maxCorner,in vec4 A,in vec4 B,in vec4 C,in vec4 plane){
+  if(sign(plane.x)*sign(plane.z) < 0){
+    float z = minCorner.x;
+    minCorner.x = maxCorner.x;
+    maxCorner.x = z;
+  }
+  if(sign(plane.y)*sign(plane.z) < 0){
+    float z = minCorner.y;
+    minCorner.y = maxCorner.y;
+    maxCorner.y = z;
+  }
+
+  float s = -dot(plane,vec4(minCorner,1))/dot(maxCorner-minCorner,plane.xyz);
+  if(s<0)return false;
+  if(s>1)return false;
+
+  vec3 D = minCorner+s*(maxCorner-minCorner);
+
+  // X(t,l)                         = At+Bl+C(1-t-l)
+  // X(t,l)                         = At+Bl+C-tC-lC
+  // X(t,l)                         = C+t(A-C)+l(B-C)
+  //
+  // Di*X(t,l)w                     = X(t,l)i
+  // Di(Cw+t(Aw-Cw)+l(Bw-Cw))       = Ci+t(Ai-Ci)+l(Bi-Ci)
+  // DiCw + tDi(Aw-Cw) + lDi(Bw-Cw) = Ci + t(Ai-Ci) + l(Bi-Ci)
+  // DiCw-Ci                        = t[(Ai-Ci)-Di(Aw-Cw)] + l[(Bi-Ci)-Di(Bw-Cw)]
+  //
+  // DxCw-Cx                        = t[(Ax-Cx)-Dx(Aw-Cw)] + l[(Bx-Cx)-Dx(Bw-Cw)]
+  // DyCw-Cy                        = t[(Ay-Cy)-Dy(Aw-Cw)] + l[(By-Cy)-Dy(Bw-Cw)]
+  //
+  // w = tu + lv
+  // z = tx + ly
+
+  float w = D.x*C.w-C.x;
+  float u = (A.x-C.x)-D.x*(A.w-C.w);
+  float v = (B.x-C.x)-D.x*(B.w-C.w);
+
+  float z = D.y*C.w-C.y;
+  float x = (A.y-C.y)-D.y*(A.w-C.w);
+  float y = (B.y-C.y)-D.y*(B.w-C.w);
+
+  float divisor  = u*y - x*v;
+  float dividend = w*y - z*v;
+
+  if(divisor == 0.f)return false;
+  float t = dividend/divisor;
+  if(t < 0.f || t > 1.f)return false;
+  if(v == 0.f)return false;
+  float l = (w-t*u)/v;
+  if(l < 0.f || l > 1.f)return false;
+  if(t+l>1)return false;
+
+  return true;
 }
 
 ).";
@@ -992,31 +1108,43 @@ bool silhouetteStatus(){//vec3 minCorner,vec3 aabbSize){
   return false;
 }
 
-bool doesSubFrustumDiagonalIntersectSide(in vec3 minCorner,in vec3 maxCorner,in vec4 AA,in vec4 BB,in vec4 LI,in vec4 p){
-  if(sign(p.x)*sign(p.z) < 0){
+bool doesSubFrustumDiagonalIntersectSide(in vec3 minCorner,in vec3 maxCorner,in vec4 A,in vec4 B,in vec4 L,in vec4 plane){
+  if(sign(plane.x)*sign(plane.z) < 0){
     float z = minCorner.x;
     minCorner.x = maxCorner.x;
     maxCorner.x = z;
   }
-  if(sign(p.y)*sign(p.z) < 0){
+  if(sign(plane.y)*sign(plane.z) < 0){
     float z = minCorner.y;
     minCorner.y = maxCorner.y;
     maxCorner.y = z;
   }
 
-  float s = -dot(p,vec4(minCorner,1))/dot(maxCorner-minCorner,p.xyz);
+  float s = -dot(plane,vec4(minCorner,1))/dot(maxCorner-minCorner,plane.xyz);
   if(s<0)return false;
   if(s>1)return false;
 
-  vec3 cc = minCorner+s*(maxCorner-minCorner);
+  vec3 D = minCorner+s*(maxCorner-minCorner);
 
-  float u = (BB.x-AA.x)-(BB.w-AA.w)*cc.x;
-  float v = -LI.x+LI.w*cc.x;
-  float w = -AA.x+cc.x*AA.w;
+  // X(t,l)                    = A+t(B-A)-lL
+  // Di*X(t,l)w                = X(t,l)i
+  // Di(Aw+t(Bw-Aw)-lLw)       = Ai+t(Bi-Ai)-lLi
+  // DiAw + tDi(Bw-Aw) - lDiLw = Ai + t(Bi-Ai) - lLi
+  // DiAw-Ai = t[(Bi-Ai)-Di(Bw-Aw)] + l[DiLw-Li]
+  //
+  // DxAw-Ax = t[(Bx-Ax)-Dx(Bw-Aw)] + l[DxLw-Lx] 
+  // DyAw-Ay = t[(By-Ay)-Dy(Bw-Aw)] + l[DyLw-Ly] 
+  //
+  // w = tu + lv
+  // z = tx + ly
 
-  float x = (BB.y-AA.y)-(BB.w-AA.w)*cc.y;
-  float y = -LI.y+LI.w*cc.y;
-  float z = -AA.y+cc.y*AA.w;
+  float u = (B.x-A.x)-(B.w-A.w)*D.x;
+  float v = -L.x+L.w*D.x;
+  float w = -A.x+D.x*A.w;
+
+  float x = (B.y-A.y)-(B.w-A.w)*D.y;
+  float y = -L.y+L.w*D.y;
+  float z = -A.y+D.y*A.w;
 
   float divisor  = u*y - x*v;
   float dividend = w*y - z*v;
@@ -1289,13 +1417,26 @@ void prepareDrawTriangle(vars::Vars&vars){
     if(all(lessThanEqual(tB,vec3(-1e10))))return;
     if(all(lessThanEqual(tC,vec3(-1e10))))return;
 
+    vec3 n     = normalize(cross(tB-tA,tC-tA));
+    vec4 plane = transpose(inverse(prj))*vec4(n,-dot(n,tA));
     vec4 tAA = prj*vec4(tA,1);
     vec4 tBB = prj*vec4(tB,1);
     vec4 tCC = prj*vec4(tC,1);
     vColor = vec3(0,.5,0);
-    if(doesLineInterectSubFrustum(tAA,tBB,minCorner,maxCorner))vColor = vec3(1,1,1);
-    if(doesLineInterectSubFrustum(tBB,tCC,minCorner,maxCorner))vColor = vec3(1,1,1);
-    if(doesLineInterectSubFrustum(tCC,tAA,minCorner,maxCorner))vColor = vec3(1,1,1);
+    if(doesLineInterectSubFrustum(tAA,tBB,minCorner,maxCorner)){
+      vColor = vec3(1,1,1);
+    }else{
+      if(doesLineInterectSubFrustum(tBB,tCC,minCorner,maxCorner)){
+        vColor = vec3(1,1,1);
+      }else{
+        if(doesLineInterectSubFrustum(tCC,tAA,minCorner,maxCorner)){
+          vColor = vec3(1,1,1);
+        }else{
+          if(doesSubFrustumDiagonalIntersectTriangle(minCorner,maxCorner,tAA,tBB,tCC,plane))
+            vColor = vec3(0.5);
+        }
+      }
+    }
 
     if(gl_VertexID == 0)gl_Position = proj*view*vec4(tA,1);
     if(gl_VertexID == 1)gl_Position = proj*view*vec4(tB,1);
@@ -1315,6 +1456,7 @@ void prepareDrawTriangle(vars::Vars&vars){
   auto vs = std::make_shared<ge::gl::Shader>(GL_VERTEX_SHADER,
       "#version 450\n",
       doesLineInterectSubFrustum,
+      doesSubFrustumDiagonalIntersectTriangle,
       vsSrc);
   auto fs = std::make_shared<ge::gl::Shader>(GL_FRAGMENT_SHADER,fsSrc);
 
@@ -1351,14 +1493,15 @@ void drawTriangle(vars::Vars&vars){
   prg->set1f("az",vars.getFloat("az"));
   prg->set1f("bz",vars.getFloat("bz"));
 
-  prg->set3fv("tA",(float*)vars.addOrGet<glm::vec3>("tA",0.f,0.f,-2.f));
-  prg->set3fv("tB",(float*)vars.addOrGet<glm::vec3>("tB",1.f,0.f,-2.f));
-  prg->set3fv("tC",(float*)vars.addOrGet<glm::vec3>("tC",0.f,1.f,-2.f));
+  prg->set3fv("tA",(float*)vars.addOrGet<glm::vec3>("tA", -1.0f,-0.5f,-3.f));
+  prg->set3fv("tB",(float*)vars.addOrGet<glm::vec3>("tB", +1.0f,-0.5f,-3.f));
+  prg->set3fv("tC",(float*)vars.addOrGet<glm::vec3>("tC", -1.0f,+1.0f,-3.f));
 
   addVarsLimits3F(vars,"tA"    ,-10,10,0.1);
   addVarsLimits3F(vars,"tB"    ,-10,10,0.1);
   addVarsLimits3F(vars,"tC"    ,-10,10,0.1);
 
+  ge::gl::glEnable(GL_DEPTH_TEST);
   ge::gl::glDrawArrays(GL_TRIANGLES,0,3);
 
   vao->unbind();
@@ -1759,10 +1902,10 @@ void EmptyProject::draw(){
 
   vars.get<ge::gl::VertexArray>("emptyVao")->unbind();
 
-  if(vars.addOrGetBool("drawTriangle"  ,false))drawTriangle  (vars);
   if(vars.addOrGetBool("drawPointCloud",false))drawPointCloud(vars);
-  if(vars.addOrGetBool("drasSide"      ,true))drawSide      (vars);
+  if(vars.addOrGetBool("drasSide"      ,false))drawSide      (vars);
   if(vars.addOrGetBool("drawFrustum"   ,true))drawFrustum   (vars);
+  if(vars.addOrGetBool("drawTriangle"  ,true))drawTriangle  (vars);
   if(vars.addOrGetBool("drawSamples"   ,false))drawSamples   (vars);
 
   drawImguiVars(vars);
