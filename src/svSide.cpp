@@ -1175,22 +1175,100 @@ void prepareDrawSamples(vars::Vars&vars){
     return prj;
   }
 
-  
+vec4 getClipPlaneSkala(in vec4 A,in vec4 B,in vec4 C){
+  float x1 = A.x;
+  float x2 = B.x;
+  float x3 = C.x;
+  float y1 = A.y;
+  float y2 = B.y;
+  float y3 = C.y;
+  float z1 = A.z;
+  float z2 = B.z;
+  float z3 = C.z;
+  float w1 = A.w;
+  float w2 = B.w;
+  float w3 = C.w;
+
+  float a =  y1*(z2*w3-z3*w2) - y2*(z1*w3-z3*w1) + y3*(z1*w2-z2*w1);
+  float b = -x1*(z2*w3-z3*w2) + x2*(z1*w3-z3*w1) - x3*(z1*w2-z2*w1);
+  float c =  x1*(y2*w3-y3*w2) - x2*(y1*w3-y3*w1) + x3*(y1*w2-y2*w1);
+  float d = -x1*(y2*z3-y3*z2) + x2*(y1*z3-y3*z1) - x3*(y1*z2-y2*z1);
+  return vec4(a,b,c,d);
+}
+#line 1198  
+vec4 edgePlane      = vec4(0);
+vec4 edgeAClipSpace = vec4(0);
+vec4 edgeBClipSpace = vec4(0);
+vec4 lightClipSpace = vec4(0);
+int edgeMult = 1;
+
+int computeBridge(in vec3 bridgeStart,in vec3 bridgeEnd){
+  // m n c 
+  // - - 0
+  // 0 - 1
+  // + - 1
+  // - 0 1
+  // 0 0 0
+  // + 0 0
+  // - + 1
+  // 0 + 0
+  // + + 0
+  //
+  // m<0 && n>=0 || m>=0 && n<0
+  // m<0 xor n<0
+
+  int result = edgeMult;
+  float ss = dot(edgePlane,vec4(bridgeStart,1));
+  float es = dot(edgePlane,vec4(bridgeEnd  ,1));
+  if((ss<0)==(es<0))return 0;
+  result *= 1-2*int(ss<0.f);
+
+  vec4 samplePlane    = getClipPlaneSkala(vec4(bridgeStart,1),vec4(bridgeEnd,1),lightClipSpace);
+  ss = dot(samplePlane,edgeAClipSpace);
+  es = dot(samplePlane,edgeBClipSpace);
+  ss*=es;
+  if(ss>0.f)return 0;
+  result *= 1+int(ss<0.f);
+
+  vec4 trianglePlane  = getClipPlaneSkala(vec4(bridgeStart,1),vec4(bridgeEnd,1),vec4(bridgeStart,1) + (edgeBClipSpace-edgeAClipSpace));
+  trianglePlane *= sign(dot(trianglePlane,lightClipSpace));
+  if(dot(trianglePlane,edgeAClipSpace)<=0)return 0;
+
+  return result;
+
+}
+
+int compBrid(
+      in vec3 startSample,
+      in vec3 endSample  ,
+      in vec4 aa         ,
+      in vec4 bb         ,
+      in vec4 ll         ){
+  edgePlane       = getClipPlaneSkala(aa,bb,ll);
+  edgeAClipSpace  = aa;
+  edgeBClipSpace  = bb;
+  lightClipSpace  = ll;
+  return computeBridge(startSample,endSample);
+}
+
   bool sampleCollision(
       in vec3 startSample,
       in vec3 endSample  ,
       in vec4 aa         ,
       in vec4 bb         ,
       in vec4 ll         ){
+    
 
     vec3 edgeNormal     = normalize(cross(bb.xyz*aa.w-aa.xyz*bb.w,ll.xyz*aa.w-aa.xyz*ll.w));
     vec4 edgePlane      = vec4(edgeNormal,-dot(edgeNormal,aa.xyz/aa.w));
 
+
     vec3 sampleNormal   = normalize(cross(endSample-startSample,ll.xyz-startSample*ll.w));
     vec4 samplePlane    = vec4(sampleNormal,-dot(sampleNormal,startSample));
 
-    vec3 triangleNormal = normalize(cross(endSample-startSample,bb.xyz*aa.w-aa.xyz*bb.w));
-    vec4 trianglePlane  = vec4(triangleNormal,-dot(triangleNormal,startSample));
+    vec4 trianglePlane  = getClipPlaneSkala(vec4(startSample,1),vec4(endSample,1),vec4(startSample,1) + (bb-aa));
+    //vec3 triangleNormal = normalize(cross(endSample-startSample,bb.xyz*aa.w-aa.xyz*bb.w));
+    //vec4 trianglePlane  = vec4(triangleNormal,-dot(triangleNormal,startSample));
 
     // m n c 
     // - - 0
@@ -1222,8 +1300,15 @@ void prepareDrawSamples(vars::Vars&vars){
   void main(){
     gColor = vec3(1,1,0);
     if(light == vec4(0) || A == vec3(0) || B == vec3(0))gColor = vec3(1);
+#if 0
     if(sampleCollision(SM,SN,getProj()*vec4(A,1),getProj()*vec4(B,1),getProj()*light))
       gColor = vec3(0,1,1);
+#else
+    int mult = compBrid(SM,SN,getProj()*vec4(A,1),getProj()*vec4(B,1),getProj()*light);
+    if(mult > 0)gColor = vec3(.5,0,0);
+    if(mult < 0)gColor = vec3(0,0,.5);
+    if(mult == 0)gColor = vec3(0.2);
+#endif
     drawLine(getSample3D(SM),getSample3D(SN));
 
     gColor = vec3(.3);
@@ -1347,8 +1432,8 @@ void EmptyProject::init(){
   vars.addBool("useOrbitCamera",false);
 
   vars.add<glm::vec4>("light",glm::vec4(10,30,0,1));
-  vars.add<glm::vec3>("A",glm::vec3(-2.5,1.1,0));
-  vars.add<glm::vec3>("B",glm::vec3(1.3,.6,0));
+  vars.add<glm::vec3>("A",glm::vec3(-2.5,1.1,-5.7));
+  vars.add<glm::vec3>("B",glm::vec3(1.3,.6,-3.4));
   addVarsLimits3F(vars,"A"    ,-10,10,0.1);
   addVarsLimits3F(vars,"B"    ,-10,10,0.1);
   addVarsLimits3F(vars,"light",-100,100,0.1);
