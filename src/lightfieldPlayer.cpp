@@ -1132,6 +1132,17 @@ void createProgram(vars::Vars&vars)
             screenShot(/*std::to_string(a)+*/"/home/ichlubna/Workspace/lf/data/shot.bmp", window->getWidth(), window->getHeight());
         if constexpr (MEASURE_TIME)
             ImGui::Checkbox("Print times", &vars.getBool("printTimes"));
+        if constexpr (TEXTURE_STATISTICS)
+        if (ImGui::Button("Texture stats"))
+        { 
+            auto grid = vars.get<glm::ivec2>("gridSize");
+            int gridSize = grid->x*grid->y;
+            int *buffer = reinterpret_cast<int*>(vars.get<ge::gl::Buffer>("textureStatistics")->map());
+            for(int i=0; i<gridSize*2; i++)
+                savePGM(buffer, gridSize*i, *grid, "/home/ichlubna/Workspace/lf/data/stats/"+std::to_string(i)+".pgm");  
+            vars.get<ge::gl::Buffer>("textureStatistics")->unmap();
+        }
+
     ImGui::End();
     swap();
 
