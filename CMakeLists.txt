@@ -78,6 +78,7 @@ addApp2(noise                                 "src/noise.cpp"                   
 addApp2(uintGeometryShader                    "src/uintGeometryShader.cpp"                    "Simple3DApp::Simple3DApp;barrier;imguiVars::imguiVars")
 addApp2(sort                                  "src/Sort.cpp"                                  "Simple3DApp::Simple3DApp;ArgumentViewer::ArgumentViewer;StringAligner::StringAligner;imguiVars::imguiVars")
 addApp2(linearInterpolationOfHomogenousCoords "src/linearInterpolationOfHomogenousCoords.cpp" "Simple3DApp::Simple3DApp;drawGrid;imguiVars::imguiVars")
+addApp2(conservativeRasterization             "src/conservativeRasterization.cpp"             "Simple3DApp::Simple3DApp;drawGrid;imguiVars::imguiVars")
 addApp2(infiniteInterpolation                 "src/infiniteInterpolation.cpp"                 "Simple3DApp::Simple3DApp;drawGrid;imguiVars::imguiVars")
 addApp2(csCompiler                            "src/csCompiler.cpp"                            "Simple3DApp::Simple3DApp;ArgumentViewer::ArgumentViewer")
 addApp2(imagePointCloud                       "src/imagePointCloud.cpp"                       "Simple3DApp::Simple3DApp;ArgumentViewer::ArgumentViewer;drawGrid;imguiVars::imguiVars;FreeImage;FreeImagePlus")
