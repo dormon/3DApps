@@ -10,7 +10,6 @@ extern "C" {
 #include <libavcodec/vdpau.h>
 }
 
-
 class GpuDecoder
 {
     public:
@@ -57,5 +56,5 @@ class GpuDecoder
         AVPixelFormat pixFmt;
         VdpRect flipRect;
         AVPacket packet;
-        
+               
 };
