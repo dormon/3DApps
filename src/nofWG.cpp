@@ -12,6 +12,8 @@ int main(int argc,char*argv[]){
   auto args = std::make_shared<argumentViewer::ArgumentViewer>(argc,argv);
   auto const wgs = args->getu32("-n",256,"nof work groups");
   auto const tries = args->getu32("-t",1000,"nof of tries");
+  auto const size  = args->getu32("-s",64,"work group size");
+  auto const local  = args->getu32("-l",2,"local memory size in uints (min 2)");
   auto const showHelp = args->isPresent("-h","shows help");
   if (showHelp || !args->validate()) {
     std::cerr << args->toStr();
@@ -33,9 +35,8 @@ int main(int argc,char*argv[]){
   std::cerr << glGetString(GL_VERSION) << std::endl;
 
   std::string const csSrc = R".(
-  #version 450 core
-
-  layout(local_size_x=64)in;
+  
+  layout(local_size_x=WGS)in;
 
   layout(std430,binding=0)volatile coherent buffer Data{
     uint counter;
@@ -45,6 +46,15 @@ int main(int argc,char*argv[]){
   uniform uint tries = 1000;
   shared uint done;
   shared uint ww;
+
+  #define UTILITY_SHARED 2
+
+  #define SMS  (SHARED_SIZE - UTILITY_SHARED)
+
+  #if SMS > 0
+  shared uint sharedMemory[SMS];
+  #endif
+
   void main(){
     
     if(gl_GlobalInvocationID.x == 0)
@@ -54,6 +64,11 @@ int main(int argc,char*argv[]){
     if(gl_LocalInvocationIndex == 0){
       ww = atomicAdd(counter,1);
       done = 0;
+
+      #if SSMS > 0
+      for(uint i=0;i<SMS;++i)
+        sharedMemory[i] = ww+i;
+      #endif
     }
     barrier();
     
@@ -75,7 +90,14 @@ int main(int argc,char*argv[]){
       uint c=0;
       for(uint j=0;j<10;++j)
         c = (c+j+ww)%117;
-      if(c==1337)data[5]=1111;
+      if(c==1337){
+        #if SMS > 0
+        for(uint j=uint(gl_LocalInvocationIndex);j<SHARED_SIZE-2;++j)
+          c+= sharedMemory[j]+gl_LocalInvocationIndex;
+        #endif
+        data[5]=1111+c;
+        
+      }
       
     }
     if(gl_LocalInvocationIndex==0){
@@ -88,7 +110,11 @@ int main(int argc,char*argv[]){
 
   auto buffer = make_shared<Buffer>(sizeof(uint32_t)*16);
   buffer->clear(GL_R32UI,GL_RED_INTEGER,GL_UNSIGNED_INT);
-  auto prg = make_shared<Program>(make_shared<Shader>(GL_COMPUTE_SHADER,csSrc));
+  auto prg = make_shared<Program>(make_shared<Shader>(GL_COMPUTE_SHADER
+        ,"#version 450\n"
+        ,Shader::define("WGS",(int)size)
+        ,Shader::define("SHARED_SIZE",(int)local)
+        ,csSrc));
   prg->bindBuffer("Data",buffer);
   prg->set1ui("tries",tries);
   prg->use();
