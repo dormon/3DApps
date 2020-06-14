@@ -93,6 +93,7 @@ addApp2(draw2d                                "src/draw2d.cpp"                  
 addApp2(morton2d                              "src/morton2d.cpp"                              "Simple3DApp::Simple3DApp;barrier;imguiVars::imguiVars;assimp::assimp")
 addApp2(triangle                              "src/triangle.cpp"                              "Simple3DApp::Simple3DApp")
 addApp2(killGPU                               "src/killGPU.cpp"                               "Simple3DApp::Simple3DApp;ArgumentViewer::ArgumentViewer;Vars::Vars")
+addApp2(nofWG                                 "src/nofWG.cpp"                               "Simple3DApp::Simple3DApp;ArgumentViewer::ArgumentViewer;Vars::Vars")
 addApp2(quiltToNative                         "src/quiltToNative.cpp"                         "Simple3DApp::Simple3DApp;ArgumentViewer::ArgumentViewer;FreeImagePlus;glm")
 addApp2(stupidCompiler                        "src/stupidCompiler.cpp"                        "Simple3DApp::Simple3DApp;barrier;imguiVars::imguiVars;ArgumentViewer::ArgumentViewer")
 addApp2(stupidScheduler                       "src/stupidScheduler.cpp"                       "SDL2::SDL2;SDL2::SDL2main;geGL::geGL;ArgumentViewer::ArgumentViewer;OpenCL")

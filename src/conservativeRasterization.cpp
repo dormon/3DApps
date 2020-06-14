@@ -47,23 +47,64 @@ void createProgram(vars::Vars&vars){
   uniform int doC = 1;
   uniform float f = 1.f;
   uniform uvec2 windowSize;
+  uniform int clipSpace = 1;
   out vec3 vColor;
 
+  vec4 plane(vec3 a,vec3 b,vec3 c){
+    vec3 n = cross(b-a,c-a);
+    return vec4(n,-dot(a,n));
+  }
+
+  void com(out vec3 af,out vec3 bf,out vec3 cf,in vec3 a,in vec3 b,in vec3 c,in vec3 mask,in vec2 hPixel){
+    vec2 A =af.xy/af.z;
+    vec2 B = bf.xy/bf.z;
+    vec2 C = cf.xy/cf.z;
+    float ee = hPixel.x*hPixel.y*4*10000;
+    if(length(cross(vec3(C-A,0),vec3(B-A,0))) < ee){
+      af = a;
+      bf = a;
+      cf = a;
+      return;
+    }
+
+    vec3 pa = cross(a,c);
+    vec3 pb = cross(b,a);
+    vec3 pc = cross(c,b);
+
+    pa.z += dot(hPixel,abs(pa.xy))*mask.x;
+    pb.z += dot(hPixel,abs(pb.xy))*mask.y;
+    pc.z += dot(hPixel,abs(pc.xy))*mask.z;
+
+    af = cross(pa,pb);
+    bf = cross(pb,pc);
+    cf = cross(pc,pa);
+
+
+    vec4 pp = plane(a,b,c);
+
+    af *= abs(-pp.w/dot(pp.xyz,af));
+    bf *= abs(-pp.w/dot(pp.xyz,bf));
+    cf *= abs(-pp.w/dot(pp.xyz,cf));
+    
+  }
   void computeConservative(out vec4 af,out vec4 bf,out vec4 cf,in vec4 a,in vec4 b,in vec4 c,in vec3 mask,in vec2 hPixel){
     vec4 plane = getClipPlaneSkala(a,b,c);
 
-    vec3 pa = cross(a.xyw-c.xyw,c.xyw);
-    vec3 pb = cross(b.xyw-a.xyw,a.xyw);
-    vec3 pc = cross(c.xyw-b.xyw,b.xyw);
+    //vec3 pa = cross(a.xyw-c.xyw,c.xyw);
+    //vec3 pb = cross(b.xyw-a.xyw,a.xyw);
+    //vec3 pc = cross(c.xyw-b.xyw,b.xyw);
+    vec3 pa = cross(a.xyw,c.xyw);
+    vec3 pb = cross(b.xyw,a.xyw);
+    vec3 pc = cross(c.xyw,b.xyw);
 
 
-    pa.z -= dot(hPixel,abs(pa.xy))*mask.x;
-    pb.z -= dot(hPixel,abs(pb.xy))*mask.y;
-    pc.z -= dot(hPixel,abs(pc.xy))*mask.z;
+    pa.z += dot(hPixel,abs(pa.xy))*mask.x;
+    pb.z += dot(hPixel,abs(pb.xy))*mask.y;
+    pc.z += dot(hPixel,abs(pc.xy))*mask.z;
 
-    af.xyw = cross(pa,pb);
-    bf.xyw = cross(pb,pc);
-    cf.xyw = cross(pc,pa);
+    af.xyw = cross(pb,pa);
+    bf.xyw = cross(pc,pb);
+    cf.xyw = cross(pa,pc);
 
     af.z = -dot(af.xyw,plane.xyw) / plane.z;
     bf.z = -dot(bf.xyw,plane.xyw) / plane.z;
@@ -83,13 +124,37 @@ void createProgram(vars::Vars&vars){
     vec4 cf;
 
     vec2 hPixel = vec2(1.f/vec2(windowSize));
-    computeConservative(af,bf,cf,a,b,c,vec3(doA,doB,doC)*f,hPixel);
+    vec3 mask = vec3(doA,doB,doC)*f;
+    if(clipSpace == 0){
+
+      vec3 aaf,bbf,ccf;
+      com(aaf,bbf,ccf,vec3(view*vec4(A,1)),vec3(view*vec4(B,1)),vec3(view*vec4(C,1)),mask,hPixel);
+
+      af = projection*vec4(aaf,1);
+      bf = projection*vec4(bbf,1);
+      cf = projection*vec4(ccf,1);
+    }else
+      computeConservative(af,bf,cf,a,b,c,mask,hPixel);
   
 
     uint tri = gl_VertexID/3;
     uint ver = gl_VertexID%3;
     if(tri == 0){
       vColor = vec3(0,.5,0);
+
+      vec3 u = vec3(view*vec4(A,1));
+      vec3 v = vec3(view*vec4(B,1));
+      vec3 w = vec3(view*vec4(C,1));
+
+      vec2 AA = u.xy/u.z;
+      vec2 BB = v.xy/v.z;
+      vec2 CC = w.xy/w.z;
+      float ee = hPixel.x*hPixel.y*4*1000;
+      if(length(cross(vec3(CC-AA,0),vec3(BB-AA,0))) < ee){
+        vColor = vec3(0,0,1);
+      }
+
+
       if(ver == 0)gl_Position = a;
       if(ver == 1)gl_Position = b;
       if(ver == 2)gl_Position = c;
@@ -136,14 +201,15 @@ void drawLIH(vars::Vars&vars){
     ->setMatrix4fv("view"      ,glm::value_ptr(view->getView()))
     ->setMatrix4fv("projection",glm::value_ptr(projection->getProjection()))
     ->use();
-  prg->set3fv("A",(float*)vars.addOrGet<glm::vec3>("A",-0.8f,-.7f,-1.f));
-  prg->set3fv("B",(float*)vars.addOrGet<glm::vec3>("B",.7f,0.f,-1.1f));
-  prg->set3fv("C",(float*)vars.addOrGet<glm::vec3>("C",0.4f,1.3f,-1.2f));
+  prg->set3fv("A",(float*)vars.addOrGet<glm::vec3>("A",0.f,0.f,-1.f));
+  prg->set3fv("B",(float*)vars.addOrGet<glm::vec3>("B",0.f,1.f,-1.f));
+  prg->set3fv("C",(float*)vars.addOrGet<glm::vec3>("C",1.f,0.f,-1.f));
   prg->set1f("f",vars.addOrGetFloat("f",1));
   prg->set2uiv("windowSize",(uint32_t*)vars.get<glm::uvec2>("windowSize"));
   prg->set1i("doA",(int)vars.addOrGetBool("doA",true));
   prg->set1i("doB",(int)vars.addOrGetBool("doB",true));
   prg->set1i("doC",(int)vars.addOrGetBool("doC",true));
+  prg->set1i("clipSpace",(int)vars.addOrGetBool("clipSpace",true));
 
   ge::gl::glPolygonMode(GL_FRONT_AND_BACK,GL_FILL);
   ge::gl::glDrawArrays(GL_TRIANGLES,0,3);
