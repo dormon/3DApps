@@ -24,7 +24,7 @@
 constexpr float FRAME_LIMIT{1.0f/24};
 constexpr uint32_t FOCUSMAP_DIV{1};
 constexpr bool MEASURE_TIME{1};
-constexpr bool STATISTICS{0};
+constexpr bool STATISTICS{1};
 constexpr bool TEXTURE_STATISTICS{1};
 
 //TODO not multiple of local size resolution cases
@@ -249,12 +249,10 @@ void createProgram(vars::Vars&vars)
                 
             if(showFocusMap != 0)
                 color = vec4(vec3(focusLvl/float(focusLevels*(searchSubdiv+1))),1.0);
-            //fColor = texture(sampler2D(lfTextures[48]),vCoord);
 
-           /* 
-            ivec2 c = ivec2(vCoord*imageSize(focusMap));
-            if(c.y*imageSize(focusMap).x+c.x == (1024-225)*1024+569)
-                fColor = vec4(1.0,0.0,0.0,1.0);*/
+            //fColor = texture(sampler2D(lfTextures[48]),vCoord);         
+            if(outCoords.y == 1080-319 && outCoords.x == 894)
+                color = vec4(1.0,0.0,0.0,1.0);
             imageStore(lf, outCoords, color);
             //imageStore(lf, outCoords, vec4(100,100,100,100));
             
@@ -567,17 +565,21 @@ void createProgram(vars::Vars&vars)
                 if(gl_LocalInvocationID.x != 31)
                     neighbours.y = shuffleDownNV(minM2,1,focusLevels); 
                 float saddle = abs(minM2-neighbours.x) + abs(minM2-neighbours.y);
+                bool saddled = false;
                 if(minM2 <= neighbours.x && minM2 <= neighbours.y)
+                {
                     minM2 -= saddle*saddleImpact;
+                    saddled = true;
+                }
            
                 //OR do it always when id=0? no MIN? 
-                if(checkBorders == 1 && anyThreadNV(minM2<0.0)) 
+                if(checkBorders == 1 && anyThreadNV(saddled)) 
                 {
                     float MIN=0.01;
-                    float DIF=0.01;
-                    if(gl_LocalInvocationID.x == borderSize)
+                    float DIF=0.006;
+                    float difference = 0;
+                    if(gl_LocalInvocationID.x == borderSize-1)
                     {
-                        float difference = 0;
                         for(int i=1; i<borderSize; i++)
                             difference += abs(minM2 - shuffleDownNV(minM2, i, focusLevels));
                         if(difference < DIF && minM2 < MIN)
@@ -662,8 +664,8 @@ void createProgram(vars::Vars&vars)
                     };).";
                 statsExecCode = 
                 R".(
-                   //if(pixelId==(1024-225)*1024+569)
-                   if(pixelId==(1080-260)*1920+688)
+                   //if(pixelId==(1080-319)*1920+894)
+                   if(outCoords.y==1080-320 && outCoords.x == 894)
 
                     statistics[gl_LocalInvocationID.x] = origM2;
                 ).";
@@ -876,7 +878,7 @@ void createProgram(vars::Vars&vars)
         vars.addFloat("dofDistance",0.0f);
         vars.addFloat("dofRange",0.0f);
         vars.addInt32("blockRadius",1);
-        vars.addInt32("sampleMode",0);
+        vars.addInt32("sampleMode",2);
         vars.addInt32("colMetric", 2);
         vars.addInt32("searchSubdiv", 0);
         vars.addInt32("borderSize", 3);
@@ -1127,7 +1129,7 @@ void createProgram(vars::Vars&vars)
         if(vars.getBool("sampleBlock"))
         {
             ImGui::DragInt("Block radius", &vars.getInt32("blockRadius"),2, 1, 17);
-            ImGui::DragInt("Sample mode", &vars.getInt32("sampleMode"),1, 0, 2);
+            ImGui::InputInt("Sample mode", &vars.getInt32("sampleMode"));
         }
         ImGui::InputInt("Alternative col metric", &vars.getInt32("colMetric"));
         ImGui::DragInt("Search subdivisions", &vars.getInt32("searchSubdiv"),0,0,7); 
