@@ -24,8 +24,8 @@
 constexpr float FRAME_LIMIT{1.0f/24};
 constexpr uint32_t FOCUSMAP_DIV{1};
 constexpr bool MEASURE_TIME{1};
-constexpr bool STATISTICS{1};
-constexpr bool TEXTURE_STATISTICS{1};
+constexpr bool STATISTICS{0};
+constexpr bool TEXTURE_STATISTICS{0};
 
 //TODO not multiple of local size resolution cases
 constexpr int WARP_SIZE{32};
@@ -251,8 +251,8 @@ void createProgram(vars::Vars&vars)
                 color = vec4(vec3(focusLvl/float(focusLevels*(searchSubdiv+1))),1.0);
 
             //fColor = texture(sampler2D(lfTextures[48]),vCoord);         
-            if(outCoords.y == 1080-319 && outCoords.x == 894)
-                color = vec4(1.0,0.0,0.0,1.0);
+            /*if(outCoords.y == 1080-319 && outCoords.x == 894)
+                color = vec4(1.0,0.0,0.0,1.0);*/
             imageStore(lf, outCoords, color);
             //imageStore(lf, outCoords, vec4(100,100,100,100));
             
@@ -759,7 +759,7 @@ void createProgram(vars::Vars&vars)
         auto lfSize = glm::uvec2(*vars.reCreate<unsigned int>("lf.width",decoder->getWidth()), *vars.reCreate<unsigned int>("lf.height", decoder->getHeight()));
         vars.reCreate<float>("texture.aspect",decoder->getAspect());
         //TODO correct framerate etc
-        auto length = vars.addUint32("length",static_cast<int>(decoder->getLength()/(vars.getInt32("lfCount")*1000000.0*25)));
+        auto length = vars.addUint32("length",static_cast<int>(decoder->getLength()/vars.getInt32("lfCount")));
         
         //Must be here since all textures are created in this context and handles might overlap
         auto focusMapSize = glm::uvec2(vars.addUint32("focusMap.width", lfSize.x/FOCUSMAP_DIV), vars.addUint32("focusMap.height", lfSize.y/FOCUSMAP_DIV));
@@ -775,7 +775,8 @@ void createProgram(vars::Vars&vars)
 
         auto rdyMutex = vars.get<std::mutex>("rdyMutex");
         auto rdyCv = vars.get<std::condition_variable>("rdyCv");
-        int frameNum = 1; 
+        int frameNum = 0; 
+        
         while(vars.getBool("mainRuns"))
         {    
             auto seekFrame = vars.getInt32("seekFrame");
@@ -783,13 +784,13 @@ void createProgram(vars::Vars&vars)
             {
                 decoder->seek(seekFrame*vars.getInt32("lfCount"));
                 frameNum = seekFrame;
-                seekFrame = -1;
+                vars.getInt32("seekFrame") = -1;
             }
 
-            if(frameNum > length)
-                frameNum = 1;
-            if(!vars.getBool("pause"))
-            {
+           if(frameNum > length)
+                frameNum = 0;
+           if(!vars.getBool("pause"))
+           {
                 int index = decoder->getActiveBufferIndex();
                 std::string nextTexturesName = "lfTextures" + std::to_string(index);
                 vars.reCreateVector<GLuint64>(nextTexturesName, decoder->getFrames(vars.getInt32("lfCount")));
@@ -802,8 +803,8 @@ void createProgram(vars::Vars&vars)
                 frameNum++;
                 vars.reCreate<int>("frameNum", frameNum);
             
-                vars.getBool("pause") = true;
-            }
+                //vars.getBool("pause") = true;
+           }
             vars.getBool("loaded") = true;
             rdyCv->notify_all();
         }

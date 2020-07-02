@@ -18,7 +18,7 @@ class GpuDecoder
         void seek(int frameNum);
         //active means the one that is currently being loaded or is now prepared for loading
         int getActiveBufferIndex() {return bufferIndex;}
-        int getLength() {return formatContext->duration;};
+        int getLength();
         int getWidth() {return codecContext->width;};
         int getHeight() {return codecContext->height;};
         float getAspect() {return static_cast<float>(codecContext->width)/codecContext->height;};
