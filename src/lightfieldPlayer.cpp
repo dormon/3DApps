@@ -249,12 +249,10 @@ void createProgram(vars::Vars&vars)
                 
             if(showFocusMap != 0)
                 color = vec4(vec3(focusLvl/float(focusLevels*(searchSubdiv+1))),1.0);
-            //fColor = texture(sampler2D(lfTextures[48]),vCoord);
 
-           /* 
-            ivec2 c = ivec2(vCoord*imageSize(focusMap));
-            if(c.y*imageSize(focusMap).x+c.x == (1024-225)*1024+569)
-                fColor = vec4(1.0,0.0,0.0,1.0);*/
+            //fColor = texture(sampler2D(lfTextures[48]),vCoord);         
+            /*if(outCoords.y == 1080-319 && outCoords.x == 894)
+                color = vec4(1.0,0.0,0.0,1.0);*/
             imageStore(lf, outCoords, color);
             //imageStore(lf, outCoords, vec4(100,100,100,100));
             
@@ -551,7 +549,15 @@ void createProgram(vars::Vars&vars)
             }
                
             if(checkSaddle == 1)
-            { 
+            {
+                //normalize 
+                float maxM2 = minM2;
+                for (uint offset=focusLevels>>1; offset>0; offset>>=1)
+                    maxM2 = max(maxM2,shuffleDownNV(maxM2,offset,focusLevels));
+                float totalMax2=readFirstInvocationARB(maxM2);
+                float originalM2 = minM2;
+                minM2 /= totalMax2;
+
                 //TODO fix when using subdivisions
                 vec2 neighbours = vec2(minM2);
                 if(gl_LocalInvocationID.x != 0)
@@ -559,17 +565,21 @@ void createProgram(vars::Vars&vars)
                 if(gl_LocalInvocationID.x != 31)
                     neighbours.y = shuffleDownNV(minM2,1,focusLevels); 
                 float saddle = abs(minM2-neighbours.x) + abs(minM2-neighbours.y);
+                bool saddled = false;
                 if(minM2 <= neighbours.x && minM2 <= neighbours.y)
+                {
                     minM2 -= saddle*saddleImpact;
+                    saddled = true;
+                }
            
                 //OR do it always when id=0? no MIN? 
-                if(checkBorders == 1 && anyThreadNV(minM2<0.0)) 
+                if(checkBorders == 1 && anyThreadNV(saddled)) 
                 {
-                    float MIN=0.001;
-                    float DIF=0.0001;
-                    if(gl_LocalInvocationID.x == borderSize)
+                    float MIN=0.01;
+                    float DIF=0.006;
+                    float difference = 0;
+                    if(gl_LocalInvocationID.x == borderSize-1)
                     {
-                        float difference = 0;
                         for(int i=1; i<borderSize; i++)
                             difference += abs(minM2 - shuffleDownNV(minM2, i, focusLevels));
                         if(difference < DIF && minM2 < MIN)
@@ -654,8 +664,8 @@ void createProgram(vars::Vars&vars)
                     };).";
                 statsExecCode = 
                 R".(
-                   //if(pixelId==(1024-225)*1024+569)
-                   if(pixelId==(1080-260)*1920+688)
+                   //if(pixelId==(1080-319)*1920+894)
+                   if(outCoords.y==1080-320 && outCoords.x == 894)
 
                     statistics[gl_LocalInvocationID.x] = origM2;
                 ).";
@@ -675,11 +685,12 @@ void createProgram(vars::Vars&vars)
                     };).";
                 textureStatsExecCode = 
                 R".(
-                    ivec2 lfSize = textureSize(sampler2D(lfTextures[0]);
+                    ivec2 lfSize = textureSize(sampler2D(lfTextures[0]), 0);
+                    ivec2 pixelCoord = ivec2(round(lfSize*coord));
                     if(isMap)
-                        textureStatistics[i*lfSize.x*lfSize.y+coord*lfSize]++;
+                        atomicAdd(textureStatistics[i*lfSize.x*lfSize.y + pixelCoord.y*lfSize.x+pixelCoord.x], 1);
                     else
-                        textureStatistics[gridSize.x*gridSize.y*lfSize.x*lfSize.y+i*lfSize.x*lfSize.y+coord*lfSize]++;
+                        atomicAdd(textureStatistics[gridSize.x*gridSize.y*lfSize.x*lfSize.y+i*lfSize.x*lfSize.y + pixelCoord.y*lfSize.x+pixelCoord.x], 1);
                 ).";
             }
             
@@ -697,12 +708,16 @@ void createProgram(vars::Vars&vars)
     void savePGM(int *buffer, int offset, glm::ivec2 resolution, std::string path)
     {
         std::ofstream fs(path, std::ios::out | std::ios::binary);
-        fs << "P2" << std::endl;
+        fs << "P5" << std::endl;
         fs << resolution.x << " " << resolution.y << std::endl;
-        fs << glm::pow(2, 32) << std::endl;
+        fs << 255 << std::endl;
         int size = resolution.x*resolution.y;
-        //for(int i=offset; i<size; i++)
-        fs.write(reinterpret_cast<char*> (buffer+offset), size*4);
+        for(int i=0; i<size; i++)
+        {
+            char number = static_cast<char>(buffer[offset+i]);
+            fs.write(&number,1);
+        }
+        //fs.write(reinterpret_cast<char*> (buffer+offset), size*4);
         fs.close();
     }
 
@@ -744,7 +759,7 @@ void createProgram(vars::Vars&vars)
         auto lfSize = glm::uvec2(*vars.reCreate<unsigned int>("lf.width",decoder->getWidth()), *vars.reCreate<unsigned int>("lf.height", decoder->getHeight()));
         vars.reCreate<float>("texture.aspect",decoder->getAspect());
         //TODO correct framerate etc
-        auto length = vars.addUint32("length",static_cast<int>(decoder->getLength()/(vars.getInt32("lfCount")*1000000.0*25)));
+        auto length = vars.addUint32("length",static_cast<int>(decoder->getLength()/vars.getInt32("lfCount")));
         
         //Must be here since all textures are created in this context and handles might overlap
         auto focusMapSize = glm::uvec2(vars.addUint32("focusMap.width", lfSize.x/FOCUSMAP_DIV), vars.addUint32("focusMap.height", lfSize.y/FOCUSMAP_DIV));
@@ -760,7 +775,8 @@ void createProgram(vars::Vars&vars)
 
         auto rdyMutex = vars.get<std::mutex>("rdyMutex");
         auto rdyCv = vars.get<std::condition_variable>("rdyCv");
-        int frameNum = 1; 
+        int frameNum = 0; 
+        
         while(vars.getBool("mainRuns"))
         {    
             auto seekFrame = vars.getInt32("seekFrame");
@@ -768,13 +784,13 @@ void createProgram(vars::Vars&vars)
             {
                 decoder->seek(seekFrame*vars.getInt32("lfCount"));
                 frameNum = seekFrame;
-                seekFrame = -1;
+                vars.getInt32("seekFrame") = -1;
             }
 
-            if(frameNum > length)
-                frameNum = 1;
-            if(!vars.getBool("pause"))
-            {
+           if(frameNum > length)
+                frameNum = 0;
+           if(!vars.getBool("pause"))
+           {
                 int index = decoder->getActiveBufferIndex();
                 std::string nextTexturesName = "lfTextures" + std::to_string(index);
                 vars.reCreateVector<GLuint64>(nextTexturesName, decoder->getFrames(vars.getInt32("lfCount")));
@@ -787,8 +803,8 @@ void createProgram(vars::Vars&vars)
                 frameNum++;
                 vars.reCreate<int>("frameNum", frameNum);
             
-                vars.getBool("pause") = true;
-            }
+                //vars.getBool("pause") = true;
+           }
             vars.getBool("loaded") = true;
             rdyCv->notify_all();
         }
@@ -863,7 +879,7 @@ void createProgram(vars::Vars&vars)
         vars.addFloat("dofDistance",0.0f);
         vars.addFloat("dofRange",0.0f);
         vars.addInt32("blockRadius",1);
-        vars.addInt32("sampleMode",0);
+        vars.addInt32("sampleMode",2);
         vars.addInt32("colMetric", 2);
         vars.addInt32("searchSubdiv", 0);
         vars.addInt32("borderSize", 3);
@@ -882,7 +898,7 @@ void createProgram(vars::Vars&vars)
         
         if constexpr (TEXTURE_STATISTICS)
         { 
-            auto stats = vars.add<ge::gl::Buffer>("textureStatistics", vars.getInt32("lf.width")*vars.getInt32("lf.height")*gridSize*gridSize*8);
+            auto stats = vars.add<ge::gl::Buffer>("textureStatistics", vars.getInt32("lf.width")*vars.getInt32("lf.height")*gridSize*gridSize*4*2);
             stats->bindBase(GL_SHADER_STORAGE_BUFFER, 3);
         }
     }
@@ -957,10 +973,8 @@ void createProgram(vars::Vars&vars)
         glm::vec2 viewCoord = glm::vec2(gridIndex)-glm::vec2(glm::clamp(coox*(gridIndex.x),0.0f,static_cast<float>(gridIndex.x)),glm::clamp(cooy*(gridIndex.y),0.0f,static_cast<float>(gridIndex.y)));
         GLuint perPixelCSSize = (*vars.get<unsigned int>("lf.width") * *vars.get<unsigned int>("lf.height"))/(LOCAL_SIZE_X*LOCAL_SIZE_Y);        
 
-
         auto program = vars.get<ge::gl::Program>("mapProgram");
         program
-        //->set2uiv("gridSize",glm::value_ptr(*vars.get<glm::uvec2>("gridSize")))
         ->set1f("focus",vars.getFloat("focus"))
         ->set1f("focusStep",vars.getFloat("focusStep"))
         ->set1f("saddleImpact",vars.getFloat("saddleImpact"))
@@ -1116,7 +1130,7 @@ void createProgram(vars::Vars&vars)
         if(vars.getBool("sampleBlock"))
         {
             ImGui::DragInt("Block radius", &vars.getInt32("blockRadius"),2, 1, 17);
-            ImGui::DragInt("Sample mode", &vars.getInt32("sampleMode"),1, 0, 2);
+            ImGui::InputInt("Sample mode", &vars.getInt32("sampleMode"));
         }
         ImGui::InputInt("Alternative col metric", &vars.getInt32("colMetric"));
         ImGui::DragInt("Search subdivisions", &vars.getInt32("searchSubdiv"),0,0,7); 
@@ -1129,18 +1143,25 @@ void createProgram(vars::Vars&vars)
 
         }
         if (ImGui::Button("Shot"))    
-            screenShot(/*std::to_string(a)+*/"/home/ichlubna/Workspace/lf/data/shot.bmp", window->getWidth(), window->getHeight());
+            screenShot("/home/ichlubna/Workspace/lf/data/shot.bmp", window->getWidth(), window->getHeight());
         if constexpr (MEASURE_TIME)
             ImGui::Checkbox("Print times", &vars.getBool("printTimes"));
         if constexpr (TEXTURE_STATISTICS)
-        if (ImGui::Button("Texture stats"))
-        { 
-            auto grid = vars.get<glm::ivec2>("gridSize");
-            int gridSize = grid->x*grid->y;
-            int *buffer = reinterpret_cast<int*>(vars.get<ge::gl::Buffer>("textureStatistics")->map());
-            for(int i=0; i<gridSize*2; i++)
-                savePGM(buffer, gridSize*i, *grid, "/home/ichlubna/Workspace/lf/data/stats/"+std::to_string(i)+".pgm");  
-            vars.get<ge::gl::Buffer>("textureStatistics")->unmap();
+        {
+            auto glBuffer = vars.get<ge::gl::Buffer>("textureStatistics");
+            if (ImGui::Button("Texture stats"))
+            {
+                ge::gl::glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+                auto grid = vars.get<glm::ivec2>("gridSize");
+                int gridSize = grid->x*grid->y;
+                glm::ivec2 lfSize{vars.getUint32("lf.width"), vars.getUint32("lf.height")};
+                int *buffer = reinterpret_cast<int*>(glBuffer->map());
+                for(int i=0; i<gridSize*2; i++)
+                    savePGM(buffer, i*lfSize.x*lfSize.y, lfSize, "/home/ichlubna/Workspace/lf/data/stats/"+std::to_string(i)+".pgm");  
+                glBuffer->unmap();
+            }
+            GLubyte zero = 0;
+            glBuffer->clear(GL_R8UI, GL_RED_INTEGER, GL_UNSIGNED_BYTE, &zero); 
         }
 
     ImGui::End();
@@ -1163,10 +1184,10 @@ void createProgram(vars::Vars&vars)
     ge::gl::glFinish();
     auto time = vars.get<Timer<double>>("timer")->elapsedFromStart();
     vars.addOrGetFloat("elapsed.total") = time;
-    //std::cerr << time << std::endl;
     if(time > FRAME_LIMIT)
+    { 
         //std::cerr << "Lag" << std::endl;
-        {}
+    }
     else
         std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<long>((FRAME_LIMIT-time)*1000)));
 
@@ -1189,7 +1210,7 @@ void LightFields::mouseMove(SDL_Event const& e)
     auto orbitCamera =
         vars.getReinterpret<basicCamera::OrbitCamera>("view");
     auto const windowSize     = vars.get<glm::uvec2>("windowSize");
-    auto const orbitZoomSpeed = 0.1f;//vars.getFloat("args.camera.orbitZoomSpeed");
+    auto const orbitZoomSpeed = 0.1f;
     auto const xrel           = static_cast<float>(e.motion.xrel);
     auto const yrel           = static_cast<float>(e.motion.yrel);
     auto const mState         = e.motion.state;

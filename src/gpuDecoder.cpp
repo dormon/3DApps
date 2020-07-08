@@ -54,11 +54,19 @@ void GpuDecoder::recreateBufferLite(size_t number)
     }*/
 }
 
+int GpuDecoder::getLength()
+{
+    return static_cast<int>((1.0*formatContext->duration/AV_TIME_BASE) * av_q2d(formatContext->streams[videoStreamId]->avg_frame_rate));
+}
+
 void GpuDecoder::seek(int frameNum)
 {
     AVStream *stream = formatContext->streams[videoStreamId];
+    int64_t time = (int64_t(frameNum) * stream->r_frame_rate.den *  stream->time_base.den) / (int64_t(stream->r_frame_rate.num) * stream->time_base.num);
     //uint64_t time = stream->time_base.den * stream->r_frame_rate.den * frameNum / (stream->time_base.num * stream->r_frame_rate.num);
-    if(av_seek_frame(formatContext, videoStreamId, frameNum, AVSEEK_FLAG_BACKWARD | AVSEEK_FLAG_FRAME) < 0)
+    //AVSEEK_FLAG_FRAME not working have to use timestamp?
+    //if(av_seek_frame(formatContext, videoStreamId, frameNum, AVSEEK_FLAG_BACKWARD | AVSEEK_FLAG_ANY) < 0)
+    if(av_seek_frame(formatContext, videoStreamId, time, AVSEEK_FLAG_BACKWARD | AVSEEK_FLAG_ANY) < 0)
         throw std::runtime_error("Cannot seek"); 
     avcodec_flush_buffers(codecContext);
     av_read_frame(formatContext, &packet);
@@ -112,7 +120,7 @@ std::vector<uint64_t> GpuDecoder::getFrames(size_t number)
                 //av_packet_unref(&packet);
                 waitForFrame = false;                
                 //break;
-                //seek(0);
+                seek(0);
 //                std::cerr<<"End of file at recieve frame" << std::endl;
             }
             else if(err < 0)
