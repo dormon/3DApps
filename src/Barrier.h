@@ -8,10 +8,11 @@ class Barrier{
   public:
     Barrier() = delete;
     Barrier(Barrier const&) = delete;
-    Barrier(vars::Vars&vars,std::vector<std::string>const&inputs = {});
+    Barrier(vars::Vars&vars,std::string const&method,std::vector<std::string>const&inputs = {});
     bool notChange();
   protected:
     vars::Vars&vars;
+    std::string method;
     std::vector<std::tuple<std::shared_ptr<vars::Resource>,size_t,std::string>>resources;
     bool firstCall = true;
 
