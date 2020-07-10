@@ -12,27 +12,101 @@
 #include <imguiVars/addVarsLimits.h>
 #include <VarsGLMDecorator/VarsGLMDecorator.h>
 
+
+#include <fstream>
+
+void storeCamera(vars::Vars&vars){
+  std::string name = "storedCamera.txt";
+  auto&cam = *vars.get<basicCamera::FreeLookCamera>("view");
+
+  auto pos = cam.getPosition();
+  auto a0 = cam.getAngle(0);
+  auto a1 = cam.getAngle(1);
+  auto a2 = cam.getAngle(2);
+
+  std::ofstream file (name);
+  if(!file.is_open()){
+    std::cerr << "cannot open camera file: " << name << std::endl;
+    return;
+  }
+
+  file << *(uint32_t*)&pos.x << std::endl;
+  file << *(uint32_t*)&pos.y << std::endl;
+  file << *(uint32_t*)&pos.z << std::endl;
+  file << *(uint32_t*)&a0 << std::endl;
+  file << *(uint32_t*)&a1 << std::endl;
+  file << *(uint32_t*)&a2 << std::endl;
+
+  file.close();
+
+}
+
+void loadCamera(vars::Vars&vars){
+  std::string name = "storedCamera.txt";
+  auto&cam = *vars.get<basicCamera::FreeLookCamera>("view");
+
+  std::ifstream file (name);
+  if(!file.is_open()){
+    std::cerr << "cannot open camera file: " << name << std::endl;
+    return;
+  }
+  glm::vec3 pos;
+  uint32_t data[6];
+  file >> data[0];
+  file >> data[1];
+  file >> data[2];
+  file >> data[3];
+  file >> data[4];
+  file >> data[5];
+
+  pos.x = *(float*)(data+0);
+  pos.y = *(float*)(data+1);
+  pos.z = *(float*)(data+2);
+  float a0,a1,a2;
+  a0 = *(float*)(data+3);
+  a1 = *(float*)(data+4);
+  a2 = *(float*)(data+5);
+
+  cam.setPosition(pos);
+  cam.setAngle(0,a0);
+  cam.setAngle(1,a1);
+  cam.setAngle(2,a2);
+
+  file.close();
+}
+
 std::string const geometry = R".(
+
+uniform bool flipBase = false;
+uniform bool flipCaster = false;
+
 const vec3 vertices[8] = {
   vec3(-10,0,+10),
   vec3(+10,0,+10),
   vec3(-10,0,-10),
   vec3(+10,0,-10),
-  vec3(-2,3,+2),
-  vec3(+2,3,+2),
-  vec3(-2,3,-2),
-  vec3(+2,3,-2),
+  vec3(-1,3,+1),
+  vec3(+1,3,+1),
+  vec3(-1,3,-1),
+  vec3(+1,3,-1),
 };
 
-const uint indices[12] = {
+const uint indices[] = {
   0,1,2,
   2,1,3,
   4,5,6,
-//  6,5,7,
+  6,5,7,
+  3,1,2,
   7,5,6,
 };
 
 vec3 getPosition(uint v){
+  if(flipBase){
+    if(v>2 && v<6)v+=9;
+  }
+  if(flipCaster){
+    if(v > 8 && v < 12)v+=6;
+  }
   return vertices[indices[v]];
 }
 
@@ -138,8 +212,23 @@ void main(){
 
   if(flip(P[0],P[1],P[2],light)){
     vec4 a;
-    a=P[0];P[0]=P[1];P[1]=a;
-    a=P[3];P[3]=P[4];P[4]=a;
+    vec4 b;
+    vec4 c;
+    a=P[0];
+    b=P[1];
+    c=P[2];
+    P[0]=c;
+    P[1]=b;
+    P[2]=a;
+
+    a=P[3];
+    b=P[4];
+    c=P[5];
+    P[3]=c;
+    P[4]=b;
+    P[5]=a;
+    //a=P[0];P[0]=P[1];P[1]=a;
+    //a=P[3];P[3]=P[4];P[4]=a;
   }
 
   gl_Position = mvp*P[3];EmitVertex();
@@ -209,6 +298,9 @@ void drawSV(vars::Vars&vars){
 
   prg->set4fv("light",(float*)vars.get<glm::vec4>("light"));
 
+  prg->set1i("flipBase",vars.addOrGetBool("flipBase",false));
+  prg->set1i("flipCaster",vars.addOrGetBool("flipCaster",false));
+
   ge::gl::glColorMask(GL_FALSE,GL_FALSE,GL_FALSE,GL_FALSE);
   //ge::gl::glColorMask(GL_TRUE,GL_TRUE,GL_TRUE,GL_TRUE);
   ge::gl::glEnable(GL_DEPTH_TEST);
@@ -270,6 +362,8 @@ void drawTriangle(vars::Vars&vars){
   prg->set4fv("light",(float*)vars.get<glm::vec4>("light"));
   prg->set1i("drawAmbient",drawAmbient);
   prg->set1i("drawDiff",drawDiff);
+  prg->set1i("flipBase",vars.addOrGetBool("flipBase",false));
+  prg->set1i("flipCaster",vars.addOrGetBool("flipCaster",false));
 
   ge::gl::glEnable(GL_DEPTH_TEST);
   ge::gl::glDepthFunc(GL_LEQUAL);
@@ -357,7 +451,7 @@ void EmptyProject::init(){
   vars.addMap<SDL_Keycode, bool>("input.keyDown");
   vars.addBool("useOrbitCamera",false);
 
-  vars.add<glm::vec4>("light",glm::vec4(10,30,0,1));
+  vars.add<glm::vec4>("light",glm::vec4(0,500,0,1));
   addVarsLimits3F(vars,"light",-100,100,0.1);
 
   createCamera(vars);
@@ -372,7 +466,7 @@ void EmptyProject::draw(){
     view = vars.getReinterpret<basicCamera::CameraTransform>("view");
   else{
     auto freeView = vars.get<basicCamera::FreeLookCamera>("view");
-    float freeCameraSpeed = 0.01f;
+    float freeCameraSpeed = vars.addOrGetFloat("speed",0.1f);
     auto& keys = vars.getMap<SDL_Keycode, bool>("input.keyDown");
     for (int a = 0; a < 3; ++a)
       freeView->move(a, float(keys["d s"[a]] - keys["acw"[a]]) *
@@ -397,6 +491,10 @@ void EmptyProject::draw(){
   drawDiff    = true ;
   drawTriangle  (vars);
 
+  if(ImGui::Button("save camera"))
+    storeCamera(vars);
+  if(ImGui::Button("load camera"))
+    loadCamera(vars);
 
   drawImguiVars(vars);
 
