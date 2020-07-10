@@ -9,7 +9,7 @@
 
 class RasterizationOrder: public simple3DApp::Application{
  public:
-  RasterizationOrder(int argc, char* argv[]) : Application(argc, argv) {}
+  RasterizationOrder(int argc, char* argv[]) : Application(argc, argv,330) {}
   virtual ~RasterizationOrder(){}
   virtual void draw() override;
 
@@ -26,13 +26,13 @@ void createProgram(vars::Vars&vars){
   uniform float z = 0.f;
   void main(){
     if(gl_VertexID<3)vColor = vec3(1,0,0);
-    if(gl_VertexID == 0)gl_Position =vec4(-1,-1,0,1);
-    if(gl_VertexID == 1)gl_Position =vec4(+1,-1,0,1);
-    if(gl_VertexID == 2)gl_Position =vec4(+1,+1,z,1);
+    if(gl_VertexID == 0)gl_Position =vec4(-1,-1,-1,1);
+    if(gl_VertexID == 1)gl_Position =vec4(+1,-1,-.7,1);
+    if(gl_VertexID == 2)gl_Position =vec4(+1,+1,-.9,1);
     if(gl_VertexID>2)vColor = vec3(0,1,0);
-    if(gl_VertexID == 3)gl_Position =vec4(+1,+1,z,1);
-    if(gl_VertexID == 4)gl_Position =vec4(+1,-1,0,1);
-    if(gl_VertexID == 5)gl_Position =vec4(-1,-1,0,1);
+    if(gl_VertexID == 3)gl_Position =vec4(+1,+1,-1+z,1);
+    if(gl_VertexID == 4)gl_Position =vec4(+1,-1,-.71+0,1);
+    if(gl_VertexID == 5)gl_Position =vec4(-1,-1,-.91+0,1);
 
   }
   ).";
@@ -45,11 +45,11 @@ void createProgram(vars::Vars&vars){
   ).";
 
   auto vs = std::make_shared<ge::gl::Shader>(GL_VERTEX_SHADER,
-      "#version 450\n",
+      "#version 330\n",
       vsSrc
       );
   auto fs = std::make_shared<ge::gl::Shader>(GL_FRAGMENT_SHADER,
-      "#version 450\n",
+      "#version 330\n",
       fsSrc
       );
   auto prg = vars.reCreate<ge::gl::Program>("program",vs,fs);
