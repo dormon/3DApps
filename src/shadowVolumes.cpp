@@ -241,6 +241,8 @@ void main(){
   gl_Position = mvp*P[3];EmitVertex();
   gl_Position = mvp*P[2];EmitVertex();
   gl_Position = mvp*P[0];EmitVertex();
+
+  //gl_FragStencilValueAMD = 1;
   
 }
 
@@ -248,12 +250,15 @@ void main(){
 ).";
 
 std::string const svFS = R".(
+
+
 out vec4 fColor;
 void main(){
   if(gl_FrontFacing)
     fColor = vec4(1,0,0,1);
   else
     fColor = vec4(0,0,1,1);
+
 }
 ).";
 
@@ -266,6 +271,7 @@ void prepareDrawSV(vars::Vars&vars){
   
   auto vs = std::make_shared<ge::gl::Shader>(GL_VERTEX_SHADER,
       "#version 450\n",
+      //"#extension GL_AMD_shader_stencil_value_export : enable\n",
       svVS);
   auto gs = std::make_shared<ge::gl::Shader>(GL_GEOMETRY_SHADER,
       "#version 450\n",
