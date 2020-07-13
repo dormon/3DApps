@@ -22,6 +22,7 @@ class GpuDecoder
         int getWidth() {return codecContext->width;};
         int getHeight() {return codecContext->height;};
         float getAspect() {return static_cast<float>(codecContext->width)/codecContext->height;};
+        void maskFrames(std::vector<bool> mask) {framesMask = mask;};
         
     private:
         static constexpr int BUFFER_COUNT{2};
@@ -56,5 +57,6 @@ class GpuDecoder
         AVPixelFormat pixFmt;
         VdpRect flipRect;
         AVPacket packet;
+        std::vector<bool> framesMask;
                
 };

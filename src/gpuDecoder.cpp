@@ -74,7 +74,10 @@ void GpuDecoder::seek(int frameNum)
 
 //convert as -c:v libx265 -pix_fmt yuv420p
 std::vector<uint64_t> GpuDecoder::getFrames(size_t number)
-{ 
+{
+    if(framesMask.size() < number)
+        framesMask = std::vector<bool>(number, true);
+
     swapBuffers();
     if(number != lastFrameCount)
     {
@@ -128,18 +131,21 @@ std::vector<uint64_t> GpuDecoder::getFrames(size_t number)
 
             if(frame->format == pixFmt)
             {
-                if(vdp_video_mixer_render(mixer, VDP_INVALID_HANDLE, nullptr, VDP_VIDEO_MIXER_PICTURE_STRUCTURE_FRAME, 0, nullptr, (VdpVideoSurface)(uintptr_t)frame->data[3], 0, nullptr, &flipRect, currentBuffer->vdpSurfaces[i], nullptr, nullptr, 0, nullptr) != VDP_STATUS_OK)
-                    throw std::runtime_error("VDP mixer error!");
+                if(framesMask[i])
+                {
+                    if(vdp_video_mixer_render(mixer, VDP_INVALID_HANDLE, nullptr, VDP_VIDEO_MIXER_PICTURE_STRUCTURE_FRAME, 0, nullptr, (VdpVideoSurface)(uintptr_t)frame->data[3], 0, nullptr, &flipRect, currentBuffer->vdpSurfaces[i], nullptr, nullptr, 0, nullptr) != VDP_STATUS_OK)
+                        throw std::runtime_error("VDP mixer error!");
 
-                currentBuffer->nvSurfaces[i] = ge::gl::glVDPAURegisterOutputSurfaceNV((void *)(uintptr_t)currentBuffer->vdpSurfaces[i],GL_TEXTURE_2D,1,&currentBuffer->textures[i]);
+                    currentBuffer->nvSurfaces[i] = ge::gl::glVDPAURegisterOutputSurfaceNV((void *)(uintptr_t)currentBuffer->vdpSurfaces[i],GL_TEXTURE_2D,1,&currentBuffer->textures[i]);
 
-                ge::gl::glVDPAUSurfaceAccessNV(currentBuffer->nvSurfaces[i], GL_READ_ONLY);
-                ge::gl::glVDPAUMapSurfacesNV (1, &currentBuffer->nvSurfaces[i]);
-          
-                currentBuffer->textureHandles[i] = ge::gl::glGetTextureHandleARB(currentBuffer->textures[i]);
+                    ge::gl::glVDPAUSurfaceAccessNV(currentBuffer->nvSurfaces[i], GL_READ_ONLY);
+                    ge::gl::glVDPAUMapSurfacesNV (1, &currentBuffer->nvSurfaces[i]);
+              
+                    currentBuffer->textureHandles[i] = ge::gl::glGetTextureHandleARB(currentBuffer->textures[i]);
+                }
                 waitForFrame = false;
             } 
-        }    
+        }  
     }
             av_frame_free(&frame);
     return currentBuffer->textureHandles; 

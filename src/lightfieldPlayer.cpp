@@ -10,6 +10,7 @@
 #include<imguiSDL2OpenGL/imgui.h>
 #include<imguiVars/imguiVars.h>
 #include<drawGrid.h>
+#include <FunctionPrologue.h>
 /*#include <assimp/Importer.hpp>
 #include <assimp/scene.h>*/
 #include <SDL2CPP/Exception.h>
@@ -748,12 +749,51 @@ void createProgram(vars::Vars&vars)
         createView(vars);
     }
 
+    std::vector<bool> createFramesMask(vars::Vars&vars)
+    {
+        std::vector<bool> mask(vars.getInt32("lfCount"),true);
+        auto gridSize = vars.get<glm::ivec2>("gridSize");
+        auto viewCoord = vars.get<glm::vec2>("viewCoord");
+        auto gridSampleDistance = vars.getFloat("gridSampleDistance");
+        for(int x=0; x<gridSize->x; x++)
+            for(int y=0; y<gridSize->y; y++)
+            {   
+                int slice = y*int(gridSize->x)+x;
+                float dist = glm::distance(*viewCoord, glm::vec2(x,y));
+                if(dist > gridSampleDistance)
+                    mask[slice] = false;
+            }
+        return mask;
+    }
+
+    void recalculateViewCoords(vars::Vars&vars)
+    {
+        //TODO kdyz se pohne tak nacist vic nebo vsechny
+        FUNCTION_PROLOGUE("all","decodingOptimization");//, "view"); 
+
+        auto gridIndex = *vars.get<glm::ivec2>("gridSize")-1;
+        float aspect = vars.getFloat("texture.aspect");
+        glm::vec3 lfPos(0,0,0);
+        auto view = vars.get<basicCamera::OrbitCamera>("view");
+        glm::vec3 camPos(view->getView()[3]);
+        glm::vec3 centerRay = glm::normalize(lfPos - camPos); 
+        float range = .2;
+        float coox = (glm::clamp(centerRay.x*-1,-range*aspect,range*aspect)/(range*aspect)+1)/2.;
+        float cooy = (glm::clamp(centerRay.y,-range,range)/range+1)/2.;
+        glm::vec2 viewCoord = glm::vec2(gridIndex)-glm::vec2(glm::clamp(coox*(gridIndex.x),0.0f,static_cast<float>(gridIndex.x)),glm::clamp(cooy*(gridIndex.y),0.0f,static_cast<float>(gridIndex.y)));
+        vars.reCreate<glm::vec2>("viewCoord", viewCoord);
+
+        vars.reCreateVector<bool>("framesMask", vars.getInt32("lfCount"), true);
+        if(vars.getBool("decodingOptimization"))
+            vars.reCreate<std::vector<bool>>("framesMask", createFramesMask(vars));
+    }
+
     void asyncVideoLoading(vars::Vars &vars)
     {
         SDL_GLContext c = SDL_GL_CreateContext(*vars.get<SDL_Window*>("mainWindow")); 
         SDL_GL_MakeCurrent(*vars.get<SDL_Window*>("mainWindow"),c);
         ge::gl::init(SDL_GL_GetProcAddress);
-        ge::gl::setHighDebugMessage();
+//        ge::gl::setHighDebugMessage();
 
         auto decoder = std::make_unique<GpuDecoder>(vars.getString("videoFile").c_str());
         auto lfSize = glm::uvec2(*vars.reCreate<unsigned int>("lf.width",decoder->getWidth()), *vars.reCreate<unsigned int>("lf.height", decoder->getHeight()));
@@ -776,6 +816,8 @@ void createProgram(vars::Vars&vars)
         auto rdyMutex = vars.get<std::mutex>("rdyMutex");
         auto rdyCv = vars.get<std::condition_variable>("rdyCv");
         int frameNum = 0; 
+           
+        auto timer = vars.addOrGet<Timer<double>>("decoderTimer");
         
         while(vars.getBool("mainRuns"))
         {    
@@ -789,20 +831,32 @@ void createProgram(vars::Vars&vars)
 
            if(frameNum > length)
                 frameNum = 0;
+           vars.reCreate<int>("frameNum", frameNum);
+
            if(!vars.getBool("pause"))
            {
                 int index = decoder->getActiveBufferIndex();
                 std::string nextTexturesName = "lfTextures" + std::to_string(index);
+
+                if constexpr (MEASURE_TIME)     
+                    timer->reset();
+
+                if(vars.getBool("decodingOptimization"))
+                    decoder->maskFrames(vars.getVector<bool>("framesMask"));
+                else
+                    decoder->maskFrames(std::vector<bool>()); 
+                
                 vars.reCreateVector<GLuint64>(nextTexturesName, decoder->getFrames(vars.getInt32("lfCount")));
                 GLsync fence = ge::gl::glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE,0);
                 ge::gl::glClientWaitSync(fence, GL_SYNC_FLUSH_COMMANDS_BIT, 9999999);
-            
+
+                if constexpr (MEASURE_TIME)     
+                    vars.addOrGetFloat("elapsed.decoding") = timer->elapsedFromStart();
+
                 vars.getUint32("lfTexturesIndex") = index;
 
                 //TODO without waiting? async draw to increase responsitivity
-                frameNum++;
-                vars.reCreate<int>("frameNum", frameNum);
-            
+                frameNum++; 
                 //vars.getBool("pause") = true;
            }
             vars.getBool("loaded") = true;
@@ -837,30 +891,13 @@ void createProgram(vars::Vars&vars)
        
         vars.addInt32("seekFrame",-1); 
         vars.addBool("mainRuns", true);
+        vars.add<glm::vec2>("viewCoord", glm::vec2(0,0));
         vars.addBool("pause", false);
         vars.addBool("printTimes", false);
+        vars.addBool("decodingOptimization", false);
         vars.addUint32("lfTexturesIndex", 0);
-        auto rdyMutex = vars.add<std::mutex>("rdyMutex");
-        auto rdyCv = vars.add<std::condition_variable>("rdyCv");
-        vars.addBool("loaded", false);
-        vars.add<std::thread>("loadingThread",asyncVideoLoading, std::ref(vars));
-        {
-            std::unique_lock<std::mutex> lck(*rdyMutex);
-            rdyCv->wait(lck, [this]{return vars.getBool("loaded");});
-        }
-        ge::gl::glMakeImageHandleResidentARB(*vars.get<GLuint64>("focusMap.image"), GL_READ_WRITE);
-        ge::gl::glMakeImageHandleResidentARB(*vars.get<GLuint64>("lf.image"), GL_READ_WRITE);
-        ge::gl::glMakeImageHandleResidentARB(*vars.get<GLuint64>("lf.postImage"), GL_READ_WRITE);
-        ge::gl::glMakeTextureHandleResidentARB(*vars.get<GLuint64>("lf.texture"));
-        ge::gl::glMakeTextureHandleResidentARB(*vars.get<GLuint64>("lf.postTexture"));
-
-        SDL_SetWindowSize(window->getWindow(),vars.getInt32("lf.width"), vars.getInt32("lf.height"));
-
-        SDL_GL_MakeCurrent(*vars.get<SDL_Window*>("mainWindow"),window->getContext("rendering"));
-
         vars.add<ge::gl::VertexArray>("emptyVao");
         vars.addFloat("input.sensitivity",0.01f);
-        vars.add<glm::uvec2>("windowSize",window->getWidth(),window->getHeight());
         vars.addFloat("camera.fovy",glm::half_pi<float>());
         vars.addFloat("camera.near",.1f);
         vars.addFloat("camera.far",1000.f);
@@ -885,6 +922,25 @@ void createProgram(vars::Vars&vars)
         vars.addInt32("borderSize", 3);
         vars.add<std::map<SDL_Keycode, bool>>("input.keyDown");
         vars.addUint32("frame",0);
+        
+        auto rdyMutex = vars.add<std::mutex>("rdyMutex");
+        auto rdyCv = vars.add<std::condition_variable>("rdyCv");
+        vars.addBool("loaded", false);
+        vars.add<std::thread>("loadingThread",asyncVideoLoading, std::ref(vars));
+        {
+            std::unique_lock<std::mutex> lck(*rdyMutex);
+            rdyCv->wait(lck, [this]{return vars.getBool("loaded");});
+        }
+        ge::gl::glMakeImageHandleResidentARB(*vars.get<GLuint64>("focusMap.image"), GL_READ_WRITE);
+        ge::gl::glMakeImageHandleResidentARB(*vars.get<GLuint64>("lf.image"), GL_READ_WRITE);
+        ge::gl::glMakeImageHandleResidentARB(*vars.get<GLuint64>("lf.postImage"), GL_READ_WRITE);
+        ge::gl::glMakeTextureHandleResidentARB(*vars.get<GLuint64>("lf.texture"));
+        ge::gl::glMakeTextureHandleResidentARB(*vars.get<GLuint64>("lf.postTexture"));
+
+        SDL_SetWindowSize(window->getWindow(),vars.getInt32("lf.width"), vars.getInt32("lf.height"));
+        SDL_GL_MakeCurrent(*vars.get<SDL_Window*>("mainWindow"),window->getContext("rendering"));
+        vars.add<glm::uvec2>("windowSize",window->getWidth(),window->getHeight());
+
         createProgram(vars);
         createCamera(vars);
 
@@ -943,15 +999,21 @@ void createProgram(vars::Vars&vars)
 
     void LightFields::draw()
     {
+        recalculateViewCoords(vars);
+        /*for(const auto &u : vars.getVector<bool>("framesMask"))
+            std::cerr << ((u) ? "t" : "f");
+        std::cerr << std::endl;*/
+
         auto timer = vars.addOrGet<Timer<double>>("timer");
         timer->reset();
         
         std::string currentTexturesName = "lfTextures" + std::to_string(vars.getUint32("lfTexturesIndex"));
-
+        auto framesMask = vars.getVector<bool>("framesMask");
         std::vector<GLuint64> t = vars.getVector<GLuint64>(currentTexturesName);
-        for(auto a : t)
-            ge::gl::glMakeTextureHandleResidentARB(a);
-
+        for(int i=0; i<t.size(); i++)
+            if(framesMask[i])
+                ge::gl::glMakeTextureHandleResidentARB(t[i]);
+ 
         createCamera(vars);
         auto view = vars.getReinterpret<basicCamera::CameraTransform>("view");
 
@@ -961,16 +1023,10 @@ void createProgram(vars::Vars&vars)
 
         drawGrid(vars);
         
+        auto aspect = vars.getFloat("texture.aspect");
+        auto viewCoord = vars.get<glm::vec2>("viewCoord");
         vars.get<ge::gl::VertexArray>("emptyVao")->bind();
-        auto gridIndex = *vars.get<glm::ivec2>("gridSize")-1;
-        float aspect = vars.getFloat("texture.aspect");
-        glm::vec3 lfPos(0,0,0);
-        glm::vec3 camPos(view->getView()[3]);
-        glm::vec3 centerRay = normalize(lfPos - camPos); 
-        float range = .2;
-        float coox = (glm::clamp(centerRay.x*-1,-range*aspect,range*aspect)/(range*aspect)+1)/2.;
-        float cooy = (glm::clamp(centerRay.y,-range,range)/range+1)/2.;
-        glm::vec2 viewCoord = glm::vec2(gridIndex)-glm::vec2(glm::clamp(coox*(gridIndex.x),0.0f,static_cast<float>(gridIndex.x)),glm::clamp(cooy*(gridIndex.y),0.0f,static_cast<float>(gridIndex.y)));
+        
         GLuint perPixelCSSize = (*vars.get<unsigned int>("lf.width") * *vars.get<unsigned int>("lf.height"))/(LOCAL_SIZE_X*LOCAL_SIZE_Y);        
 
         auto program = vars.get<ge::gl::Program>("mapProgram");
@@ -981,7 +1037,7 @@ void createProgram(vars::Vars&vars)
         ->set1i("blockRadius",vars.getInt32("blockRadius"))
         ->set1i("sampleMode",vars.getInt32("sampleMode"))
         ->set1f("gridSampleDistance",vars.getFloat("gridSampleDistance"))
-        ->set2fv("viewCoord",glm::value_ptr(viewCoord))
+        ->set2fv("viewCoord",value_ptr(*viewCoord))
         ->set1i("colMetric",vars.getInt32("colMetric"))
         ->set1i("searchSubdiv",vars.getInt32("searchSubdiv"))
         ->set1i("checkSaddle",vars.getBool("checkSaddle"))
@@ -1030,7 +1086,7 @@ void createProgram(vars::Vars&vars)
         program
         ->set1f("focus",vars.getFloat("focus"))
         ->set1f("focusStep",vars.getFloat("focusStep"))
-        ->set2fv("viewCoord",glm::value_ptr(viewCoord))
+        ->set2fv("viewCoord",glm::value_ptr(*viewCoord))
         ->set1f("aspect",aspect)
         ->set1i("showFocusMap",vars.getBool("showFocusMap"))
         ->set1i("useMedian",vars.getBool("useMedian"))
@@ -1116,7 +1172,11 @@ void createProgram(vars::Vars&vars)
         ImGui::DragFloat("Focus", &vars.getFloat("focus"),0.00001f, -10, 10, "%.5f");
         ImGui::DragFloat("Focus step", &vars.getFloat("inputFocusStep"),0.000001f,-10, 10, "%.6f");
         ImGui::DragFloat("Focus sample distance", &vars.getFloat("gridSampleDistance"),0.1f,0,vars.get<glm::ivec2>("gridSize")->x); 
-        ImGui::DragFloat("Render sample distance", &vars.getFloat("gridSampleDistanceR"),0.1f,0,vars.get<glm::ivec2>("gridSize")->x); 
+        if(!ImGui::Checkbox("Decoding optimization", &vars.getBool("decodingOptimization"))){
+            ImGui::DragFloat("Render sample distance", &vars.getFloat("gridSampleDistanceR"),0.1f,0,vars.get<glm::ivec2>("gridSize")->x);
+            vars.updateTicks("decodingOptimization");
+        }else
+            vars.getFloat("gridSampleDistanceR") = vars.getFloat("gridSampleDistance"); 
         ImGui::Checkbox("Show focus map", &vars.getBool("showFocusMap"));
         ImGui::Checkbox("Use median", &vars.getBool("useMedian"));
         ImGui::Checkbox("Check saddle", &vars.getBool("checkSaddle"));
@@ -1170,8 +1230,9 @@ void createProgram(vars::Vars&vars)
     GLsync fence = ge::gl::glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE,0);
     ge::gl::glClientWaitSync(fence, GL_SYNC_FLUSH_COMMANDS_BIT, 9999999);
     
-    for(auto a : t)
-       	ge::gl::glMakeTextureHandleNonResidentARB(a);
+    for(int i=0; i<t.size(); i++)
+        if(framesMask[i])
+            ge::gl::glMakeTextureHandleNonResidentARB(t[i]);
 
     auto rdyMutex = vars.get<std::mutex>("rdyMutex");
     auto rdyCv = vars.get<std::condition_variable>("rdyCv");
@@ -1232,7 +1293,9 @@ void LightFields::mouseMove(SDL_Event const& e)
                                   float(windowSize->x) * 2.f);
         orbitCamera->addYPosition(-orbitCamera->getDistance() * yrel /
                                   float(windowSize->y) * 2.f);
+        vars.updateTicks("view");
     }
+    
 }
 
 void LightFields::resize(uint32_t x,uint32_t y)
