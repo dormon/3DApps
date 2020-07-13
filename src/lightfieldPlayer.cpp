@@ -20,6 +20,7 @@
 #include<thread>
 #include<mutex>
 #include<condition_variable>
+//TODO use c++20 barriers when released
 #include <fstream>
 
 constexpr float FRAME_LIMIT{1.0f/24};
@@ -753,7 +754,7 @@ void createProgram(vars::Vars&vars)
     {
         std::vector<bool> mask(vars.getInt32("lfCount"),true);
         auto gridSize = vars.get<glm::ivec2>("gridSize");
-        auto viewCoord = vars.get<glm::vec2>("viewCoord");
+        auto viewCoord = vars.get<glm::vec2>("newViewCoord");
         auto gridSampleDistance = vars.getFloat("gridSampleDistance");
         for(int x=0; x<gridSize->x; x++)
             for(int y=0; y<gridSize->y; y++)
@@ -768,9 +769,11 @@ void createProgram(vars::Vars&vars)
 
     void recalculateViewCoords(vars::Vars&vars)
     {
-        //TODO kdyz se pohne tak nacist vic nebo vsechny
-        FUNCTION_PROLOGUE("all","decodingOptimization");//, "view"); 
-
+        FUNCTION_PROLOGUE("all","decodingOptimization", "view");         
+ 
+        auto newViewCoord = vars.get<glm::vec2>("newViewCoord");
+        vars.reCreate<glm::vec2>("viewCoord", *newViewCoord);
+    
         auto gridIndex = *vars.get<glm::ivec2>("gridSize")-1;
         float aspect = vars.getFloat("texture.aspect");
         glm::vec3 lfPos(0,0,0);
@@ -780,12 +783,12 @@ void createProgram(vars::Vars&vars)
         float range = .2;
         float coox = (glm::clamp(centerRay.x*-1,-range*aspect,range*aspect)/(range*aspect)+1)/2.;
         float cooy = (glm::clamp(centerRay.y,-range,range)/range+1)/2.;
-        glm::vec2 viewCoord = glm::vec2(gridIndex)-glm::vec2(glm::clamp(coox*(gridIndex.x),0.0f,static_cast<float>(gridIndex.x)),glm::clamp(cooy*(gridIndex.y),0.0f,static_cast<float>(gridIndex.y)));
-        vars.reCreate<glm::vec2>("viewCoord", viewCoord);
+        *newViewCoord = glm::vec2(gridIndex)-glm::vec2(glm::clamp(coox*(gridIndex.x),0.0f,static_cast<float>(gridIndex.x)),glm::clamp(cooy*(gridIndex.y),0.0f,static_cast<float>(gridIndex.y)));
 
-        vars.reCreateVector<bool>("framesMask", vars.getInt32("lfCount"), true);
+        auto &newFramesMask = vars.getVector<bool>("newFramesMask");
+        vars.reCreateVector<bool>("framesMask", newFramesMask);
         if(vars.getBool("decodingOptimization"))
-            vars.reCreate<std::vector<bool>>("framesMask", createFramesMask(vars));
+            newFramesMask = createFramesMask(vars);
     }
 
     void asyncVideoLoading(vars::Vars &vars)
@@ -793,12 +796,11 @@ void createProgram(vars::Vars&vars)
         SDL_GLContext c = SDL_GL_CreateContext(*vars.get<SDL_Window*>("mainWindow")); 
         SDL_GL_MakeCurrent(*vars.get<SDL_Window*>("mainWindow"),c);
         ge::gl::init(SDL_GL_GetProcAddress);
-//        ge::gl::setHighDebugMessage();
+        ge::gl::setHighDebugMessage();
 
         auto decoder = std::make_unique<GpuDecoder>(vars.getString("videoFile").c_str());
         auto lfSize = glm::uvec2(*vars.reCreate<unsigned int>("lf.width",decoder->getWidth()), *vars.reCreate<unsigned int>("lf.height", decoder->getHeight()));
         vars.reCreate<float>("texture.aspect",decoder->getAspect());
-        //TODO correct framerate etc
         auto length = vars.addUint32("length",static_cast<int>(decoder->getLength()/vars.getInt32("lfCount")));
         
         //Must be here since all textures are created in this context and handles might overlap
@@ -842,7 +844,7 @@ void createProgram(vars::Vars&vars)
                     timer->reset();
 
                 if(vars.getBool("decodingOptimization"))
-                    decoder->maskFrames(vars.getVector<bool>("framesMask"));
+                    decoder->maskFrames(vars.getVector<bool>("newFramesMask"));
                 else
                     decoder->maskFrames(std::vector<bool>()); 
                 
@@ -881,7 +883,7 @@ void createProgram(vars::Vars&vars)
         }
         vars.addString("videoFile", videoFile);
         vars.add<glm::ivec2>("gridSize",glm::ivec2(glm::uvec2(gridSize)));
-        vars.addInt32("lfCount",glm::pow(gridSize,2)); 
+        auto lfCount = vars.addInt32("lfCount",glm::pow(gridSize,2)); 
 
         window->createContext("loading", 450u, sdl2cpp::Window::CORE, sdl2cpp::Window::DEBUG);
         vars.add<SDL_GLContext>("loadingContext", window->getContext("loading"));
@@ -892,9 +894,12 @@ void createProgram(vars::Vars&vars)
         vars.addInt32("seekFrame",-1); 
         vars.addBool("mainRuns", true);
         vars.add<glm::vec2>("viewCoord", glm::vec2(0,0));
+        vars.add<glm::vec2>("newViewCoord", glm::vec2(0,0));
         vars.addBool("pause", false);
         vars.addBool("printTimes", false);
         vars.addBool("decodingOptimization", false);
+        vars.addVector<bool>("framesMask", lfCount, true);
+        vars.addVector<bool>("newFramesMask", lfCount, true);
         vars.addUint32("lfTexturesIndex", 0);
         vars.add<ge::gl::VertexArray>("emptyVao");
         vars.addFloat("input.sensitivity",0.01f);
@@ -999,7 +1004,6 @@ void createProgram(vars::Vars&vars)
 
     void LightFields::draw()
     {
-        recalculateViewCoords(vars);
         /*for(const auto &u : vars.getVector<bool>("framesMask"))
             std::cerr << ((u) ? "t" : "f");
         std::cerr << std::endl;*/
@@ -1234,6 +1238,7 @@ void createProgram(vars::Vars&vars)
         if(framesMask[i])
             ge::gl::glMakeTextureHandleNonResidentARB(t[i]);
 
+        recalculateViewCoords(vars);
     auto rdyMutex = vars.get<std::mutex>("rdyMutex");
     auto rdyCv = vars.get<std::condition_variable>("rdyCv");
     {
@@ -1293,9 +1298,8 @@ void LightFields::mouseMove(SDL_Event const& e)
                                   float(windowSize->x) * 2.f);
         orbitCamera->addYPosition(-orbitCamera->getDistance() * yrel /
                                   float(windowSize->y) * 2.f);
-        vars.updateTicks("view");
+       vars.updateTicks("view");
     }
-    
 }
 
 void LightFields::resize(uint32_t x,uint32_t y)

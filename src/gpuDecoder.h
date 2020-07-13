@@ -32,6 +32,7 @@ class GpuDecoder
             std::vector<uint32_t> textures;
             std::vector<uint32_t> vdpSurfaces;
             std::vector<long int> nvSurfaces; 
+            std::vector<bool> framesMask;
         } buffers[BUFFER_COUNT];
 
         TextureBuffer* getCurrentBuffer() {return &buffers[bufferIndex];};
