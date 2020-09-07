@@ -22,6 +22,7 @@ class GpuDecoder
         int getWidth() {return codecContext->width;};
         int getHeight() {return codecContext->height;};
         float getAspect() {return static_cast<float>(codecContext->width)/codecContext->height;};
+        void maskFrames(std::vector<bool> mask) {framesMask = mask;};
         
     private:
         static constexpr int BUFFER_COUNT{2};
@@ -31,6 +32,7 @@ class GpuDecoder
             std::vector<uint32_t> textures;
             std::vector<uint32_t> vdpSurfaces;
             std::vector<long int> nvSurfaces; 
+            std::vector<bool> framesMask;
         } buffers[BUFFER_COUNT];
 
         TextureBuffer* getCurrentBuffer() {return &buffers[bufferIndex];};
@@ -56,5 +58,6 @@ class GpuDecoder
         AVPixelFormat pixFmt;
         VdpRect flipRect;
         AVPacket packet;
+        std::vector<bool> framesMask;
                
 };
