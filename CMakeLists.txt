@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.12.1)
 
 project(3DApps)
 
-SET(CMAKE_CXX_STANDARD 17)
+SET(CMAKE_CXX_STANDARD 20)
 
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 set(CMAKE_INCLUDE_CURRENT_DIR_IN_INTERFACE ON)
@@ -106,6 +106,7 @@ addApp2(mortonVeri                            "src/mortonVeri.cpp"              
 addApp2(ballotARBTest                         "src/ballotARBTest.cpp"                         "Simple3DApp::Simple3DApp;barrier;imguiVars::imguiVars;ArgumentViewer::ArgumentViewer")
 addApp2(lightfieldPlayer                      "src/lightfieldPlayer.cpp"                      "Simple3DApp::Simple3DApp;barrier;imguiVars::imguiVars;ArgumentViewer::ArgumentViewer;gpuDecoder;Vars::Vars;drawGrid;BasicCamera::BasicCamera")
 addApp2(tessellationLevels                    "src/tessellationLevels.cpp"                    "Simple3DApp::Simple3DApp;barrier;imguiVars::imguiVars;Vars::Vars")
+addApp2(perPixelLf                               "src/perPixelLf.cpp"                         "ArgumentViewer::ArgumentViewer")
 
 add_subdirectory(src/GMU)
 
