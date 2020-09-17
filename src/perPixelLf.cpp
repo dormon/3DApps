@@ -21,6 +21,40 @@ std::pair<int, int> getGridSize(std::string path)
     return {std::stoi(lastName.substr(0,delimiter)), std::stoi(lastName.substr(delimiter+1))};
 }
 
+using HeaderInfo = struct{int maxValue; int width; int height;};
+HeaderInfo readHeader(std::ifstream &ifs)
+{
+    HeaderInfo info;
+    std::string line;
+    std::getline(ifs, line);
+    if (line != "P6") throw("Input ppm not in binary format!");
+    do std::getline(ifs, line);
+    while (line[0] == '#');
+    std::stringstream imgSize(line);    
+    try
+    {
+        imgSize >> info.width;
+        imgSize >> info.height;
+    }
+    catch (...)
+    {
+        throw("Input ppm error: no resolution");
+    }
+        
+    do std::getline(ifs, line);
+    while (line[0] == '#');
+    std::stringstream maxValSS(line); 
+    try
+    {
+        maxValSS >> info.maxValue;
+    }
+    catch (...)
+    {
+        throw("Input ppm error: no max value");
+    }
+    return info;
+}
+
 void process(int argc, char **argv)
 {
     auto args = argumentViewer::ArgumentViewer(argc,argv);
@@ -38,55 +72,28 @@ void process(int argc, char **argv)
     auto gridSize = getGridSize(inputFolder); 
     
     std::vector<std::vector<std::ifstream>> ifstreams;
-    std::pair<int, int> imageResolution;
-    int maxValue = 255; 
+    HeaderInfo imageInfo;
     for(int x=0; x<gridSize.first; x++)
     {
         ifstreams.push_back({});
         for(int y=0; y<gridSize.second; y++)
         { 
             ifstreams[x].push_back(std::ifstream(inputFolder+std::to_string(x)+"_"+std::to_string(y)+".ppm", std::ios::in | std::ios::binary));
-            std::string line;
-            std::getline(ifstreams[x][y], line);
-            if (line != "P6") throw("Input ppm not in binary format!");
-            do std::getline(ifstreams[x][y], line);
-            while (line[0] == '#');
-            std::stringstream imgSize(line);    
-            try
-            {
-                imgSize >> imageResolution.first;
-                imgSize >> imageResolution.second;
-            }
-            catch (...)
-            {
-                throw("Input ppm error: no resolution");
-            }
-                
-            do std::getline(ifstreams[x][y], line);
-            while (line[0] == '#');
-            std::stringstream maxValSS(line);   
-            try
-            {
-                maxValSS >> maxValue;
-            }
-            catch (...)
-            {
-                throw("Input ppm error: no max value");
-            }
+            imageInfo = readHeader(ifstreams[x][y]);
         }}
 
-    int bitdepth = std::log2(maxValue+1);
+    int bitdepth = std::log2(imageInfo.maxValue+1);
     std::cout << "Grid size: " << gridSize.first << " " << gridSize.second << std::endl;
-    std::cout << "Resolution: " << imageResolution.first << " " << imageResolution.second << std::endl;
+    std::cout << "Resolution: " << imageInfo.width << " " << imageInfo.height << std::endl;
     std::cout << "Bitdepth: " << bitdepth << std::endl;
     if(bitdepth != 8)
         throw("8-bit only support");
-    
+
     std::ofstream outputFile;
     int i=0;
     std::vector<char> buffer(3,0);
-    for(int x=0; x<imageResolution.first; x++)
-        for(int y=0; y<imageResolution.second; y++)
+    for(int x=0; x<imageInfo.width; x++)
+        for(int y=0; y<imageInfo.height; y++)
         {
             if(i % interlace == 0)
             {
@@ -94,7 +101,7 @@ void process(int argc, char **argv)
                 outputFile.open(outputFolder+std::to_string(x)+"_"+std::to_string(y)+".ppm");
                 outputFile << "P6" << std::endl;
                 outputFile << gridSize.first*interlace << " " << gridSize.second*interlace << std::endl;
-                outputFile << std::pow(2, bitdepth)-1 << std::endl << std::endl;
+                outputFile << std::pow(2, bitdepth)-1 << std::endl;
             }
             for (auto &ifss : ifstreams)
                 for(auto &ifs : ifss)
