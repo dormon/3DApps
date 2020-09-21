@@ -92,6 +92,7 @@ void process(int argc, char **argv)
     std::ofstream outputFile;
     int i=0;
     std::vector<char> buffer(3,0);
+    //TODO increment by interlace?
     for(int x=0; x<imageInfo.width; x++)
         for(int y=0; y<imageInfo.height; y++)
         {
@@ -108,14 +109,23 @@ void process(int argc, char **argv)
                 {
                    //TODO interlace to read more from one stream to have same cam pixels grouped
                    ifs.read(buffer.data(), buffer.size()); 
-                   outputFile.write(buffer.data(), buffer.size());;
+                   outputFile.write(buffer.data(), buffer.size());
                 }
         }
-}
 
-void reconstruct(int x, int y, int interlace)
-{
-
+    //reconstruction test
+    std::ofstream reconFile(outputFolder+"reconstructed-0_0.ppm");
+    reconFile << "P6" << std::endl;
+    reconFile << imageInfo.width << " " << imageInfo.height << std::endl;
+    reconFile << std::pow(2, bitdepth)-1 << std::endl;
+    for(int x=0; x<imageInfo.width; x+=interlace)
+        for(int y=0; y<imageInfo.height; y+=interlace)
+        {
+            std::ifstream file(outputFolder+std::to_string(x)+"_"+std::to_string(y)+".ppm");
+            readHeader(file);
+            file.read(buffer.data(), buffer.size()); 
+            reconFile.write(buffer.data(), buffer.size());            
+        }
 }
 
 int main (int argc, char **argv)
