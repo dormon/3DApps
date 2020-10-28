@@ -1125,7 +1125,7 @@ void detectRange(vars::Vars &vars)
     ge::gl::glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
     ge::gl::glFinish();
 
-    int *mappedBuffer = reinterpret_cast<float*>(buffer->map());
+    float *mappedBuffer = reinterpret_cast<float*>(buffer->map());
     glm::ivec2 lfSize{vars.getUint32("lf.width"), vars.getUint32("lf.height")};
     const float LIMIT = 99999999.0;
     glm::vec2 range(LIMIT, -LIMIT);
@@ -1133,7 +1133,7 @@ void detectRange(vars::Vars &vars)
     for(int i=0; i<total; i++)
         if(mappedBuffer[i] < range.s) range.s = mappedBuffer[i];
         else if(mappedBuffer[i] > range.t) range.t = mappedBuffer[i];
-    glBuffer->unmap();
+    buffer->unmap();
 
     std::cerr << range.s << " " << (range.t-range.s)/32 << std::endl;
 
