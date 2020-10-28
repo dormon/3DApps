@@ -25,6 +25,7 @@ constexpr bool TEXTURE_STATISTICS{0};
 constexpr int WARP_SIZE{32};
 constexpr int LOCAL_SIZE_X{WARP_SIZE};
 constexpr int LOCAL_SIZE_Y{8};
+constexpr int BLOCK_SIZE{16};
 
 class LightFields: public simple3DApp::Application
 {
@@ -47,6 +48,8 @@ void addProgram(vars::Vars&vars, std::string name, std::string code1, std::strin
     std::map<std::string, std::string> substitutions ={
         {"LSX",std::to_string(LOCAL_SIZE_X)},
         {"LSY",std::to_string(LOCAL_SIZE_Y)},
+        {"BSY",std::to_string(BLOCK_SIZE)},
+        {"BSX",std::to_string(BLOCK_SIZE)},
         {"GSX",std::to_string(vars.get<glm::ivec2>("gridSize")->x)}
     };
     for(const auto& [key, value] : substitutions)
@@ -665,19 +668,23 @@ std::string csPostSrc = R".(
     std::string csRangeSrc = R".(
         #extension GL_ARB_gpu_shader_int64 : require
         #extension GL_ARB_bindless_texture : require
-        layout(local_size_x=LSX, local_size_y=LSY)in;
-        layout(std430, binding = 4) buffer variancesBuffer
+        layout(local_size_x=BSX, local_size_y=BSY)in;
+        layout(std430, binding = 4) buffer minsBuffer
         {
-            float variances[];
+            float mins[];
         };
         const ivec2 gridSize = ivec2(GSX);
         const ivec2 gridIndex = gridSize-1;
         const uint lfSize = gridSize.x*gridSize.x;
+        const float DIFFERENCE = 0.00001;
         uniform uint64_t lfTextures[lfSize];
         uniform float aspect;
         uniform float range = 5.0;
         uniform float step = 0.1;
-    
+        shared float bestFocus;
+        shared int passedPixels;
+        shared int bestPassedPixels;
+ 
         float colorDistance(vec3 c1, vec3 c2)
         {
             return max(max(abs(c1.r-c2.r), abs(c1.g-c2.g)), abs(c1.b-c2.b));
@@ -685,10 +692,17 @@ std::string csPostSrc = R".(
 
         void main()
         {
+            if(gl_LocalInvocationID == uvec3(0))    
+            {
+                passedPixels = 0;
+                bestPassedPixels = 0;
+            }
+
             ivec2 size = textureSize(sampler2D(lfTextures[0]),0);
             ivec2 coords = ivec2(int(gl_GlobalInvocationID.x), int(gl_GlobalInvocationID.y));
             const int VIEWS = 4;
             vec3 colors[VIEWS];
+            float minVariance = 99999999.0;
  
             for(float f=-range; f<range; f+=step)
             {
@@ -710,8 +724,28 @@ std::string csPostSrc = R".(
                 for(int j=0; j<VIEWS; j++)
                     variance += pow(colorDistance(colors[j], color), 2);
                 variance /= VIEWS;
-                variances[0] = variance;
+
+                if(variance < (minVariance + DIFFERENCE))
+                {
+                    minVariance = variance;
+                    atomicAdd(passedPixels, 1);
+                }
+                
+                barrier();
+                if(gl_LocalInvocationID == uvec3(0))
+                {
+                    if(passedPixels > bestPassedPixels)
+                    {
+                        bestPassedPixels = passedPixels;
+                        bestFocus = f;
+                    }
+                    passedPixels = 0;
+                } 
+                barrier();
             }
+            barrier();
+            if(gl_LocalInvocationID == uvec3(0))
+                mins[gl_WorkGroupID.y*gl_NumWorkGroups.x+gl_WorkGroupID.x] = bestFocus;
         }    
     ).";
 
@@ -1029,7 +1063,7 @@ void LightFields::init()
         stats->bindBase(GL_SHADER_STORAGE_BUFFER, 3);
     }
     
-    auto ranges = vars.add<ge::gl::Buffer>("ranges", vars.getInt32("lf.width")*vars.getInt32("lf.height")*4);
+    auto ranges = vars.add<ge::gl::Buffer>("ranges", (vars.getInt32("lf.width")*vars.getInt32("lf.height")*4)/(BLOCK_SIZE*BLOCK_SIZE));
     ranges->bindBase(GL_SHADER_STORAGE_BUFFER, 4);
 }
 
@@ -1080,15 +1114,28 @@ void detectRange(vars::Vars &vars)
     std::string currentTexturesName = "lfTextures" + std::to_string(vars.getUint32("lfTexturesIndex"));
     ge::gl::glProgramUniformHandleui64vARB(program->getId(), program->getUniformLocation("lfTextures"), vars.getInt32("lfCount"), vars.getVector<GLuint64>(currentTexturesName).data());
 
-    vars.get<ge::gl::Buffer>("ranges")->bind(GL_SHADER_STORAGE_BUFFER);
+    auto buffer = vars.get<ge::gl::Buffer>("ranges");
+    buffer->bind(GL_SHADER_STORAGE_BUFFER);
 
     auto query = ge::gl::AsynchronousQuery(GL_TIME_ELAPSED, GL_QUERY_RESULT, ge::gl::AsynchronousQuery::UINT64);
     if constexpr (MEASURE_TIME) query.begin();
 
-    GLuint perPixelCSSize = (*vars.get<unsigned int>("lf.width") * *vars.get<unsigned int>("lf.height"))/(LOCAL_SIZE_X*LOCAL_SIZE_Y);        
-    ge::gl::glDispatchCompute(perPixelCSSize,1,1);    
-    ge::gl::glMemoryBarrier(GL_SHADER_IMAGE_ACCESS_BARRIER_BIT);
+    ge::gl::glDispatchCompute(glm::ceil(*vars.get<unsigned int>("lf.width")/static_cast<float>(BLOCK_SIZE)),
+                              glm::ceil(*vars.get<unsigned int>("lf.height")/static_cast<float>(BLOCK_SIZE)),1);    
+    ge::gl::glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
     ge::gl::glFinish();
+
+    int *mappedBuffer = reinterpret_cast<float*>(buffer->map());
+    glm::ivec2 lfSize{vars.getUint32("lf.width"), vars.getUint32("lf.height")};
+    const float LIMIT = 99999999.0;
+    glm::vec2 range(LIMIT, -LIMIT);
+    int total = (lfSize.x*lfSize.y)/(BLOCK_SIZE*BLOCK_SIZE);
+    for(int i=0; i<total; i++)
+        if(mappedBuffer[i] < range.s) range.s = mappedBuffer[i];
+        else if(mappedBuffer[i] > range.t) range.t = mappedBuffer[i];
+    glBuffer->unmap();
+
+    std::cerr << range.s << " " << (range.t-range.s)/32 << std::endl;
 
     if constexpr (MEASURE_TIME)
     {
