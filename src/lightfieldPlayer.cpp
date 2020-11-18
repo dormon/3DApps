@@ -25,7 +25,7 @@ constexpr bool TEXTURE_STATISTICS{0};
 constexpr int WARP_SIZE{32};
 constexpr int LOCAL_SIZE_X{WARP_SIZE};
 constexpr int LOCAL_SIZE_Y{8};
-constexpr int BLOCK_SIZE{16};
+constexpr int BLOCK_SIZE{32};
 
 class LightFields: public simple3DApp::Application
 {
@@ -696,10 +696,10 @@ std::string csPostSrc = R".(
         uniform uint64_t lfTextures[lfSize];
         uniform float aspect;
         uniform float range = 0.5;
-        uniform float step = 0.001;
+        uniform float step = 0.002;
         shared float bestFocus;
-        shared int passedPixels;
-        shared int bestPassedPixels;
+        //shared int passedPixels;
+        //shared int bestPassedPixels;
         shared float currentVariance;
         shared float bestVariance;
  
@@ -712,8 +712,8 @@ std::string csPostSrc = R".(
         {
             if(gl_LocalInvocationID == uvec3(0))    
             {
-                passedPixels = 0;
-                bestPassedPixels = 0;
+                //passedPixels = 0;
+                //bestPassedPixels = 0;
                 bestVariance = 9999;
                 currentVariance = 0;
             }
@@ -731,6 +731,7 @@ std::string csPostSrc = R".(
             {
                 int i=0;
                 vec3 color = vec3(0,0,0);
+                const int po = 1;
                 //for(int x=0; x<gridSize.x; x+=gridIndex.x)
                 //    for(int y=0; y<gridSize.y; y+=gridIndex.y)
                 for(int x=sampleCorner; x<sampleCorner+2; x++)
@@ -741,20 +742,33 @@ std::string csPostSrc = R".(
                         offset.y *=-1;
                         vec2 focusedCoords = clamp((coords+offset*f)*vec2(1.0,aspect), 0.0, 1.0); 
                         int slice = y*int(gridSize.x)+x;
-                        colors[i] = texelFetch(sampler2D(lfTextures[slice]),ivec2(round(focusedCoords*size)),0).xyz;
+                        
+                        ivec2 c = ivec2(round(focusedCoords*size));
+                        colors[i] = texelFetch(sampler2D(lfTextures[slice]),c,0).xyz;
+                        colors[i] += texelFetch(sampler2D(lfTextures[slice]),c+ivec2(po,po),0).xyz;
+                        colors[i] += texelFetch(sampler2D(lfTextures[slice]),c+ivec2(-po,-po),0).xyz;
+                        colors[i] += texelFetch(sampler2D(lfTextures[slice]),c+ivec2(po,-po),0).xyz;
+                        colors[i] += texelFetch(sampler2D(lfTextures[slice]),c+ivec2(-po,po),0).xyz;
+                        colors[i] += texelFetch(sampler2D(lfTextures[slice]),c+ivec2(0,po),0).xyz;
+                        colors[i] += texelFetch(sampler2D(lfTextures[slice]),c+ivec2(po,0),0).xyz;
+                        colors[i] += texelFetch(sampler2D(lfTextures[slice]),c+ivec2(-po,0),0).xyz;
+                        colors[i] += texelFetch(sampler2D(lfTextures[slice]),c+ivec2(0,-po),0).xyz;
+                        colors[i] /= 9.0;
+    
                         color += colors[i];
                         i++;
                     }
                 color /= VIEWS;
                 float variance = 0;
                 for(int j=0; j<VIEWS; j++)
-                    variance += /*pow(*/colorDistance(colors[j], color)/*, 2)*/;
+                    //variance += pow(colorDistance(colors[j], color), 2);
+                    variance += colorDistance(colors[j], color);
                 //variance /= VIEWS;
 
                 if(variance < (minVariance + DIFFERENCE))
                 {
                     minVariance = variance;
-                    atomicAdd(passedPixels, 1);
+                    //atomicAdd(passedPixels, 1);
                 }
 
                 atomicAdd(currentVariance, variance);
@@ -763,14 +777,15 @@ std::string csPostSrc = R".(
                 barrier();
                 if(gl_LocalInvocationID == uvec3(0))
                 {
+                    /*
                     if(passedPixels >= bestPassedPixels && f != -range)
                     {
                         bestPassedPixels = passedPixels;
                         //bestFocus = f;
                     }
                     passedPixels = 0;
+                    */
 
-                    //currentVariance /= 256.0;
                     if(currentVariance <= bestVariance)
                     {
                         bestVariance = currentVariance;
@@ -929,7 +944,7 @@ void recalculateViewCoords(vars::Vars&vars)
     if(vars.getBool("decodingOptimization"))
         newFramesMask = createFramesMask(vars);
 }
-
+int mc=0;
 void asyncVideoLoading(vars::Vars &vars)
 {
     SDL_GLContext c = SDL_GL_CreateContext(*vars.get<SDL_Window*>("mainWindow")); 
@@ -1007,7 +1022,12 @@ void asyncVideoLoading(vars::Vars &vars)
             vars.getBool("pause") = !vars.getBool("pause");
             vars.getBool("pauseTriggered") = false;
         }
-
+/*
+        if(mc<=99)
+        {std::cerr << vars.getFloat("elapsed.decoding") << std::endl;
+        mc++;}
+        else*/
+        
         vars.getBool("pause") = true;
     }
 }
@@ -1022,6 +1042,7 @@ void LightFields::init()
     auto const gridSize = args->getu32("--grid",8,"number of cameras in row/column (assuming a rectangle)");
     auto const focus = args->getf32("--focus",0,"focus level");
     auto const focusStep = args->getf32("--focusStep",0,"focus search step relative to focus level");
+    auto const resolutionOverride = glm::uvec2(args->getu32("--width",0,"width override"), args->getu32("--height",0,"height override"));
     auto const showHelp = args->isPresent("-h","shows help");
     if (showHelp || !args->validate()) {
         std::cerr << args->toStr();
@@ -1056,7 +1077,7 @@ void LightFields::init()
     vars.addFloat("focus",focus);
     vars.addFloat("inputFocusStep",focusStep);
     vars.addFloat("focusStep",0.0f);
-    vars.addFloat("saddleImpact",0.1f);
+    vars.addFloat("saddleImpact",0.04f);
     vars.addFloat("gridSampleDistance",2.0f);
     vars.addFloat("gridSampleDistanceR",2.0f);
     vars.addBool("showFocusMap", false);
@@ -1068,9 +1089,10 @@ void LightFields::init()
     vars.addFloat("dofDistance",0.0f);
     vars.addFloat("dofRange",0.0f);
     vars.addFloat("searchRange",0.5f);
+    vars.addFloat("searchStep",0.01f);
     vars.addFloat("scoreLimit",4.0);
-    vars.addInt32("blockRadius",1);
-    vars.addInt32("sampleMode",2);
+    vars.addInt32("blockRadius",2);
+    vars.addInt32("sampleMode",1);
     vars.addInt32("colMetric", 2);
     vars.addInt32("searchSubdiv", 0);
     vars.addInt32("borderSize", 3);
@@ -1092,7 +1114,10 @@ void LightFields::init()
     ge::gl::glMakeTextureHandleResidentARB(*vars.get<GLuint64>("lf.texture"));
     ge::gl::glMakeTextureHandleResidentARB(*vars.get<GLuint64>("lf.postTexture"));
 
-    SDL_SetWindowSize(window->getWindow(),vars.getInt32("lf.width"), vars.getInt32("lf.height"));
+    SDL_SetWindowSize(window->getWindow(),
+        (resolutionOverride.x != 0) ? resolutionOverride.x : vars.getInt32("lf.width"),
+        (resolutionOverride.y != 0) ? resolutionOverride.y : vars.getInt32("lf.height"));
+
     SDL_GL_MakeCurrent(*vars.get<SDL_Window*>("mainWindow"),window->getContext("rendering"));
     vars.add<glm::uvec2>("windowSize",window->getWidth(),window->getHeight());
 
@@ -1161,6 +1186,7 @@ void detectRange(vars::Vars &vars)
     program
         ->set1f("aspect",vars.getFloat("texture.aspect"))
         ->set1f("range",vars.getFloat("searchRange"))
+        ->set1f("step",vars.getFloat("searchStep"))
         ->use();
     std::string currentTexturesName = "lfTextures" + std::to_string(vars.getUint32("lfTexturesIndex"));
     ge::gl::glProgramUniformHandleui64vARB(program->getId(), program->getUniformLocation("lfTextures"), vars.getInt32("lfCount"), vars.getVector<GLuint64>(currentTexturesName).data());
@@ -1182,21 +1208,27 @@ void detectRange(vars::Vars &vars)
     glm::vec2 range(LIMIT, -LIMIT);
     int total = (lfSize.x*lfSize.y)/(BLOCK_SIZE*BLOCK_SIZE);
     float average = 0;
-    
+     
     for(int i=0; i<total; i++)
+    {
         average += mappedBuffer[i];
+    }
     average /= total;
     
     float deviation = 0;
     for(int i=0; i<total; i++)
+    {
         deviation += glm::pow(mappedBuffer[i]-average,2);
+    }
     deviation /= total;
 
     for(int i=0; i<total; i++)
-    {/*
+    {
+/*
         if(i % (lfSize.x/BLOCK_SIZE) == 0) std::cerr << std::endl;
         std::cerr << mappedBuffer[i] << ",";
-       */ 
+*/
+        
         float standardScore = (mappedBuffer[i] - average)/deviation;
         if(glm::abs(standardScore) < vars.getFloat("scoreLimit"))
         {
@@ -1208,7 +1240,8 @@ void detectRange(vars::Vars &vars)
 
     vars.reCreate<float>("focus", range.s);
     vars.reCreate<float>("inputFocusStep", (range.t-range.s)/32);
-    //std::cerr << std::endl << range.s << " " << range.t << " " << (range.t-range.s)/32 << std::endl;
+    std::cerr << std::endl << "avg:" << average << " dev:" << deviation << std::endl;
+    std::cerr << std::endl << range.s << " " << range.t << " " << (range.t-range.s)/32 << std::endl;
 
     if constexpr (MEASURE_TIME)
     {
@@ -1232,6 +1265,7 @@ void drawGui(vars::Vars&vars, glm::ivec2 windowSize)
        if (ImGui::Button("Detect range"))
             detectRange(vars);    
        ImGui::DragFloat("Search range", &vars.getFloat("searchRange"),0.001f, -5, 5, "%.3f");
+       ImGui::DragFloat("Search step", &vars.getFloat("searchStep"),0.001f, -0, 0.1, "%.3f");
        ImGui::DragFloat("Score limit", &vars.getFloat("scoreLimit"),0.1, 0.5, 10.0);
     }
     if(ImGui::Checkbox("Decoding optimization", &vars.getBool("decodingOptimization")))
