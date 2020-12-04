@@ -106,6 +106,7 @@ addApp2(ballotARBTest                         "src/ballotARBTest.cpp"           
 addApp2(lightfieldPlayer                      "src/lightfieldPlayer.cpp"                      "Simple3DApp::Simple3DApp;barrier;imguiVars::imguiVars;ArgumentViewer::ArgumentViewer;gpuDecoder;Vars::Vars;drawGrid;BasicCamera::BasicCamera")
 addApp2(tessellationLevels                    "src/tessellationLevels.cpp"                    "Simple3DApp::Simple3DApp;barrier;imguiVars::imguiVars;Vars::Vars")
 addApp2(perPixelLf                               "src/perPixelLf.cpp"                         "ArgumentViewer::ArgumentViewer")
+addApp2(quiltDetector                        "src/quiltDetector.cpp"                          "ArgumentViewer::ArgumentViewer;cv")
 
 add_subdirectory(src/GMU)
 
