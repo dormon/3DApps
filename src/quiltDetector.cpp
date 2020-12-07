@@ -55,8 +55,8 @@ class Analyzer{
     std::vector<std::vector<MetaFrame>> sequences;
     Buffer buffer;
     int frameCounter{0};
-    float yBounds{1.1};
-    float xLimit{1.5};
+    float yBounds{0.001};
+    float xLimit{0.001};
     cv::Point2f previousDirection{0,0};
     static constexpr int QUILT_SIZE{45};
 
@@ -77,6 +77,8 @@ class Analyzer{
                 goodPoints++;
             }
         avgDirection /= goodPoints;
+        avgDirection.x /= buffer.current().gray.cols;
+        avgDirection.y /= buffer.current().gray.rows;
         if((abs(avgDirection.x) < xLimit) || (abs(avgDirection.y) > yBounds) || ((avgDirection.x < 0) != (previousDirection.x < 0)))
         {
             if(sequences.front().size() >= QUILT_SIZE)
