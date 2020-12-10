@@ -1,6 +1,9 @@
 #include <iostream>
 #include <vector>
 #include <math.h>
+#include <fstream>
+#include <algorithm>
+#include <filesystem>
 #include <ArgumentViewer/ArgumentViewer.h>
 #include <opencv4/opencv2/opencv.hpp>
 #include <opencv4/opencv2/imgproc.hpp>
@@ -9,8 +12,15 @@ class Analyzer{
     private:
     class MetaFrame{
         public:
-        int number;
-        cv::Point2f direction;
+        int number{0};
+        cv::Point2f direction{0,0};
+        float bluriness{0};
+        
+        friend std::ostream& operator<<(std::ostream& os, const MetaFrame& mf)
+        {
+            os << mf.number << " " << mf.direction.x << " " << mf.direction.y << " " << mf.bluriness << "   ";
+            return os;
+        }
     };
 
     class Frame{
@@ -52,11 +62,17 @@ class Analyzer{
         std::vector<cv::Point2f> p0, p1;
     };
 
-    std::vector<std::vector<MetaFrame>> sequences;
+    using sequencesVector = std::vector<std::vector<MetaFrame>>;
+    using quiltsVector = std::vector<std::vector<int>>;
+
+    sequencesVector sequences;
+    quiltsVector quilts;
+    quiltsVector trimmedQuilts;
     Buffer buffer;
     int frameCounter{0};
     float yBounds{0.001};
     float xLimit{0.001};
+    float blurThreshold{100.0};
     cv::Point2f previousDirection{0,0};
     static constexpr int QUILT_SIZE{45};
 
@@ -81,20 +97,28 @@ class Analyzer{
         avgDirection.y /= buffer.current().gray.rows;
         if((abs(avgDirection.x) < xLimit) || (abs(avgDirection.y) > yBounds) || ((avgDirection.x < 0) != (previousDirection.x < 0)))
         {
-            if(sequences.front().size() >= QUILT_SIZE)
+            if(sequences.back().size() >= QUILT_SIZE)
                 sequences.emplace_back();
             else
-                sequences.front().clear();
+                sequences.back().clear();
         }
         else
-            sequences.front().push_back({frameCounter, avgDirection});
-        frameCounter++;
+        {
+            cv::Mat laplacian;
+            cv::Laplacian(buffer.current().gray, laplacian, CV_64F);
+            cv::Scalar mean, dev;
+            cv::meanStdDev(laplacian, mean, dev);
+            sequences.back().push_back({frameCounter, avgDirection, static_cast<float>(dev[0])});
+        }
+    
+    frameCounter++;
     }   
 
     public:
     Analyzer()
     {
-        sequences.emplace_back();        
+        sequences.emplace_back();
+        quilts.emplace_back();
     }
 
     friend bool operator>>(cv::VideoCapture& capture, Analyzer& analyzer)
@@ -103,20 +127,74 @@ class Analyzer{
         if(notEmpty && !analyzer.buffer.previous().color.empty())
             analyzer.processCurrent();
         return notEmpty; 
-    }
-    
-    void exportSequences()
+    }   
+
+    template <class T>
+    void serializeFrameVector(T *frameVector, std::string outputFile)
     { 
-        for(const auto& sequence : sequences)
-            if(!sequence.empty())
+        std::ofstream ofs(outputFile, std::ofstream::trunc);
+        for(const auto& frames : *frameVector)
+        {
+            for(const auto& frame : frames)
             {
-                std::cerr << sequence.front().number << " " << sequence.back().number << std::endl;
+                ofs << frame; 
             }
+            ofs << std::endl;
+        } 
+    }
+
+    const quiltsVector& createQuilts(std::string outputFolder, sequencesVector *customSequences=nullptr)
+    {
+        //TODO blur error
+        sequencesVector *inputSequences = (customSequences!=nullptr) ? customSequences : &sequences;
+        serializeFrameVector(inputSequences, outputFolder+"sequences.txt");
+        for(const auto& sequence : *inputSequences)
+        {
+            float maxOffset{0};
+            if(!quilts.back().empty())
+                quilts.emplace_back();
+            for(const auto& frame : sequence)
+            {
+                float absDir{abs(frame.direction.x)}; 
+                if(absDir > maxOffset)
+                    maxOffset = absDir;
+            }
+            float offsetAcc{0};
+            for(int i=0; i<sequence.size(); i++)
+            {
+                offsetAcc += abs(sequence[i].direction.x);
+                if(offsetAcc > maxOffset)
+                    if(i == sequences.size()-1)
+                        quilts.back().push_back(sequence[i].number);
+                    else if(fmod(offsetAcc,maxOffset) < fmod(offsetAcc+abs(sequence[i+1].direction.x),maxOffset))
+                    {
+                        offsetAcc -= maxOffset;
+                        quilts.back().push_back(sequence[i].number);
+                    }
+            }
+        }
+        serializeFrameVector(&quilts, outputFolder+"quilts.txt");
+
+        //TODO limit for extra long sequences
+        for(const auto& quilt : quilts)
+            if(quilt.size() >= QUILT_SIZE)
+            {
+                int stride = quilt.size()/QUILT_SIZE;
+                int offset = (quilt.size()%QUILT_SIZE)/2;
+                trimmedQuilts.emplace_back();
+                for(int i=offset; i<quilt.size(); i+=stride)
+                    trimmedQuilts.back().push_back(quilt[i]);
+            }
+ 
+        serializeFrameVector(&trimmedQuilts, outputFolder+"trimmedQuilts.txt");
+        return quilts;
     } 
 };
 
 void process(int argc, char **argv)
 {
+    //TODO
+    //load/save serialized sequences
     auto args = argumentViewer::ArgumentViewer(argc,argv);
     auto inputFile =  args.gets("-i","","input video file");  
     auto outputFolder =  args.gets("-o","","output folder");
@@ -129,7 +207,22 @@ void process(int argc, char **argv)
     cv::VideoCapture capture(inputFile);
     Analyzer analyzer;
     while(capture >> analyzer);
-    analyzer.exportSequences();
+    auto quilts = analyzer.createQuilts(outputFolder);
+
+
+    for(int i=0; i<quilts.size(); i++)
+        std::filesystem::create_directory(outputFolder+std::to_string(i));
+    int frameNum{0};
+    while(true)
+    {
+        cv::Mat frame;
+        capture >> frame;
+        if(frame.empty()) break;
+        for(int i=0; i<quilts.size(); i++)
+            if(std::binary_search(quilts[i].begin(), quilts[i].end(), frameNum))
+               cv::imwrite(outputFolder+std::to_string(i)+"/", frame); 
+        frameNum++;
+    }
 }
 
 int main (int argc, char **argv)
