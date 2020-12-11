@@ -18,7 +18,7 @@ class Analyzer{
         
         friend std::ostream& operator<<(std::ostream& os, const MetaFrame& mf)
         {
-            os << mf.number << " " << mf.direction.x << " " << mf.direction.y << " " << mf.bluriness << "   ";
+            os << mf.number << " " << mf.direction.x << " " << mf.direction.y << " " << mf.bluriness << "  ";
             return os;
         }
     };
@@ -95,6 +95,7 @@ class Analyzer{
         avgDirection /= goodPoints;
         avgDirection.x /= buffer.current().gray.cols;
         avgDirection.y /= buffer.current().gray.rows;
+        //TODO additional detection of scene change?
         if((abs(avgDirection.x) < xLimit) || (abs(avgDirection.y) > yBounds) || ((avgDirection.x < 0) != (previousDirection.x < 0)))
         {
             if(sequences.back().size() >= QUILT_SIZE)
@@ -137,18 +138,32 @@ class Analyzer{
         {
             for(const auto& frame : frames)
             {
-                ofs << frame; 
+                ofs << frame << " ";
             }
             ofs << std::endl;
         } 
     }
 
-    const quiltsVector& createQuilts(std::string outputFolder, sequencesVector *customSequences=nullptr)
+    void loadSequences(std::string inputFile)
+    {
+        sequences.clear();
+        std::ifstream ifs(inputFile);
+        std::string line;
+        std::stringstream linestream(line);
+        while(std::getline(ifs, line))
+        {
+            sequences.emplace_back();
+            MetaFrame val;
+            while(linestream >> val.number >> val.direction.x >> val.direction.y >> val.bluriness)
+                sequences.back().push_back(val);
+        }
+    }
+
+    const quiltsVector& createQuilts(std::string outputFolder)
     {
         //TODO blur error
-        sequencesVector *inputSequences = (customSequences!=nullptr) ? customSequences : &sequences;
-        serializeFrameVector(inputSequences, outputFolder+"sequences.txt");
-        for(const auto& sequence : *inputSequences)
+        serializeFrameVector(&sequences, outputFolder+"sequences.txt");
+        for(const auto& sequence : sequences)
         {
             float maxOffset{0};
             if(!quilts.back().empty())
@@ -163,14 +178,17 @@ class Analyzer{
             for(int i=0; i<sequence.size(); i++)
             {
                 offsetAcc += abs(sequence[i].direction.x);
-                if(offsetAcc > maxOffset)
-                    if(i == sequences.size()-1)
+                if(offsetAcc >= maxOffset)
+                {
+                    if(i == 0)
                         quilts.back().push_back(sequence[i].number);
-                    else if(fmod(offsetAcc,maxOffset) < fmod(offsetAcc+abs(sequence[i+1].direction.x),maxOffset))
-                    {
-                        offsetAcc -= maxOffset;
+                    //else if(fmod(offsetAcc,maxOffset) < fmod(offsetAcc+abs(sequence[i+1].direction.x),maxOffset))
+                    else if(offsetAcc-maxOffset < abs(offsetAcc-maxOffset-abs(sequence[i-1].direction.x)))
                         quilts.back().push_back(sequence[i].number);
-                    }
+                    else
+                        quilts.back().push_back(sequence[i-1].number);
+                    offsetAcc -= maxOffset;
+                }
             }
         }
         serializeFrameVector(&quilts, outputFolder+"quilts.txt");
@@ -180,48 +198,60 @@ class Analyzer{
             if(quilt.size() >= QUILT_SIZE)
             {
                 int stride = quilt.size()/QUILT_SIZE;
-                int offset = (quilt.size()%QUILT_SIZE)/2;
+                int offset = ((quilt.size()%QUILT_SIZE))/2;
                 trimmedQuilts.emplace_back();
-                for(int i=offset; i<quilt.size(); i+=stride)
+                for(int i=offset; i<quilt.size()-offset; i+=stride)
                     trimmedQuilts.back().push_back(quilt[i]);
+            
+                while(trimmedQuilts.back().size() > QUILT_SIZE)
+                    trimmedQuilts.back().pop_back();
             }
  
         serializeFrameVector(&trimmedQuilts, outputFolder+"trimmedQuilts.txt");
-        return quilts;
+        return trimmedQuilts;
     } 
 };
 
 void process(int argc, char **argv)
 {
-    //TODO
-    //load/save serialized sequences
     auto args = argumentViewer::ArgumentViewer(argc,argv);
     auto inputFile =  args.gets("-i","","input video file");  
     auto outputFolder =  args.gets("-o","","output folder");
+    auto inputSequences =  args.gets("-s","","input sequences file");
+    bool exportFrames = args.isPresent("-e","export quilts as image files");
     if(inputFile.empty() || outputFolder.empty())
         throw "Invalid output or input path \n"+args.toStr();
 
     if (outputFolder.back() != '/')
-        outputFolder.push_back('/'); 
+        outputFolder.push_back('/');
+    std::filesystem::remove_all(outputFolder); 
+    std::filesystem::create_directory(outputFolder);
 
     cv::VideoCapture capture(inputFile);
     Analyzer analyzer;
-    while(capture >> analyzer);
+    if(inputSequences.empty())
+        while(capture >> analyzer);
+    else
+        analyzer.loadSequences(inputSequences);
     auto quilts = analyzer.createQuilts(outputFolder);
 
-
-    for(int i=0; i<quilts.size(); i++)
-        std::filesystem::create_directory(outputFolder+std::to_string(i));
-    int frameNum{0};
-    while(true)
+    if(exportFrames)
     {
-        cv::Mat frame;
-        capture >> frame;
-        if(frame.empty()) break;
         for(int i=0; i<quilts.size(); i++)
-            if(std::binary_search(quilts[i].begin(), quilts[i].end(), frameNum))
-               cv::imwrite(outputFolder+std::to_string(i)+"/", frame); 
-        frameNum++;
+            if(!quilts[i].empty())
+                std::filesystem::create_directory(outputFolder+std::to_string(i));
+        int frameNum{0};
+        capture.set(cv::CAP_PROP_POS_AVI_RATIO, 0);
+        while(true)
+        {
+            cv::Mat frame;
+            capture >> frame;
+            if(frame.empty()) break;
+            for(int i=0; i<quilts.size(); i++)
+                if(std::binary_search(quilts[i].begin(), quilts[i].end(), frameNum))
+                    cv::imwrite(outputFolder+std::to_string(i)+"/"+std::to_string(frameNum)+".png", frame); 
+            frameNum++;
+        }
     }
 }
 
