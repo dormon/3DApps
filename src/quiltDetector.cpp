@@ -1,4 +1,9 @@
 #include <iostream>
+#include <opencv2/calib3d.hpp>
+#include <opencv2/core/mat.hpp>
+#include <opencv2/core/types.hpp>
+#include <opencv2/features2d.hpp>
+#include <string>
 #include <vector>
 #include <math.h>
 #include <fstream>
@@ -75,44 +80,127 @@ class Analyzer{
     float blurThreshold{100.0};
     cv::Point2f previousDirection{0,0};
     static constexpr int QUILT_SIZE{45};
+    enum AnalysisMethod {SPARSE_FLOW, DENSE_FLOW, FEATURE_MATCHING};
 
-    void processCurrent()
-    {
+    cv::Point2f sparseFlowOffset()
+    { 
         SparseFlow flow;
         //might be used once per N frames, switchig the points at the end
         flow.p0.clear(); flow.p1.clear(); flow.err.clear(); flow.status.clear();
         cv::goodFeaturesToTrack(buffer.previous().gray, flow.p0, 100, 0.3, 7, cv::Mat(), 7, false, 0.04);
         auto criteria = cv::TermCriteria(cv::TermCriteria::COUNT+cv::TermCriteria::EPS, 10, 0.03);
         cv::calcOpticalFlowPyrLK(buffer.previous().gray, buffer.current().gray, flow.p0, flow.p1, flow.status, flow.err, cv::Size(15,15), 2, criteria);
-        cv::Point2f avgDirection;
         int goodPoints{0};
+        cv::Point2f avgDirection;
         for(int i=0; i<flow.p0.size(); i++)
             if(flow.status[i])
             {
                 avgDirection += flow.p1[i]-flow.p0[i];
                 goodPoints++;
             }
-        avgDirection /= goodPoints;
-        avgDirection.x /= buffer.current().gray.cols;
-        avgDirection.y /= buffer.current().gray.rows;
-        //TODO additional detection of scene change?
-        if((abs(avgDirection.x) < xLimit) || (abs(avgDirection.y) > yBounds) || ((avgDirection.x < 0) != (previousDirection.x < 0)))
+        return avgDirection/goodPoints;
+    }
+    
+    cv::Point2f denseFlowOffset()
+    {
+        //cv::Rect crop(600, 0, 80, 720);
+        cv::Rect crop(0, 0, buffer.previous().gray.size[0], buffer.previous().gray.size[1]);
+        cv::Mat croppedPrevious = buffer.previous().gray(crop); 
+        cv::Mat croppedCurrent = buffer.previous().gray(crop); 
+
+        cv::Mat flow(croppedPrevious.size(), CV_32FC2);
+        cv::calcOpticalFlowFarneback(croppedPrevious, croppedCurrent ,flow, 0.5, 3, 15, 3, 5, 1.2, 0); 
+        auto mean = cv::mean(flow);
+        return {static_cast<float>(mean[0]), static_cast<float>(mean[1])};     
+    }
+
+    cv::Point2f featureMatchingOffset()
+    {
+        auto detector = cv::ORB::create();
+        std::vector<cv::KeyPoint> p0, p1; 
+        std::vector<cv::Point2f> pp0, pp1; 
+        cv::Mat d0, d1;
+        detector->detectAndCompute(buffer.previous().gray, cv::noArray(),p0,d0);
+        detector->detectAndCompute(buffer.current().gray, cv::noArray(),p1,d1);
+        auto matcher = cv::DescriptorMatcher::create(cv::DescriptorMatcher::BRUTEFORCE);
+        std::vector<std::vector<cv::DMatch>> matches;
+        matcher->knnMatch(d0,d1,matches,2);
+
+        //cv::Mat mask = cv::Mat::zeros(buffer.current().gray.size(), buffer.current().gray.type()); 
+        //std::vector<cv::DMatch> gm;
+
+        for(auto const &m : matches)
+            if(m[0].distance < 0.7*m[1].distance)
+            {
+                
+                pp0.push_back(p0[m[0].queryIdx].pt);
+                pp1.push_back(p1[m[0].trainIdx].pt);
+   
+                //gm.push_back(m[0]); 
+                //cv::line(mask,pp0.back(), pp1.back(), cv::Scalar(255,0,0), 2);
+            }
+       
+        // cv::Mat img;
+        //cv::drawMatches(buffer.previous().gray, p0, buffer.current().gray, p1, gm, img, cv::Scalar::all(-1), cv::Scalar::all(-1), std::vector<char>(),cv::DrawMatchesFlags::NOT_DRAW_SINGLE_POINTS );
+        //add(buffer.current().gray, mask, img);
+        //cv::imwrite("./"+std::to_string(frameCounter)+".jpg", img);
+     
+        float focal = 1000.0;
+        cv::Point2d pp(buffer.current().gray.cols/2.0, buffer.current().gray.rows/2.0);
+        //cv::Point2d pp(1,1);
+        auto em = cv::findEssentialMat(pp0, pp1, focal, pp, cv::RANSAC, 0.999, 1.0);
+        cv::Mat rotation, translation;
+        cv::recoverPose(em, pp0, pp1, rotation, translation, focal, pp);
+        return {static_cast<float>(translation.at<double>(0,0)), static_cast<float>(translation.at<double>(0,1))};
+    }
+
+    void processCurrent(AnalysisMethod method=FEATURE_MATCHING)
+    {
+        
+/*        if(flow.p0.empty())
         {
             if(sequences.back().size() >= QUILT_SIZE)
                 sequences.emplace_back();
             else
                 sequences.back().clear();
         }
-        else
-        {
-            cv::Mat laplacian;
-            cv::Laplacian(buffer.current().gray, laplacian, CV_64F);
-            cv::Scalar mean, dev;
-            cv::meanStdDev(laplacian, mean, dev);
-            sequences.back().push_back({frameCounter, avgDirection, static_cast<float>(dev[0])});
-        }
-    
-    frameCounter++;
+            avgDirection.x /= buffer.current().gray.cols;
+            avgDirection.y /= buffer.current().gray.rows;*/
+
+            cv::Point2f avgDirection;
+            switch (method)
+            {
+                case SPARSE_FLOW:
+                avgDirection = sparseFlowOffset();
+                break;
+                
+                case DENSE_FLOW:
+                avgDirection = denseFlowOffset();
+                break;
+                
+                case FEATURE_MATCHING:
+                avgDirection = featureMatchingOffset();
+                break;
+            } 
+
+//            std::cerr << frameCounter << " " << avgDirection.x << " " << avgDirection.y << std::endl;
+            //TODO additional detection of scene change?
+            /*if((abs(avgDirection.x) < xLimit) || (abs(avgDirection.y) > yBounds) || ((avgDirection.x < 0) != (previousDirection.x < 0)))
+            {
+                if(sequences.back().size() >= QUILT_SIZE)
+                    sequences.emplace_back();
+                else
+                    sequences.back().clear();
+            }
+            else
+            {
+                cv::Mat laplacian;
+                cv::Laplacian(buffer.current().gray, laplacian, CV_64F);
+                cv::Scalar mean, dev;
+                cv::meanStdDev(laplacian, mean, dev);
+                sequences.back().push_back({frameCounter, avgDirection, static_cast<float>(dev[0])});
+            }*/
+            frameCounter++; 
     }   
 
     public:
