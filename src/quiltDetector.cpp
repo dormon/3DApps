@@ -19,11 +19,12 @@ class Analyzer{
         public:
         int number{0};
         cv::Point2f direction{0,0};
+        cv::Point2f magnitude{0};
         float bluriness{0};
         
         friend std::ostream& operator<<(std::ostream& os, const MetaFrame& mf)
         {
-            os << mf.number << " " << mf.direction.x << " " << mf.direction.y << " " << mf.bluriness << "  ";
+            os << mf.number << " " << mf.direction.x << " " << mf.direction.y << " " << mf.magnitude.x << " " << mf.magnitude.y << " " << mf.bluriness << "  ";
             return os;
         }
     };
@@ -59,46 +60,75 @@ class Analyzer{
             return true;
         }
     };
-    
-    class SparseFlow{
-        public: 
-        std::vector<uchar> status;
-        std::vector<float> err;
-        std::vector<cv::Point2f> p0, p1;
-    };
-
-    using sequencesVector = std::vector<std::vector<MetaFrame>>;
-    using quiltsVector = std::vector<std::vector<int>>;
-
-    sequencesVector sequences;
-    quiltsVector quilts;
-    quiltsVector trimmedQuilts;
+   
+    using SequencesVector = std::vector<std::vector<int>>;
+    std::vector<MetaFrame> frames;
+    SequencesVector sequences;
+    SequencesVector quilts;
+    SequencesVector trimmedQuilts;
     Buffer buffer;
     int frameCounter{0};
+    float differencesPercentage{0.5};
     float yBounds{0.001};
     float xLimit{0.001};
     float blurThreshold{100.0};
     cv::Point2f previousDirection{0,0};
     static constexpr int QUILT_SIZE{45};
-    enum AnalysisMethod {SPARSE_FLOW, DENSE_FLOW, FEATURE_MATCHING};
+    enum AnalysisMethod {SPARSE_FLOW, DENSE_FLOW, FEATURE_MATCHING}; 
 
-    cv::Point2f sparseFlowOffset()
+    float analyzeBluriness(cv::Mat &frame)
     { 
+        cv::Mat laplacian;
+        cv::Laplacian(frame, laplacian, CV_64F);
+        cv::Scalar mean, dev;
+        cv::meanStdDev(laplacian, mean, dev);
+        return dev[0];
+    }
+
+    MetaFrame analyzeMatches(std::vector<float> xd, std::vector<float> yd)
+    {
+        std::sort(xd.begin(), xd.end());
+        std::sort(yd.begin(), yd.end());
+
+        MetaFrame mf;
+
+        int offset = xd.size()*differencesPercentage;
+        int halfOffset = offset/2;
+        for(int i=halfOffset; i<xd.size()-halfOffset; i++) 
+        {
+           mf.direction += {xd[i], yd[i]}; 
+           mf.magnitude += {abs(xd[i]), abs(yd[i])}; 
+        }
+
+        mf.direction /= static_cast<float>(xd.size()-offset);
+        mf.magnitude /= static_cast<float>(xd.size()-offset);
+        return mf;
+    }
+
+   MetaFrame sparseFlowOffset()
+    { 
+        class SparseFlow{
+            public: 
+            std::vector<uchar> status;
+            std::vector<float> err;
+            std::vector<cv::Point2f> p0, p1;
+        };
+
         SparseFlow flow;
         //might be used once per N frames, switchig the points at the end
         flow.p0.clear(); flow.p1.clear(); flow.err.clear(); flow.status.clear();
         cv::goodFeaturesToTrack(buffer.previous().gray, flow.p0, 100, 0.3, 7, cv::Mat(), 7, false, 0.04);
         auto criteria = cv::TermCriteria(cv::TermCriteria::COUNT+cv::TermCriteria::EPS, 10, 0.03);
         cv::calcOpticalFlowPyrLK(buffer.previous().gray, buffer.current().gray, flow.p0, flow.p1, flow.status, flow.err, cv::Size(15,15), 2, criteria);
-        int goodPoints{0};
-        cv::Point2f avgDirection;
+        std::vector<float> xd, yd;
         for(int i=0; i<flow.p0.size(); i++)
             if(flow.status[i])
             {
-                avgDirection += flow.p1[i]-flow.p0[i];
-                goodPoints++;
+                cv::Point2f d = flow.p1[i]-flow.p0[i];
+                xd.push_back(d.x);
+                yd.push_back(d.y);
             }
-        return avgDirection/goodPoints;
+        return analyzeMatches(xd,yd);        
     }
     
     cv::Point2f denseFlowOffset()
@@ -114,7 +144,7 @@ class Analyzer{
         return {static_cast<float>(mean[0]), static_cast<float>(mean[1])};     
     }
 
-    cv::Point2f featureMatchingOffset()
+    MetaFrame featureMatchingOffset()
     {
         auto detector = cv::ORB::create();
         std::vector<cv::KeyPoint> p0, p1; 
@@ -129,6 +159,7 @@ class Analyzer{
         //cv::Mat mask = cv::Mat::zeros(buffer.current().gray.size(), buffer.current().gray.type()); 
         //std::vector<cv::DMatch> gm;
 
+        std::vector<float> xd, yd;
         for(auto const &m : matches)
             if(m[0].distance < 0.7*m[1].distance)
             {
@@ -136,78 +167,55 @@ class Analyzer{
                 pp0.push_back(p0[m[0].queryIdx].pt);
                 pp1.push_back(p1[m[0].trainIdx].pt);
    
+                cv::Point2f d = pp1.back()-pp0.back();
+                xd.push_back(d.x);
+                yd.push_back(d.y);
                 //gm.push_back(m[0]); 
                 //cv::line(mask,pp0.back(), pp1.back(), cv::Scalar(255,0,0), 2);
             }
+        return analyzeMatches(xd,yd);        
        
         // cv::Mat img;
         //cv::drawMatches(buffer.previous().gray, p0, buffer.current().gray, p1, gm, img, cv::Scalar::all(-1), cv::Scalar::all(-1), std::vector<char>(),cv::DrawMatchesFlags::NOT_DRAW_SINGLE_POINTS );
         //add(buffer.current().gray, mask, img);
         //cv::imwrite("./"+std::to_string(frameCounter)+".jpg", img);
      
-        float focal = 1000.0;
+    /*    float focal = 1000.0;
         cv::Point2d pp(buffer.current().gray.cols/2.0, buffer.current().gray.rows/2.0);
         //cv::Point2d pp(1,1);
         auto em = cv::findEssentialMat(pp0, pp1, focal, pp, cv::RANSAC, 0.999, 1.0);
         cv::Mat rotation, translation;
         cv::recoverPose(em, pp0, pp1, rotation, translation, focal, pp);
-        return {static_cast<float>(translation.at<double>(0,0)), static_cast<float>(translation.at<double>(0,1))};
+        return {static_cast<float>(translation.at<double>(0,0)), static_cast<float>(translation.at<double>(0,1))};*/
     }
 
     void processCurrent(AnalysisMethod method=FEATURE_MATCHING)
     {
-        
-/*        if(flow.p0.empty())
-        {
-            if(sequences.back().size() >= QUILT_SIZE)
-                sequences.emplace_back();
-            else
-                sequences.back().clear();
-        }
-            avgDirection.x /= buffer.current().gray.cols;
-            avgDirection.y /= buffer.current().gray.rows;*/
-
-            cv::Point2f avgDirection;
+            MetaFrame mf;;
             switch (method)
             {
                 case SPARSE_FLOW:
-                avgDirection = sparseFlowOffset();
+                mf = sparseFlowOffset();
                 break;
                 
-                case DENSE_FLOW:
+             /*   case DENSE_FLOW:
                 avgDirection = denseFlowOffset();
-                break;
+                break;*/
                 
                 case FEATURE_MATCHING:
-                avgDirection = featureMatchingOffset();
+                mf = featureMatchingOffset();
                 break;
             } 
-
-//            std::cerr << frameCounter << " " << avgDirection.x << " " << avgDirection.y << std::endl;
+            mf.bluriness = analyzeBluriness(buffer.current().gray);
+            mf.number = frameCounter;
+            frames.push_back(mf);
             //TODO additional detection of scene change?
-            /*if((abs(avgDirection.x) < xLimit) || (abs(avgDirection.y) > yBounds) || ((avgDirection.x < 0) != (previousDirection.x < 0)))
-            {
-                if(sequences.back().size() >= QUILT_SIZE)
-                    sequences.emplace_back();
-                else
-                    sequences.back().clear();
-            }
-            else
-            {
-                cv::Mat laplacian;
-                cv::Laplacian(buffer.current().gray, laplacian, CV_64F);
-                cv::Scalar mean, dev;
-                cv::meanStdDev(laplacian, mean, dev);
-                sequences.back().push_back({frameCounter, avgDirection, static_cast<float>(dev[0])});
-            }*/
             frameCounter++; 
     }   
 
     public:
     Analyzer()
     {
-        sequences.emplace_back();
-        quilts.emplace_back();
     }
 
     friend bool operator>>(cv::VideoCapture& capture, Analyzer& analyzer)
@@ -218,39 +226,66 @@ class Analyzer{
         return notEmpty; 
     }   
 
-    template <class T>
-    void serializeFrameVector(T *frameVector, std::string outputFile)
+    void serializeFrameVector(SequencesVector *frameVector, std::string outputFile)
     { 
         std::ofstream ofs(outputFile, std::ofstream::trunc);
-        for(const auto& frames : *frameVector)
+        for(const auto& frameIndices : *frameVector)
         {
-            for(const auto& frame : frames)
+            for(const auto& index : frameIndices)
             {
-                ofs << frame << " ";
+                ofs << index << " ";
             }
             ofs << std::endl;
         } 
     }
+    void serializeFrameVector(std::vector<MetaFrame> *frameVector, std::string outputFile)
+    { 
+        std::ofstream ofs(outputFile, std::ofstream::trunc);
+        for(const auto& frame : *frameVector)
+        {
+            ofs << frame << " ";
+            ofs << std::endl;
+        } 
+    }
 
-    void loadSequences(std::string inputFile)
+    void loadFrames(std::string inputFile)
     {
-        sequences.clear();
         std::ifstream ifs(inputFile);
         std::string line;
         std::stringstream linestream(line);
         while(std::getline(ifs, line))
         {
-            sequences.emplace_back();
             MetaFrame val;
-            while(linestream >> val.number >> val.direction.x >> val.direction.y >> val.bluriness)
-                sequences.back().push_back(val);
+            while(linestream >> val.number >> val.direction.x >> val.direction.y >> val.magnitude.x >> val.magnitude.y >> val.bluriness)
+                frames.push_back(val);
         }
     }
 
-    const quiltsVector& createQuilts(std::string outputFolder)
+    void createSequences()
+    {
+        sequences.emplace_back();
+        for(int i=1; i<frames.size(); i++)
+            if((abs(frames[i].direction.x) < xLimit) || (abs(frames[i].direction.y) > yBounds) || ((frames[i].direction.x < 0) != (frames[i-1].direction.x < 0)))
+            {
+                if(sequences.back().size() >= QUILT_SIZE)
+                    sequences.emplace_back();
+                else
+                    sequences.back().clear();
+            }
+            else
+            {
+                sequences.back().push_back(i);
+            }
+    } 
+
+    const SequencesVector& createQuilts(std::string outputFolder)
     {
         //TODO blur error
+        createSequences();
+        serializeFrameVector(&frames, outputFolder+"frames.txt");
         serializeFrameVector(&sequences, outputFolder+"sequences.txt");
+        quilts.emplace_back();
+
         for(const auto& sequence : sequences)
         {
             float maxOffset{0};
@@ -258,29 +293,28 @@ class Analyzer{
                 quilts.emplace_back();
             for(const auto& frame : sequence)
             {
-                float absDir{abs(frame.direction.x)}; 
+                float absDir{abs(frames[frame].direction.x)}; 
                 if(absDir > maxOffset)
                     maxOffset = absDir;
             }
             float offsetAcc{0};
             for(int i=0; i<sequence.size(); i++)
             {
-                offsetAcc += abs(sequence[i].direction.x);
+                offsetAcc += abs(frames[sequence[i]].direction.x);
                 if(offsetAcc >= maxOffset)
                 {
                     if(i == 0)
-                        quilts.back().push_back(sequence[i].number);
+                        quilts.back().push_back(frames[sequence[i]].number);
                     //else if(fmod(offsetAcc,maxOffset) < fmod(offsetAcc+abs(sequence[i+1].direction.x),maxOffset))
-                    else if(offsetAcc-maxOffset < abs(offsetAcc-maxOffset-abs(sequence[i-1].direction.x)))
-                        quilts.back().push_back(sequence[i].number);
+                    else if(offsetAcc-maxOffset < abs(offsetAcc-maxOffset-abs(frames[sequence[i-1]].direction.x)))
+                        quilts.back().push_back(frames[sequence[i]].number);
                     else
-                        quilts.back().push_back(sequence[i-1].number);
+                        quilts.back().push_back(frames[sequence[i-1]].number);
                     offsetAcc -= maxOffset;
                 }
             }
         }
         serializeFrameVector(&quilts, outputFolder+"quilts.txt");
-
         //TODO limit for extra long sequences
         for(const auto& quilt : quilts)
             if(quilt.size() >= QUILT_SIZE)
@@ -305,7 +339,7 @@ void process(int argc, char **argv)
     auto args = argumentViewer::ArgumentViewer(argc,argv);
     auto inputFile =  args.gets("-i","","input video file");  
     auto outputFolder =  args.gets("-o","","output folder");
-    auto inputSequences =  args.gets("-s","","input sequences file");
+    auto inputFrames =  args.gets("-s","","input pre-analyzed file");
     bool exportFrames = args.isPresent("-e","export quilts as image files");
     if(inputFile.empty() || outputFolder.empty())
         throw "Invalid output or input path \n"+args.toStr();
@@ -317,10 +351,10 @@ void process(int argc, char **argv)
 
     cv::VideoCapture capture(inputFile);
     Analyzer analyzer;
-    if(inputSequences.empty())
+    if(inputFrames.empty())
         while(capture >> analyzer);
     else
-        analyzer.loadSequences(inputSequences);
+        analyzer.loadFrames(inputFrames);
     auto quilts = analyzer.createQuilts(outputFolder);
 
     if(exportFrames)
