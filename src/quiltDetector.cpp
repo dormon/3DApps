@@ -8,6 +8,7 @@
 #include <math.h>
 #include <fstream>
 #include <algorithm>
+#include <numeric>
 #include <filesystem>
 #include <ArgumentViewer/ArgumentViewer.h>
 #include <opencv4/opencv2/opencv.hpp>
@@ -68,9 +69,10 @@ class Analyzer{
     SequencesVector trimmedQuilts;
     Buffer buffer;
     int frameCounter{0};
-    float differencesPercentage{0.5};
-    float yBounds{0.001};
-    float xLimit{0.001};
+    float differencesExclude{0.5};
+    float distWinSize{0.3};
+    float yBounds{0.1};
+    float xLimit{0.000001};
     float blurThreshold{100.0};
     cv::Point2f previousDirection{0,0};
     static constexpr int QUILT_SIZE{45};
@@ -85,23 +87,97 @@ class Analyzer{
         return dev[0];
     }
 
-    MetaFrame analyzeMatches(std::vector<float> xd, std::vector<float> yd)
+    float checkDistortion()
     {
-        std::sort(xd.begin(), xd.end());
-        std::sort(yd.begin(), yd.end());
+        cv::Point2i size{buffer.current().gray.cols, buffer.current().gray.rows};
+        cv::Point2i winSize{size*distWinSize};
+        cv::Rect roi(0, 0, winSize.x, winSize.y);
+        float yDirs[4];
+        for(int i=0; i<4; i++)
+        {
+            //Maybe apply median to get rid of outliers
+            cv::Mat croppedPrevious = buffer.previous().gray(roi);
+            cv::Mat croppedCurrent = buffer.current().gray(roi);
+            roi.x = (i%2)*(size.x-winSize.x);
+            roi.y = (i/2)*(size.y-winSize.y);
+            cv::Mat flow(croppedCurrent, CV_32FC2);
+            cv::calcOpticalFlowFarneback(croppedPrevious, croppedCurrent, flow, 0.5, 3, 15, 3, 5, 1.2, 0);
+            yDirs[i] = cv::mean(flow).val[1]; 
+        }
+         
+    }
 
+    MetaFrame analyzeMatches(std::vector<cv::Point2f> &p0, std::vector<cv::Point2f> &p1)
+    {
+        class Accumulator
+        {
+            private:
+            float value{0};
+            int counter{0};
+            public:
+            float avg() {return (counter != 0) ? value/counter : 0;}
+            Accumulator operator+=(float v)
+            {
+                value += v;
+                counter++;
+                return *this;
+            }
+        };
+        std::vector<float> xd, yd;
+        if(p1.empty())
+            for(const auto &p : p0)
+            {
+                xd.push_back(p.x);
+                yd.push_back(p.y);
+            }
+        else 
+            for(int i=0; i < p1.size(); i++)
+            {
+                cv::Point2f d = p1[i]-p0[i];
+                xd.push_back(d.x);
+                yd.push_back(d.y);
+            }
+        //std::sort(xd.begin(), xd.end());
+        std::vector<int> ydIdx(yd.size());
+        std::iota(ydIdx.begin(), ydIdx.end(), 0);        
+        //std::stable_sort(ydIdx.begin(), ydIdx.end(), [&yd](int ia, int ib){return yd[ia] < yd[ib];});
         MetaFrame mf;
-
-        int offset = xd.size()*differencesPercentage;
+differencesExclude = 0.0;
+        int offset = xd.size()*differencesExclude;
         int halfOffset = offset/2;
+        Accumulator corners[4];
+        //std::cerr << "---------------------------"<<std::endl;
+        cv::Point2i size{buffer.current().gray.cols,buffer.current().gray.rows};
         for(int i=halfOffset; i<xd.size()-halfOffset; i++) 
         {
-           mf.direction += {xd[i], yd[i]}; 
-           mf.magnitude += {abs(xd[i]), abs(yd[i])}; 
+            //std::cerr<<p0[i]<<std::endl;
+           mf.direction += {xd[i], yd[ydIdx[i]]}; 
+           mf.magnitude += {abs(xd[i]), abs(yd[ydIdx[i]])};
+    
+          int x = ydIdx[i]%size.x; 
+          int y = ydIdx[i]/size.x;
+          if(y < size.y*0.33)
+          {
+            if(x < size.x*0.33)
+                corners[0] += yd[ydIdx[i]];
+            else if(x > size.x*0.66)
+                corners[1] += yd[ydIdx[i]];
+          }
+          else if(y > size.y*0.66)
+          {
+            if(x < size.x*0.33)
+                corners[2] += yd[ydIdx[i]];
+            else if(x > size.x*0.66)
+                corners[3] += yd[ydIdx[i]];
+          }
         }
 
-        mf.direction /= static_cast<float>(xd.size()-offset);
-        mf.magnitude /= static_cast<float>(xd.size()-offset);
+        for(int i=0; i<4; i++) std::cerr << corners[i].avg() << " ";
+        std::cerr << std::endl;
+        
+        mf.direction /= static_cast<float>(p0.size()-offset);
+        mf.magnitude /= static_cast<float>(p0.size()-offset);
+        //std::cerr << mf << std::endl;
         return mf;
     }
 
@@ -120,28 +196,25 @@ class Analyzer{
         cv::goodFeaturesToTrack(buffer.previous().gray, flow.p0, 100, 0.3, 7, cv::Mat(), 7, false, 0.04);
         auto criteria = cv::TermCriteria(cv::TermCriteria::COUNT+cv::TermCriteria::EPS, 10, 0.03);
         cv::calcOpticalFlowPyrLK(buffer.previous().gray, buffer.current().gray, flow.p0, flow.p1, flow.status, flow.err, cv::Size(15,15), 2, criteria);
-        std::vector<float> xd, yd;
+        std::vector<cv::Point2f> pp0, pp1;
         for(int i=0; i<flow.p0.size(); i++)
             if(flow.status[i])
             {
-                cv::Point2f d = flow.p1[i]-flow.p0[i];
-                xd.push_back(d.x);
-                yd.push_back(d.y);
+                pp1.push_back(flow.p1[i]);
+                pp0.push_back(flow.p0[i]);
             }
-        return analyzeMatches(xd,yd);        
+        return analyzeMatches(pp0, pp1);        
     }
     
-    cv::Point2f denseFlowOffset()
+    MetaFrame denseFlowOffset()
     {
-        //cv::Rect crop(600, 0, 80, 720);
-        cv::Rect crop(0, 0, buffer.previous().gray.size[0], buffer.previous().gray.size[1]);
-        cv::Mat croppedPrevious = buffer.previous().gray(crop); 
-        cv::Mat croppedCurrent = buffer.previous().gray(crop); 
-
-        cv::Mat flow(croppedPrevious.size(), CV_32FC2);
-        cv::calcOpticalFlowFarneback(croppedPrevious, croppedCurrent ,flow, 0.5, 3, 15, 3, 5, 1.2, 0); 
-        auto mean = cv::mean(flow);
-        return {static_cast<float>(mean[0]), static_cast<float>(mean[1])};     
+        cv::Mat flow(buffer.current().gray.size(), CV_32FC2);
+        cv::calcOpticalFlowFarneback(buffer.previous().gray, buffer.current().gray ,flow, 0.5, 3, 15, 3, 5, 1.2, 0); 
+        std::vector<cv::Point2f> d, dummy;
+        for(int y=0; y<flow.rows; y++)
+            for(int x=0; x<flow.cols; x++)
+                d.push_back({flow.at<cv::Vec2f>(y,x)[0], flow.at<cv::Vec2f>(y,x)[1]});
+        return analyzeMatches(d, dummy);
     }
 
     MetaFrame featureMatchingOffset()
@@ -152,6 +225,8 @@ class Analyzer{
         cv::Mat d0, d1;
         detector->detectAndCompute(buffer.previous().gray, cv::noArray(),p0,d0);
         detector->detectAndCompute(buffer.current().gray, cv::noArray(),p1,d1);
+        if(p0.empty() || p1.empty())
+            return {};
         auto matcher = cv::DescriptorMatcher::create(cv::DescriptorMatcher::BRUTEFORCE);
         std::vector<std::vector<cv::DMatch>> matches;
         matcher->knnMatch(d0,d1,matches,2);
@@ -159,21 +234,15 @@ class Analyzer{
         //cv::Mat mask = cv::Mat::zeros(buffer.current().gray.size(), buffer.current().gray.type()); 
         //std::vector<cv::DMatch> gm;
 
-        std::vector<float> xd, yd;
         for(auto const &m : matches)
-            if(m[0].distance < 0.7*m[1].distance)
-            {
-                
+            if(m[0].distance < 0.7*m[1].distance) 
+            {    
                 pp0.push_back(p0[m[0].queryIdx].pt);
                 pp1.push_back(p1[m[0].trainIdx].pt);
-   
-                cv::Point2f d = pp1.back()-pp0.back();
-                xd.push_back(d.x);
-                yd.push_back(d.y);
                 //gm.push_back(m[0]); 
                 //cv::line(mask,pp0.back(), pp1.back(), cv::Scalar(255,0,0), 2);
             }
-        return analyzeMatches(xd,yd);        
+        return analyzeMatches(pp0,pp1);        
        
         // cv::Mat img;
         //cv::drawMatches(buffer.previous().gray, p0, buffer.current().gray, p1, gm, img, cv::Scalar::all(-1), cv::Scalar::all(-1), std::vector<char>(),cv::DrawMatchesFlags::NOT_DRAW_SINGLE_POINTS );
@@ -189,7 +258,7 @@ class Analyzer{
         return {static_cast<float>(translation.at<double>(0,0)), static_cast<float>(translation.at<double>(0,1))};*/
     }
 
-    void processCurrent(AnalysisMethod method=FEATURE_MATCHING)
+    void processCurrent(AnalysisMethod method=DENSE_FLOW)//FEATURE_MATCHING)
     {
             MetaFrame mf;;
             switch (method)
@@ -198,9 +267,9 @@ class Analyzer{
                 mf = sparseFlowOffset();
                 break;
                 
-             /*   case DENSE_FLOW:
-                avgDirection = denseFlowOffset();
-                break;*/
+                case DENSE_FLOW:
+                mf = denseFlowOffset();
+                break;
                 
                 case FEATURE_MATCHING:
                 mf = featureMatchingOffset();
@@ -265,7 +334,8 @@ class Analyzer{
     {
         sequences.emplace_back();
         for(int i=1; i<frames.size(); i++)
-            if((abs(frames[i].direction.x) < xLimit) || (abs(frames[i].direction.y) > yBounds) || ((frames[i].direction.x < 0) != (frames[i-1].direction.x < 0)))
+            if((abs(frames[i].direction.x) < xLimit) || (abs(frames[i].direction.y) > yBounds))
+            //if((abs(frames[i].direction.x) < xLimit) || (abs(frames[i].direction.y) > yBounds) || ((frames[i].direction.x < 0) != (frames[i-1].direction.x < 0)))
             {
                 if(sequences.back().size() >= QUILT_SIZE)
                     sequences.emplace_back();
@@ -293,14 +363,14 @@ class Analyzer{
                 quilts.emplace_back();
             for(const auto& frame : sequence)
             {
-                float absDir{abs(frames[frame].direction.x)}; 
+                float absDir{abs(frames[frame].magnitude.x)}; 
                 if(absDir > maxOffset)
                     maxOffset = absDir;
             }
             float offsetAcc{0};
             for(int i=0; i<sequence.size(); i++)
             {
-                offsetAcc += abs(frames[sequence[i]].direction.x);
+                offsetAcc += abs(frames[sequence[i]].magnitude.x);
                 if(offsetAcc >= maxOffset)
                 {
                     if(i == 0)
@@ -332,6 +402,20 @@ class Analyzer{
         serializeFrameVector(&trimmedQuilts, outputFolder+"trimmedQuilts.txt");
         return trimmedQuilts;
     } 
+
+    void printResults()
+    {
+        for(const auto& sequence : sequences)
+            if(!sequence.empty())
+            {
+                float bluriness{0};
+                for(const auto& frame : sequence)
+                    bluriness += frames[frame].bluriness;
+                bluriness /= sequence.size();
+
+                std::cerr << std::endl << sequence.front() << "-" << sequence.back() << " sharp: " << bluriness; 
+            }
+    }
 };
 
 void process(int argc, char **argv)
@@ -341,6 +425,11 @@ void process(int argc, char **argv)
     auto outputFolder =  args.gets("-o","","output folder");
     auto inputFrames =  args.gets("-s","","input pre-analyzed file");
     bool exportFrames = args.isPresent("-e","export quilts as image files");
+    auto const showHelp = args.isPresent("-h","shows help");
+    if (showHelp || !args.validate()) {
+        std::cerr << args.toStr();
+        exit(0);
+    }
     if(inputFile.empty() || outputFolder.empty())
         throw "Invalid output or input path \n"+args.toStr();
 
@@ -356,6 +445,7 @@ void process(int argc, char **argv)
     else
         analyzer.loadFrames(inputFrames);
     auto quilts = analyzer.createQuilts(outputFolder);
+    analyzer.printResults();
 
     if(exportFrames)
     {
