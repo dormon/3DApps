@@ -1,5 +1,6 @@
 #include <iostream>
 #include <opencv2/calib3d.hpp>
+#include <opencv2/core.hpp>
 #include <opencv2/core/mat.hpp>
 #include <opencv2/core/types.hpp>
 #include <opencv2/features2d.hpp>
@@ -16,16 +17,31 @@
 
 class Analyzer{
     private:
+    class Accumulator
+    {
+        private:
+        float value{0};
+        int counter{0};
+        public:
+        float avg() {return (counter != 0) ? value/counter : 0;}
+        Accumulator operator+=(float v)
+        {
+            value += v;
+            counter++;
+            return *this;
+        }
+    };
     class MetaFrame{
         public:
         int number{0};
         cv::Point2f direction{0,0};
         cv::Point2f magnitude{0};
         float bluriness{0};
+        float distortion{0};
         
         friend std::ostream& operator<<(std::ostream& os, const MetaFrame& mf)
         {
-            os << mf.number << " " << mf.direction.x << " " << mf.direction.y << " " << mf.magnitude.x << " " << mf.magnitude.y << " " << mf.bluriness << "  ";
+            os << mf.number << " " << mf.direction.x << " " << mf.direction.y << " " << mf.magnitude.x << " " << mf.magnitude.y << " " << mf.bluriness << "  "<< mf.distortion;
             return os;
         }
     };
@@ -69,7 +85,7 @@ class Analyzer{
     SequencesVector trimmedQuilts;
     Buffer buffer;
     int frameCounter{0};
-    float differencesExclude{0.5};
+    float differencesExclude{0.3};
     float distWinSize{0.3};
     float yBounds{0.1};
     float xLimit{0.000001};
@@ -86,43 +102,39 @@ class Analyzer{
         cv::meanStdDev(laplacian, mean, dev);
         return dev[0];
     }
-
-    float checkDistortion()
+    float analyzeDistortion()
     {
         cv::Point2i size{buffer.current().gray.cols, buffer.current().gray.rows};
         cv::Point2i winSize{size*distWinSize};
         cv::Rect roi(0, 0, winSize.x, winSize.y);
-        float yDirs[4];
-        for(int i=0; i<4; i++)
+        float yDirs[5];
+        for(int i=-1; i<4; i++)
         {
-            //Maybe apply median to get rid of outliers
+            if(i<0)
+            {
+                roi.x = size.x/2 - winSize.x/2;
+                roi.y = size.y/2 - winSize.y/2;
+            }
+            else
+            { 
+                roi.x = (i%2)*(size.x-winSize.x);
+                roi.y = (i/2)*(size.y-winSize.y);
+            }
             cv::Mat croppedPrevious = buffer.previous().gray(roi);
             cv::Mat croppedCurrent = buffer.current().gray(roi);
-            roi.x = (i%2)*(size.x-winSize.x);
-            roi.y = (i/2)*(size.y-winSize.y);
-            cv::Mat flow(croppedCurrent, CV_32FC2);
+            cv::Mat flow(croppedCurrent.size(), CV_32FC2);
             cv::calcOpticalFlowFarneback(croppedPrevious, croppedCurrent, flow, 0.5, 3, 15, 3, 5, 1.2, 0);
-            yDirs[i] = cv::mean(flow).val[1]; 
+            cv::medianBlur(flow,flow,3);
+            yDirs[i+1] = cv::mean(flow).val[1];
         }
-         
+        Accumulator acc;
+        for(int i=1; i<5; i++)
+            acc += abs(yDirs[i]);
+        return acc.avg()-abs(yDirs[0]);
     }
 
     MetaFrame analyzeMatches(std::vector<cv::Point2f> &p0, std::vector<cv::Point2f> &p1)
     {
-        class Accumulator
-        {
-            private:
-            float value{0};
-            int counter{0};
-            public:
-            float avg() {return (counter != 0) ? value/counter : 0;}
-            Accumulator operator+=(float v)
-            {
-                value += v;
-                counter++;
-                return *this;
-            }
-        };
         std::vector<float> xd, yd;
         if(p1.empty())
             for(const auto &p : p0)
@@ -137,47 +149,21 @@ class Analyzer{
                 xd.push_back(d.x);
                 yd.push_back(d.y);
             }
-        //std::sort(xd.begin(), xd.end());
-        std::vector<int> ydIdx(yd.size());
-        std::iota(ydIdx.begin(), ydIdx.end(), 0);        
-        //std::stable_sort(ydIdx.begin(), ydIdx.end(), [&yd](int ia, int ib){return yd[ia] < yd[ib];});
+        std::sort(xd.begin(), xd.end());
+        std::sort(yd.begin(), yd.end());
         MetaFrame mf;
-differencesExclude = 0.0;
         int offset = xd.size()*differencesExclude;
         int halfOffset = offset/2;
         Accumulator corners[4];
-        //std::cerr << "---------------------------"<<std::endl;
         cv::Point2i size{buffer.current().gray.cols,buffer.current().gray.rows};
         for(int i=halfOffset; i<xd.size()-halfOffset; i++) 
         {
-            //std::cerr<<p0[i]<<std::endl;
-           mf.direction += {xd[i], yd[ydIdx[i]]}; 
-           mf.magnitude += {abs(xd[i]), abs(yd[ydIdx[i]])};
-    
-          int x = ydIdx[i]%size.x; 
-          int y = ydIdx[i]/size.x;
-          if(y < size.y*0.33)
-          {
-            if(x < size.x*0.33)
-                corners[0] += yd[ydIdx[i]];
-            else if(x > size.x*0.66)
-                corners[1] += yd[ydIdx[i]];
-          }
-          else if(y > size.y*0.66)
-          {
-            if(x < size.x*0.33)
-                corners[2] += yd[ydIdx[i]];
-            else if(x > size.x*0.66)
-                corners[3] += yd[ydIdx[i]];
-          }
+           mf.direction += {xd[i], yd[i]}; 
+           mf.magnitude += {abs(xd[i]), abs(yd[i])};
         }
 
-        for(int i=0; i<4; i++) std::cerr << corners[i].avg() << " ";
-        std::cerr << std::endl;
-        
         mf.direction /= static_cast<float>(p0.size()-offset);
         mf.magnitude /= static_cast<float>(p0.size()-offset);
-        //std::cerr << mf << std::endl;
         return mf;
     }
 
@@ -231,34 +217,16 @@ differencesExclude = 0.0;
         std::vector<std::vector<cv::DMatch>> matches;
         matcher->knnMatch(d0,d1,matches,2);
 
-        //cv::Mat mask = cv::Mat::zeros(buffer.current().gray.size(), buffer.current().gray.type()); 
-        //std::vector<cv::DMatch> gm;
-
         for(auto const &m : matches)
             if(m[0].distance < 0.7*m[1].distance) 
             {    
                 pp0.push_back(p0[m[0].queryIdx].pt);
                 pp1.push_back(p1[m[0].trainIdx].pt);
-                //gm.push_back(m[0]); 
-                //cv::line(mask,pp0.back(), pp1.back(), cv::Scalar(255,0,0), 2);
             }
         return analyzeMatches(pp0,pp1);        
-       
-        // cv::Mat img;
-        //cv::drawMatches(buffer.previous().gray, p0, buffer.current().gray, p1, gm, img, cv::Scalar::all(-1), cv::Scalar::all(-1), std::vector<char>(),cv::DrawMatchesFlags::NOT_DRAW_SINGLE_POINTS );
-        //add(buffer.current().gray, mask, img);
-        //cv::imwrite("./"+std::to_string(frameCounter)+".jpg", img);
-     
-    /*    float focal = 1000.0;
-        cv::Point2d pp(buffer.current().gray.cols/2.0, buffer.current().gray.rows/2.0);
-        //cv::Point2d pp(1,1);
-        auto em = cv::findEssentialMat(pp0, pp1, focal, pp, cv::RANSAC, 0.999, 1.0);
-        cv::Mat rotation, translation;
-        cv::recoverPose(em, pp0, pp1, rotation, translation, focal, pp);
-        return {static_cast<float>(translation.at<double>(0,0)), static_cast<float>(translation.at<double>(0,1))};*/
     }
-
-    void processCurrent(AnalysisMethod method=DENSE_FLOW)//FEATURE_MATCHING)
+    
+    void processCurrent(AnalysisMethod method=FEATURE_MATCHING)
     {
             MetaFrame mf;;
             switch (method)
@@ -276,6 +244,8 @@ differencesExclude = 0.0;
                 break;
             } 
             mf.bluriness = analyzeBluriness(buffer.current().gray);
+            if(frameCounter % 4 == 0)
+                mf.distortion = analyzeDistortion();
             mf.number = frameCounter;
             frames.push_back(mf);
             //TODO additional detection of scene change?
@@ -325,7 +295,7 @@ differencesExclude = 0.0;
         while(std::getline(ifs, line))
         {
             MetaFrame val;
-            while(linestream >> val.number >> val.direction.x >> val.direction.y >> val.magnitude.x >> val.magnitude.y >> val.bluriness)
+            while(linestream >> val.number >> val.direction.x >> val.direction.y >> val.magnitude.x >> val.magnitude.y >> val.bluriness >> val.distortion)
                 frames.push_back(val);
         }
     }
