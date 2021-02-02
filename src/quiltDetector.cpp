@@ -144,6 +144,7 @@ class Analyzer{
     float yBounds{1.5};
     bool gpuCompute{false};
     cv::Point2f previousDirection{0,0};
+    static constexpr int flowWinSize{15};
     static constexpr int QUILT_SIZE{10};
     enum AnalysisMethod {SPARSE_FLOW, DENSE_FLOW, FEATURE_MATCHING};
     AnalysisMethod method{SPARSE_FLOW}; 
@@ -157,6 +158,7 @@ class Analyzer{
         return dev[0];
     }
 
+//    cv::cuda::GpuMat gpuFlow;//{cv::Size{static_cast<int>(1920*distWinSize),static_cast<int>(1080*distWinSize)}, CV_32FC2};
     DistortionStats analyzeDistortion()
     {
         cv::Point2i size{buffer.current().gray.cols, buffer.current().gray.rows};
@@ -175,10 +177,23 @@ class Analyzer{
                 roi.x = (i%2)*(size.x-winSize.x);
                 roi.y = (i/2)*(size.y-winSize.y);
             }
-            cv::Mat croppedPrevious = buffer.previous().gray(roi);
-            cv::Mat croppedCurrent = buffer.current().gray(roi);
-            cv::Mat flow(croppedCurrent.size(), CV_32FC2);
-            cv::calcOpticalFlowFarneback(croppedPrevious, croppedCurrent, flow, 0.5, 3, 15, 3, 5, 1.2, 0);
+
+            cv::Mat flow;
+            if(gpuCompute)
+            { 
+                cv::cuda::GpuMat gpuCroppedPrevious = buffer.previous().gpuGray(roi);
+                cv::cuda::GpuMat gpuCroppedCurrent = buffer.current().gpuGray(roi);
+                cv::cuda::GpuMat gpuFlow;
+                cv::Ptr<cv::cuda::FarnebackOpticalFlow> dense = cv::cuda::FarnebackOpticalFlow::create(3, 0.5, false, 15, 3, 5, 1.2, 0); 
+                dense->calc(gpuCroppedPrevious, gpuCroppedCurrent, gpuFlow);
+                gpuFlow.download(flow);
+            }
+            else
+            {
+                cv::Mat croppedPrevious = buffer.previous().gray(roi);
+                cv::Mat croppedCurrent = buffer.current().gray(roi);
+                cv::calcOpticalFlowFarneback(croppedPrevious, croppedCurrent, flow, 0.5, 3, 15, 3, 5, 1.2, 0);
+            }
             cv::medianBlur(flow,flow,3);
             yDirs[i+1] = cv::mean(flow).val[1];
         }
@@ -248,12 +263,10 @@ class Analyzer{
             };
      
             SparseFlowGpu gpuFlow; 
-            cv::cuda::GpuMat gpuPrevious(buffer.previous().gray);
-            cv::cuda::GpuMat gpuCurrent(buffer.current().gray);
-            cv::Ptr<cv::cuda::CornersDetector> detector = cv::cuda::createGoodFeaturesToTrackDetector(gpuPrevious.type(), 100, 0.04, 7);
-            detector->detect(gpuPrevious, gpuFlow.p0);
-            cv::Ptr<cv::cuda::SparsePyrLKOpticalFlow> d_pyrLK_sparse = cv::cuda::SparsePyrLKOpticalFlow::create(cv::Size(15, 15), 2, 10);
-            d_pyrLK_sparse->calc(gpuPrevious, gpuCurrent, gpuFlow.p0, gpuFlow.p1, gpuFlow.status);
+            cv::Ptr<cv::cuda::CornersDetector> detector = cv::cuda::createGoodFeaturesToTrackDetector(buffer.previous().gpuGray.type(), 100, 0.04, 7);
+            detector->detect(buffer.previous().gpuGray, gpuFlow.p0);
+            cv::Ptr<cv::cuda::SparsePyrLKOpticalFlow> sparse = cv::cuda::SparsePyrLKOpticalFlow::create(cv::Size(flowWinSize, flowWinSize), 2, 10);
+            sparse->calc(buffer.previous().gpuGray, buffer.current().gpuGray, gpuFlow.p0, gpuFlow.p1, gpuFlow.status);
             
             gpuFlow.p0.download(flow.p0);
             gpuFlow.p1.download(flow.p1);
@@ -265,7 +278,7 @@ class Analyzer{
             flow.p0.clear(); flow.p1.clear(); flow.err.clear(); flow.status.clear();
             cv::goodFeaturesToTrack(buffer.previous().gray, flow.p0, 100, 0.3, 7, cv::Mat(), 7, false, 0.04);
             auto criteria = cv::TermCriteria(cv::TermCriteria::COUNT+cv::TermCriteria::EPS, 10, 0.03);
-            cv::calcOpticalFlowPyrLK(buffer.previous().gray, buffer.current().gray, flow.p0, flow.p1, flow.status, flow.err, cv::Size(15,15), 2, criteria);
+            cv::calcOpticalFlowPyrLK(buffer.previous().gray, buffer.current().gray, flow.p0, flow.p1, flow.status, flow.err, cv::Size(flowWinSize, flowWinSize), 2, criteria);
         }
 
         std::vector<cv::Point2f> pp0, pp1;
@@ -277,11 +290,23 @@ class Analyzer{
             }
         return analyzeMatches(pp0, pp1);        
     }
+   
     
+ 
     MetaFrame denseFlowOffset()
     {
         cv::Mat flow(buffer.current().gray.size(), CV_32FC2);
-        cv::calcOpticalFlowFarneback(buffer.previous().gray, buffer.current().gray ,flow, 0.5, 3, 15, 3, 5, 1.2, 0); 
+        if(gpuCompute)
+        {
+            cv::cuda::GpuMat gpuFlow(buffer.current().gray.size(), CV_32FC2);
+            cv::Ptr<cv::cuda::FarnebackOpticalFlow> dense = cv::cuda::FarnebackOpticalFlow::create(3, 0.5, false, 15, 3, 5, 1.2, 0); 
+            dense->calc(buffer.previous().gpuGray, buffer.current().gpuGray, gpuFlow);
+            gpuFlow.download(flow);
+        }
+        else
+        {
+            cv::calcOpticalFlowFarneback(buffer.previous().gray, buffer.current().gray ,flow, 0.5, 3, 15, 3, 5, 1.2, 0); 
+        }
         std::vector<cv::Point2f> d, dummy;
         for(int y=0; y<flow.rows; y++)
             for(int x=0; x<flow.cols; x++)
