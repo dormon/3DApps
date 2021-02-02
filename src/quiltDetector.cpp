@@ -1,6 +1,7 @@
 #include <iostream>
 #include <opencv2/calib3d.hpp>
 #include <opencv2/core.hpp>
+#include <opencv2/core/cuda.hpp>
 #include <opencv2/core/mat.hpp>
 #include <opencv2/core/types.hpp>
 #include <opencv2/features2d.hpp>
@@ -14,6 +15,9 @@
 #include <ArgumentViewer/ArgumentViewer.h>
 #include <opencv4/opencv2/opencv.hpp>
 #include <opencv4/opencv2/imgproc.hpp>
+#include <opencv2/cudaoptflow.hpp>
+#include <opencv2/cudaimgproc.hpp>
+#include <opencv2/cudaarithm.hpp>
 
 class Analyzer{
     private:
@@ -30,6 +34,7 @@ class Analyzer{
             counter++;
             return *this;
         }
+        void clear() {value=0; counter=0;}
     };
     class MetaFrame{
         public:
@@ -38,10 +43,11 @@ class Analyzer{
         cv::Point2f magnitude{0};
         float bluriness{0};
         float distortion{0};
-        
+        bool panPattern{0};       
+ 
         friend std::ostream& operator<<(std::ostream& os, const MetaFrame& mf)
         {
-            os << mf.number << " " << mf.direction.x << " " << mf.direction.y << " " << mf.magnitude.x << " " << mf.magnitude.y << " " << mf.bluriness << "  "<< mf.distortion;
+            os << mf.number << " " << mf.direction.x << " " << mf.direction.y << " " << mf.magnitude.x << " " << mf.magnitude.y << " " << mf.bluriness << "  " << mf.distortion << " " << mf.panPattern;
             return os;
         }
     };
@@ -50,10 +56,12 @@ class Analyzer{
         public:
         cv::Mat color;
         cv::Mat gray;
+        cv::cuda::GpuMat gpuGray;
         ~Frame()
         {
             color.release();
             gray.release();
+            gpuGray.release();
         }
     };
 
@@ -62,10 +70,12 @@ class Analyzer{
         static constexpr int BUFFER_SIZE{2};
         Frame frames[BUFFER_SIZE];
         int active{0};
+        bool gpuFrames{false};
         public:
         Frame& current() {return frames[active];}
         Frame& previous() {return frames[(active+1)%BUFFER_SIZE];}
-
+        Buffer(bool g) : gpuFrames{g} 
+        {}
         friend bool operator>>(cv::VideoCapture& capture, Buffer& buffer)
         {    
             buffer.previous().~Frame();
@@ -74,25 +84,69 @@ class Analyzer{
             if(buffer.current().color.empty())
                 return false;
             cv::cvtColor(buffer.current().color, buffer.current().gray, cv::COLOR_BGR2GRAY);
+            if(buffer.gpuFrames)
+                buffer.current().gpuGray = cv::cuda::GpuMat(buffer.current().gray);
             return true;
         }
     };
-   
+
+    class DistortionStats{
+        public:
+        float amount{0};
+        bool panPattern{false};
+    };
+
+    class ScoreCounter{
+        private:
+        Accumulator distortionAmount;
+        Accumulator panPattern;
+        Accumulator bluriness;
+        Accumulator shaking;
+        static constexpr float maxDistortion{2.5};
+        static constexpr float maxBluriness{100};
+        const float shakingLimit;
+        public:
+        ScoreCounter(float yb=1.5) : shakingLimit{yb}
+        {}
+        friend void operator<<(ScoreCounter& counter, MetaFrame& frame)
+        {   if(frame.number % DISTORTION_INTERVAL == 0)
+            {
+                //std::cerr << frame.distortion << " " << frame.panPattern << std::endl;
+                counter.distortionAmount += frame.distortion;
+                counter.panPattern += (frame.panPattern) ? 1.0 : 0.0;
+            }
+            counter.bluriness += frame.bluriness;
+            counter.shaking += frame.magnitude.y;
+        }
+        float getScore()
+        {
+            return (distortionAmount.avg()/maxDistortion)*0.2 + panPattern.avg()*0.5 + (bluriness.avg()/maxBluriness)*0.2 + (shaking.avg()/shakingLimit)*0.1;
+        }
+        void clear() {
+            distortionAmount.clear();
+            panPattern.clear();
+            bluriness.clear();
+            shaking.clear();
+        }
+    };
+ 
     using SequencesVector = std::vector<std::vector<int>>;
     std::vector<MetaFrame> frames;
     SequencesVector sequences;
     SequencesVector quilts;
     SequencesVector trimmedQuilts;
+    std::vector<float> sequencesScores;
     Buffer buffer;
     int frameCounter{0};
     float differencesExclude{0.3};
     float distWinSize{0.3};
-    float yBounds{0.1};
-    float xLimit{0.000001};
-    float blurThreshold{100.0};
+    float xLimit{0.00001};
+    float yBounds{1.5};
+    bool gpuCompute{false};
     cv::Point2f previousDirection{0,0};
-    static constexpr int QUILT_SIZE{45};
-    enum AnalysisMethod {SPARSE_FLOW, DENSE_FLOW, FEATURE_MATCHING}; 
+    static constexpr int QUILT_SIZE{10};
+    enum AnalysisMethod {SPARSE_FLOW, DENSE_FLOW, FEATURE_MATCHING};
+    AnalysisMethod method{SPARSE_FLOW}; 
 
     float analyzeBluriness(cv::Mat &frame)
     { 
@@ -102,7 +156,8 @@ class Analyzer{
         cv::meanStdDev(laplacian, mean, dev);
         return dev[0];
     }
-    float analyzeDistortion()
+
+    DistortionStats analyzeDistortion()
     {
         cv::Point2i size{buffer.current().gray.cols, buffer.current().gray.rows};
         cv::Point2i winSize{size*distWinSize};
@@ -130,7 +185,13 @@ class Analyzer{
         Accumulator acc;
         for(int i=1; i<5; i++)
             acc += abs(yDirs[i]);
-        return acc.avg()-abs(yDirs[0]);
+        bool isPan{false};
+        float pairs[2]{yDirs[1]*yDirs[4], yDirs[2]*yDirs[3]};
+        float pairsAdd[2]{yDirs[1]+yDirs[4], yDirs[2]+yDirs[3]};
+        constexpr float EPS{0.0001};
+        if( ((pairs[0] > 0 || abs(pairs[0]) < EPS) && (pairs[1] > 0 || abs(pairs[1]) < EPS)) && (pairsAdd[0]*pairsAdd[1] < 0))
+            isPan = true;
+        return {acc.avg()-abs(yDirs[0]), isPan};
     }
 
     MetaFrame analyzeMatches(std::vector<cv::Point2f> &p0, std::vector<cv::Point2f> &p1)
@@ -177,11 +238,36 @@ class Analyzer{
         };
 
         SparseFlow flow;
-        //might be used once per N frames, switchig the points at the end
-        flow.p0.clear(); flow.p1.clear(); flow.err.clear(); flow.status.clear();
-        cv::goodFeaturesToTrack(buffer.previous().gray, flow.p0, 100, 0.3, 7, cv::Mat(), 7, false, 0.04);
-        auto criteria = cv::TermCriteria(cv::TermCriteria::COUNT+cv::TermCriteria::EPS, 10, 0.03);
-        cv::calcOpticalFlowPyrLK(buffer.previous().gray, buffer.current().gray, flow.p0, flow.p1, flow.status, flow.err, cv::Size(15,15), 2, criteria);
+
+        if(gpuCompute)
+        {
+            class SparseFlowGpu{
+                public: 
+                cv::cuda::GpuMat p0, p1;
+                cv::cuda::GpuMat status;
+            };
+     
+            SparseFlowGpu gpuFlow; 
+            cv::cuda::GpuMat gpuPrevious(buffer.previous().gray);
+            cv::cuda::GpuMat gpuCurrent(buffer.current().gray);
+            cv::Ptr<cv::cuda::CornersDetector> detector = cv::cuda::createGoodFeaturesToTrackDetector(gpuPrevious.type(), 100, 0.04, 7);
+            detector->detect(gpuPrevious, gpuFlow.p0);
+            cv::Ptr<cv::cuda::SparsePyrLKOpticalFlow> d_pyrLK_sparse = cv::cuda::SparsePyrLKOpticalFlow::create(cv::Size(15, 15), 2, 10);
+            d_pyrLK_sparse->calc(gpuPrevious, gpuCurrent, gpuFlow.p0, gpuFlow.p1, gpuFlow.status);
+            
+            gpuFlow.p0.download(flow.p0);
+            gpuFlow.p1.download(flow.p1);
+            gpuFlow.status.download(flow.status);
+        }
+        else
+        {
+            //might be used once per N frames, switchig the points at the end
+            flow.p0.clear(); flow.p1.clear(); flow.err.clear(); flow.status.clear();
+            cv::goodFeaturesToTrack(buffer.previous().gray, flow.p0, 100, 0.3, 7, cv::Mat(), 7, false, 0.04);
+            auto criteria = cv::TermCriteria(cv::TermCriteria::COUNT+cv::TermCriteria::EPS, 10, 0.03);
+            cv::calcOpticalFlowPyrLK(buffer.previous().gray, buffer.current().gray, flow.p0, flow.p1, flow.status, flow.err, cv::Size(15,15), 2, criteria);
+        }
+
         std::vector<cv::Point2f> pp0, pp1;
         for(int i=0; i<flow.p0.size(); i++)
             if(flow.status[i])
@@ -226,7 +312,7 @@ class Analyzer{
         return analyzeMatches(pp0,pp1);        
     }
     
-    void processCurrent(AnalysisMethod method=FEATURE_MATCHING)
+    void processCurrent()
     {
             MetaFrame mf;;
             switch (method)
@@ -244,8 +330,12 @@ class Analyzer{
                 break;
             } 
             mf.bluriness = analyzeBluriness(buffer.current().gray);
-            if(frameCounter % 4 == 0)
-                mf.distortion = analyzeDistortion();
+            if(frameCounter % DISTORTION_INTERVAL == 0)
+            {
+                auto stats = analyzeDistortion();
+                mf.distortion = stats.amount;
+                mf.panPattern = stats.panPattern;
+            }
             mf.number = frameCounter;
             frames.push_back(mf);
             //TODO additional detection of scene change?
@@ -253,7 +343,9 @@ class Analyzer{
     }   
 
     public:
-    Analyzer()
+    constexpr static int DISTORTION_INTERVAL{5};
+
+    Analyzer(unsigned int m, unsigned int gpu, float yb=1.5) : yBounds{yb}, gpuCompute{static_cast<bool>(gpu)}, method{static_cast<AnalysisMethod>(m)}, buffer{Buffer(gpu)}
     {
     }
 
@@ -277,7 +369,8 @@ class Analyzer{
             ofs << std::endl;
         } 
     }
-    void serializeFrameVector(std::vector<MetaFrame> *frameVector, std::string outputFile)
+    template <class T>
+    void serializeFrameVector(std::vector<T> *frameVector, std::string outputFile)
     { 
         std::ofstream ofs(outputFile, std::ofstream::trunc);
         for(const auto& frame : *frameVector)
@@ -295,35 +388,46 @@ class Analyzer{
         while(std::getline(ifs, line))
         {
             MetaFrame val;
-            while(linestream >> val.number >> val.direction.x >> val.direction.y >> val.magnitude.x >> val.magnitude.y >> val.bluriness >> val.distortion)
+            while(linestream >> val.number >> val.direction.x >> val.direction.y >> val.magnitude.x >> val.magnitude.y >> val.bluriness >> val.distortion >> val.panPattern)
                 frames.push_back(val);
         }
     }
 
     void createSequences()
     {
+        ScoreCounter score(yBounds);
         sequences.emplace_back();
+        sequencesScores.emplace_back();
         for(int i=1; i<frames.size(); i++)
             if((abs(frames[i].direction.x) < xLimit) || (abs(frames[i].direction.y) > yBounds))
             //if((abs(frames[i].direction.x) < xLimit) || (abs(frames[i].direction.y) > yBounds) || ((frames[i].direction.x < 0) != (frames[i-1].direction.x < 0)))
             {
                 if(sequences.back().size() >= QUILT_SIZE)
+                {
                     sequences.emplace_back();
+                    sequencesScores.emplace_back();
+                }
                 else
+                {
                     sequences.back().clear();
+                    score.clear();
+                }
             }
             else
             {
                 sequences.back().push_back(i);
+                score << frames[i];
+                sequencesScores.back() = score.getScore();
             }
     } 
 
-    const SequencesVector& createQuilts(std::string outputFolder)
+    const SequencesVector& createQuilts(std::string outputFolder, std::string prefix)
     {
         //TODO blur error
         createSequences();
-        serializeFrameVector(&frames, outputFolder+"frames.txt");
-        serializeFrameVector(&sequences, outputFolder+"sequences.txt");
+        serializeFrameVector(&frames, outputFolder+prefix+"_frames.txt");
+        serializeFrameVector(&sequences, outputFolder+prefix+"_sequences.txt");
+        serializeFrameVector(&sequencesScores, outputFolder+prefix+"_sequenceScores.txt");
         quilts.emplace_back();
 
         for(const auto& sequence : sequences)
@@ -354,7 +458,7 @@ class Analyzer{
                 }
             }
         }
-        serializeFrameVector(&quilts, outputFolder+"quilts.txt");
+        serializeFrameVector(&quilts, outputFolder+prefix+"_quilts.txt");
         //TODO limit for extra long sequences
         for(const auto& quilt : quilts)
             if(quilt.size() >= QUILT_SIZE)
@@ -369,22 +473,23 @@ class Analyzer{
                     trimmedQuilts.back().pop_back();
             }
  
-        serializeFrameVector(&trimmedQuilts, outputFolder+"trimmedQuilts.txt");
+        serializeFrameVector(&trimmedQuilts, outputFolder+prefix+"_trimmedQuilts.txt");
         return trimmedQuilts;
     } 
 
     void printResults()
     {
-        for(const auto& sequence : sequences)
-            if(!sequence.empty())
+        Accumulator a;
+        for(int i=0; i<sequences.size(); i++)
+            if(sequences[i].size() >= QUILT_SIZE)
             {
-                float bluriness{0};
-                for(const auto& frame : sequence)
-                    bluriness += frames[frame].bluriness;
-                bluriness /= sequence.size();
-
-                std::cerr << std::endl << sequence.front() << "-" << sequence.back() << " sharp: " << bluriness; 
+             a+=sequencesScores[i];
+             std::cout << std::endl << sequences[i].front() << "-" << sequences[i].back() <<  " : " << sequencesScores[i];
             }
+        std::cout << std::endl <<  a.avg();
+       /*     if(!sequences[i].empty())
+                std::cout << std::endl << sequences[i].front() << "-" << sequences[i].back() <<  " : " << sequencesScores[i];
+        //std::cout << std::endl << "^^^^^^^^^^^^^" <<  std::endl << "start_frame-end_frame : score" << std::endl;*/
     }
 };
 
@@ -393,8 +498,11 @@ void process(int argc, char **argv)
     auto args = argumentViewer::ArgumentViewer(argc,argv);
     auto inputFile =  args.gets("-i","","input video file");  
     auto outputFolder =  args.gets("-o","","output folder");
-    auto inputFrames =  args.gets("-s","","input pre-analyzed file");
+    auto yBounds = args.getf32("-y", 1.5,"allowed amount of vertical movement");
+    auto inputFrames =  args.gets("-f","","input pre-analyzed frames file");
     bool exportFrames = args.isPresent("-e","export quilts as image files");
+    auto method = args.getu32("-m", 0, "method in the first phase of detection (0-Lucas-Kanade, 1-Farneback, 2-ORB)");
+    auto gpu = args.getu32("-g", 0, "0-cpu flow, 1-gpu flow computations");
     auto const showHelp = args.isPresent("-h","shows help");
     if (showHelp || !args.validate()) {
         std::cerr << args.toStr();
@@ -405,16 +513,16 @@ void process(int argc, char **argv)
 
     if (outputFolder.back() != '/')
         outputFolder.push_back('/');
-    std::filesystem::remove_all(outputFolder); 
-    std::filesystem::create_directory(outputFolder);
+    if(!std::filesystem::exists(outputFolder))
+        std::filesystem::create_directory(outputFolder);
 
     cv::VideoCapture capture(inputFile);
-    Analyzer analyzer;
+    Analyzer analyzer(method, gpu);
     if(inputFrames.empty())
         while(capture >> analyzer);
     else
         analyzer.loadFrames(inputFrames);
-    auto quilts = analyzer.createQuilts(outputFolder);
+    auto quilts = analyzer.createQuilts(outputFolder, std::filesystem::path(inputFile).stem());
     analyzer.printResults();
 
     if(exportFrames)
