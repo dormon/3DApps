@@ -217,6 +217,21 @@ class Analyzer{
         return {acc.avg()-abs(yDirs[0]), isPan};
     }
 
+    MetaFrame analyzeMatches(cv::Mat flow)
+    { 
+        MetaFrame mf;
+        for(int y=0; y<flow.rows; y++)
+            for(int x=0; x<flow.cols; x++)
+            {
+               mf.direction += {flow.at<cv::Vec2f>(y,x)[0], flow.at<cv::Vec2f>(y,x)[1]};
+               mf.magnitude += {abs(flow.at<cv::Vec2f>(y,x)[0]), abs(flow.at<cv::Vec2f>(y,x)[1])};
+            }
+        float total = flow.rows*flow.cols;
+        mf.direction /= total;
+        mf.magnitude /= total;
+        return mf;
+    }
+
     MetaFrame analyzeMatches(std::vector<cv::Point2f> &p0, std::vector<cv::Point2f> &p1)
     {
         std::vector<float> xd, yd;
@@ -314,11 +329,7 @@ class Analyzer{
             cv::calcOpticalFlowFarneback(buffer.previous().gray, buffer.current().gray ,flow, 0.5, 3, 15, 3, 5, 1.2, 0); 
         }
         flow.copyTo(denseFlowCache);
-        std::vector<cv::Point2f> d, dummy;
-        for(int y=0; y<flow.rows; y++)
-            for(int x=0; x<flow.cols; x++)
-                d.push_back({flow.at<cv::Vec2f>(y,x)[0], flow.at<cv::Vec2f>(y,x)[1]});
-        return analyzeMatches(d, dummy);
+        return analyzeMatches(flow);
     }
 
     MetaFrame featureMatchingOffset()
