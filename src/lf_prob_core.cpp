@@ -34,88 +34,64 @@ class Holo: public simple3DApp::Application{
   virtual void                mouseMove(SDL_Event const& event) override;
 };
 
-void createTrianglesProgram(vars::Vars&vars){
+void loadColorTexture(vars::Vars&vars){
+  if(notChanged(vars,"all",__FUNCTION__,{"quiltFileName"}))return;
+  fipImage colorImg;
+  colorImg.load(vars.getString("quiltFileName").c_str());
+  auto const width   = colorImg.getWidth();
+  auto const height  = colorImg.getHeight();
+  auto const BPP     = colorImg.getBitsPerPixel();
+  auto const imgType = colorImg.getImageType();
+  auto const data    = colorImg.accessPixels();
+
+  std::cerr << "color BPP : " << BPP << std::endl;
+  std::cerr << "color type: " << imgType << std::endl;
+
+  GLenum format;
+  GLenum type;
+  if(imgType == FIT_BITMAP){
+    std::cerr << "color imgType: FIT_BITMAP" << std::endl;
+    if(BPP == 24)format = GL_BGR;
+    if(BPP == 32)format = GL_BGRA;
+    type = GL_UNSIGNED_BYTE;
+  }
+  if(imgType == FIT_RGBAF){
+    std::cerr << "color imgType: FIT_RGBAF" << std::endl;
+    if(BPP == 32*4)format = GL_RGBA;
+    if(BPP == 32*3)format = GL_RGB;
+    type = GL_FLOAT;
+  }
+  if(imgType == FIT_RGBA16){
+    std::cerr << "color imgType: FIT_RGBA16" << std::endl;
+    if(BPP == 48)format = GL_RGB ;
+    if(BPP == 64)format = GL_RGBA;
+    type = GL_UNSIGNED_SHORT;
+  }
+
+  auto colorTex = vars.reCreate<ge::gl::Texture>(
+      "quiltTex",GL_TEXTURE_2D,GL_RGB8,1,width,height);
+  //ge::gl::glPixelStorei(GL_UNPACK_ROW_LENGTH,width);
+  //ge::gl::glPixelStorei(GL_UNPACK_ALIGNMENT ,1    );
+  ge::gl::glTextureSubImage2D(colorTex->getId(),0,0,0,width,height,format,type,data);
+}
+
+void prepareTextureMethod(vars::Vars&vars){
   if(notChanged(vars,"all",__FUNCTION__,{}))return;
 
   std::string const vsSrc = R".(
+  out vec2 vCoord;
   void main(){
+    vCoord = vec2(gl_VertexID&1u,gl_VertexID>>1u);
+    gl_Position = vec4(vCoord*2.f-1.f,0,1);
   }
-  ).";
-
-  std::string const gsSrc = R".(
-
-  layout(points)in;
-  layout(triangle_strip,max_vertices=30)out;
-
-  uniform mat4 projection;
-  uniform mat4 view;
-  out vec3 gPosition;
-  out vec3 gNormal;
-  out vec4 gColor;
-
-  void genTriangle(vec3 a,vec3 b,vec3 c,vec3 color){
-    vec3 n = normalize(cross(b-a,c-a));
-
-    gPosition = a;
-    gNormal = n;
-    gColor = vec4(color,1);
-    gl_Position = projection*view*vec4(a,1);
-    EmitVertex();
-
-    gPosition = b;
-    gNormal = n;
-    gColor = vec4(color,1);
-    gl_Position = projection*view*vec4(b,1);
-    EmitVertex();
-
-    gPosition = c;
-    gNormal = n;
-    gColor = vec4(color,1);
-    gl_Position = projection*view*vec4(c,1);
-    EmitVertex();
-
-    EndPrimitive();
-  }
-
-  void main(){
-    genTriangle(vec3(-1,0,-1),vec3(+1,0,-1),vec3(+1,+1,-1),vec3(1,0,0));
-    genTriangle(vec3(-3,0,-2),vec3(+3,0,-2),vec3(+3,+3,-2),vec3(0,1,0));
-    genTriangle(vec3(-10,0,-4),vec3(+10,0,-4),vec3(+10,+10,-4),vec3(0,0,1));
-    //gColor = vec4(0,0,0,1);
-    //gl_Position = vec4(-1,-1,0,1);EmitVertex();
-    //gl_Position = vec4(4,-1,0,1);EmitVertex();
-    //gl_Position = vec4(-1,4,0,1);EmitVertex();
-    //EndPrimitive();
-  }
-
   ).";
 
   std::string const fsSrc = R".(
   out vec4 fColor;
-  in vec4 gColor;
-  in vec3 gPosition;
-  in vec3 gNormal;
-  uniform mat4 view     = mat4(1);
-  uniform vec3 lightPos = vec3(0,0,10);
-  uniform uvec2 size = uvec2(1024,512);
-
+  in vec2 vCoord;
+  layout(binding=0)uniform sampler2D tex;
   void main(){
-    vec3 cameraPos = vec3(inverse(view)*vec4(0,0,0,1));
-    vec3 N = normalize(gNormal);
-    vec3 L = normalize(lightPos - gPosition);
-    vec3 V = normalize(cameraPos - gPosition);
-    vec3 R = -reflect(L,N);
-    float df = abs(dot(N,L));
-    float sf = pow(abs(dot(R,V)),100);
-    fColor = gColor * df + vec4(sf);
-    uvec2 pixSize = uvec2(1,1);
-    //if(any(greaterThanEqual(gl_FragCoord.xy,size)))discard;
-    uvec2 coord = uvec2(gl_FragCoord.xy/size);
-    uint offset = 0;//coord.x + coord.y*5;
-
-    //if((uint(gl_FragCoord.x)%size.x) >= 100+offset && (uint(gl_FragCoord.y)%size.y) >= 100 && (uint(gl_FragCoord.x)%size.x) < 100+pixSize.x+offset &&(uint(gl_FragCoord.y)%size.y) < 100+pixSize.y)
-    //  fColor = vec4(0,1,0,1);
-//    fColor = gColor;
+    fColor = vec4(texture(tex,vCoord));
   }
   ).";
 
@@ -123,34 +99,28 @@ void createTrianglesProgram(vars::Vars&vars){
       "#version 450\n",
       vsSrc
       );
-  auto gs = std::make_shared<ge::gl::Shader>(GL_GEOMETRY_SHADER,
-      "#version 450\n",
-      gsSrc
-      );
   auto fs = std::make_shared<ge::gl::Shader>(GL_FRAGMENT_SHADER,
       "#version 450\n",
       fsSrc
       );
-  vars.reCreate<ge::gl::Program>("trianglesProgram",vs,gs,fs);
+  vars.reCreate<ge::gl::Program>("textureProgram",vs,fs);
 
-}
+  vars.reCreate<ge::gl::VertexArray>("textureVAO");
 
-void drawTriangles(vars::Vars&vars,glm::mat4 const&view,glm::mat4 const&proj){
-  createTrianglesProgram(vars);
-  ge::gl::glEnable(GL_DEPTH_TEST);
-  vars.get<ge::gl::Program>("trianglesProgram")
-    ->setMatrix4fv("view"      ,glm::value_ptr(view))
-    ->setMatrix4fv("projection",glm::value_ptr(proj))
-    ->use();
-  ge::gl::glDrawArrays(GL_POINTS,0,1);
+  loadColorTexture(vars);
 }
 
 void drawTriangles(vars::Vars&vars){
-  auto view = vars.getReinterpret<basicCamera::CameraTransform>("view");
-  auto projection = vars.get<basicCamera::PerspectiveCamera>("projection");
-  drawTriangles(vars,view->getView(),projection->getProjection());
+  prepareTextureMethod(vars);
+  vars.get<ge::gl::Program>("textureProgram")
+    ->use();
+  vars.get<ge::gl::VertexArray>("textureVAO")->bind();
+  vars.get<ge::gl::Texture>("quiltTex")->bind(0);
+  ge::gl::glDrawArrays(GL_TRIANGLE_STRIP,0,4);
+  vars.get<ge::gl::VertexArray>("textureVAO")->unbind();
 }
 
+#if 0
 
 void createView(vars::Vars&vars){
   if(notChanged(vars,"all",__FUNCTION__,{"useOrbitCamera"}))return;
@@ -240,46 +210,6 @@ void draw3DCursor(vars::Vars&vars){
   draw3DCursor(vars,view->getView(),projection->getProjection());
 }
 
-void loadColorTexture(vars::Vars&vars){
-  if(notChanged(vars,"all",__FUNCTION__,{"quiltFileName"}))return;
-  fipImage colorImg;
-  colorImg.load(vars.getString("quiltFileName").c_str());
-  auto const width   = colorImg.getWidth();
-  auto const height  = colorImg.getHeight();
-  auto const BPP     = colorImg.getBitsPerPixel();
-  auto const imgType = colorImg.getImageType();
-  auto const data    = colorImg.accessPixels();
-
-  std::cerr << "color BPP : " << BPP << std::endl;
-  std::cerr << "color type: " << imgType << std::endl;
-
-  GLenum format;
-  GLenum type;
-  if(imgType == FIT_BITMAP){
-    std::cerr << "color imgType: FIT_BITMAP" << std::endl;
-    if(BPP == 24)format = GL_BGR;
-    if(BPP == 32)format = GL_BGRA;
-    type = GL_UNSIGNED_BYTE;
-  }
-  if(imgType == FIT_RGBAF){
-    std::cerr << "color imgType: FIT_RGBAF" << std::endl;
-    if(BPP == 32*4)format = GL_RGBA;
-    if(BPP == 32*3)format = GL_RGB;
-    type = GL_FLOAT;
-  }
-  if(imgType == FIT_RGBA16){
-    std::cerr << "color imgType: FIT_RGBA16" << std::endl;
-    if(BPP == 48)format = GL_RGB ;
-    if(BPP == 64)format = GL_RGBA;
-    type = GL_UNSIGNED_SHORT;
-  }
-
-  auto colorTex = vars.reCreate<ge::gl::Texture>(
-      "quiltTex",GL_TEXTURE_2D,GL_RGB8,1,width,height);
-  //ge::gl::glPixelStorei(GL_UNPACK_ROW_LENGTH,width);
-  //ge::gl::glPixelStorei(GL_UNPACK_ALIGNMENT ,1    );
-  ge::gl::glTextureSubImage2D(colorTex->getId(),0,0,0,width,height,format,type,data);
-}
 
 
 void loadTextures(vars::Vars&vars){
@@ -512,73 +442,77 @@ void drawHolo(vars::Vars&vars){
 
   ge::gl::glDrawArrays(GL_TRIANGLE_STRIP,0,4);
 }
+#endif
 
 void Holo::draw(){
   ge::gl::glClear(GL_DEPTH_BUFFER_BIT);
-  createCamera(vars);
-  basicCamera::CameraTransform*view;
+  //createCamera(vars);
+  //basicCamera::CameraTransform*view;
 
-  if(vars.getBool("useOrbitCamera"))
-    view = vars.getReinterpret<basicCamera::CameraTransform>("view");
-  else{
-    auto freeView = vars.get<basicCamera::FreeLookCamera>("view");
-    float freeCameraSpeed = 0.01f;
-    auto keys = vars.get<std::map<SDL_Keycode, bool>>("input.keyDown");
-    for (int a = 0; a < 3; ++a)
-      freeView->move(a, float((*keys)["d s"[a]] - (*keys)["acw"[a]]) *
-                            freeCameraSpeed);
-    view = freeView;
-  }
+  //if(vars.getBool("useOrbitCamera"))
+  //  view = vars.getReinterpret<basicCamera::CameraTransform>("view");
+  //else{
+  //  auto freeView = vars.get<basicCamera::FreeLookCamera>("view");
+  //  float freeCameraSpeed = 0.01f;
+  //  auto keys = vars.get<std::map<SDL_Keycode, bool>>("input.keyDown");
+  //  for (int a = 0; a < 3; ++a)
+  //    freeView->move(a, float((*keys)["d s"[a]] - (*keys)["acw"[a]]) *
+  //                          freeCameraSpeed);
+  //  view = freeView;
+  //}
 
 
   ge::gl::glClearColor(0.1f,0.1f,0.1f,1.f);
   ge::gl::glClear(GL_COLOR_BUFFER_BIT);
 
-  vars.get<ge::gl::VertexArray>("emptyVao")->bind();
+  drawTriangles(vars);
 
-  auto drawScene = [&](glm::mat4 const&view,glm::mat4 const&proj){
-    vars.get<ge::gl::VertexArray>("emptyVao")->bind();
-    drawGrid(vars,view,proj);
-    vars.get<ge::gl::VertexArray>("emptyVao")->unbind();
-    //vars.get<ge::gl::VertexArray>("emptyVao")->bind();
-    //drawTriangles(vars,view,proj);
-    //vars.get<ge::gl::VertexArray>("emptyVao")->bind();
-    drawBunny(vars,view,proj);
-    if(vars.addOrGetBool("quiltRender.drawCursor",true)){
-      vars.get<ge::gl::VertexArray>("emptyVao")->bind();
-      draw3DCursor(vars,view,proj);
-      vars.get<ge::gl::VertexArray>("emptyVao")->unbind();
-    }
-  };
-  auto drawSceneSimple = [&](){
-    auto view = vars.getReinterpret<basicCamera::CameraTransform>("view")->getView();
-    auto proj = vars.getReinterpret<basicCamera::CameraProjection>("projection")->getProjection();
-    drawScene(view,proj);
-  };
-  if(vars.getBool("renderScene")){
-    drawSceneSimple();
-  }
-  else{
-    auto quilt = vars.get<Quilt>("quilt");
-    vars.get<ge::gl::VertexArray>("emptyVao")->bind();
-    quilt->draw(
-        drawScene,
-        vars.getReinterpret<basicCamera::CameraTransform>("view")->getView(),
-        vars.getReinterpret<basicCamera::CameraProjection>("projection")->getProjection()
-        );
-    vars.get<ge::gl::VertexArray>("emptyVao")->unbind();
-    vars.get<ge::gl::VertexArray>("emptyVao")->bind();
-    drawHolo(vars);
-    vars.get<ge::gl::VertexArray>("emptyVao")->unbind();
-  }
+  //vars.get<ge::gl::VertexArray>("emptyVao")->bind();
 
-  vars.get<ge::gl::VertexArray>("emptyVao")->unbind();
+  //auto drawScene = [&](glm::mat4 const&view,glm::mat4 const&proj){
+  //  vars.get<ge::gl::VertexArray>("emptyVao")->bind();
+  //  drawGrid(vars,view,proj);
+  //  vars.get<ge::gl::VertexArray>("emptyVao")->unbind();
+  //  //vars.get<ge::gl::VertexArray>("emptyVao")->bind();
+  //  //drawTriangles(vars,view,proj);
+  //  //vars.get<ge::gl::VertexArray>("emptyVao")->bind();
+  //  drawBunny(vars,view,proj);
+  //  if(vars.addOrGetBool("quiltRender.drawCursor",true)){
+  //    vars.get<ge::gl::VertexArray>("emptyVao")->bind();
+  //    draw3DCursor(vars,view,proj);
+  //    vars.get<ge::gl::VertexArray>("emptyVao")->unbind();
+  //  }
+  //};
+  //auto drawSceneSimple = [&](){
+  //  auto view = vars.getReinterpret<basicCamera::CameraTransform>("view")->getView();
+  //  auto proj = vars.getReinterpret<basicCamera::CameraProjection>("projection")->getProjection();
+  //  drawScene(view,proj);
+  //};
+  //if(vars.getBool("renderScene")){
+  //  drawSceneSimple();
+  //}
+  //else{
+  //  auto quilt = vars.get<Quilt>("quilt");
+  //  vars.get<ge::gl::VertexArray>("emptyVao")->bind();
+  //  quilt->draw(
+  //      drawScene,
+  //      vars.getReinterpret<basicCamera::CameraTransform>("view")->getView(),
+  //      vars.getReinterpret<basicCamera::CameraProjection>("projection")->getProjection()
+  //      );
+  //  vars.get<ge::gl::VertexArray>("emptyVao")->unbind();
+  //  vars.get<ge::gl::VertexArray>("emptyVao")->bind();
+  //  drawHolo(vars);
+  //  vars.get<ge::gl::VertexArray>("emptyVao")->unbind();
+  //}
+
+  //vars.get<ge::gl::VertexArray>("emptyVao")->unbind();
 
 
   drawImguiVars(vars);
 
   swap();
 }
+
 
 void Holo::init(){
   auto args = vars.add<argumentViewer::ArgumentViewer>("args",argc,argv);
@@ -590,55 +524,55 @@ void Holo::init(){
   }
 
   vars.addString("quiltFileName",quiltFile);
-  
-  vars.add<ge::gl::VertexArray>("emptyVao");
+  //
+  //vars.add<ge::gl::VertexArray>("emptyVao");
   vars.add<glm::uvec2>("windowSize",window->getWidth(),window->getHeight());
-  vars.addFloat("input.sensitivity",0.01f);
-  vars.addFloat("camera.fovy",glm::half_pi<float>());
-  vars.addFloat("camera.near",.1f);
-  vars.addFloat("camera.far",1000.f);
+  //vars.addFloat("input.sensitivity",0.01f);
+  //vars.addFloat("camera.fovy",glm::half_pi<float>());
+  //vars.addFloat("camera.near",.1f);
+  //vars.addFloat("camera.far",1000.f);
   vars.add<std::map<SDL_Keycode, bool>>("input.keyDown");
-  vars.addBool("useOrbitCamera",false);
+  //vars.addBool("useOrbitCamera",false);
 
-  vars.addFloat      ("quiltView.pitch"      ,354.42108f);
-  vars.addFloat      ("quiltView.tilt"       ,-0.1153f);
-  vars.addFloat      ("quiltView.center"     ,0.04239f);
-  vars.addFloat      ("quiltView.invView"    ,1.00f);
-  vars.addFloat      ("quiltView.subp"       ,0.00013f);
-  vars.addInt32      ("quiltView.ri"         ,0);
-  vars.addInt32      ("quiltView.bi"         ,2);
-  vars.add<glm::vec4>("quiltView.tile"       ,5.00f, 9.00f, 45.00f, 45.00f);
-  vars.add<glm::vec4>("quiltView.viewPortion",0.99976f, 0.99976f, 0.00f, 0.00f);
-  vars.addFloat      ("quiltView.focus"      ,0.00f);
-  addVarsLimitsF(vars,"quiltView.focus",-1,+1,0.001f);
-  vars.addBool ("showQuilt");
-  vars.addBool ("renderQuilt");
-  vars.addBool ("renderScene",false);
-  vars.addBool ("showAsSequence",false);
-  vars.addBool ("drawOnlyOneImage",false);
-  vars.addUint32("selectedView",0);
-  addVarsLimitsU(vars,"selectedView",0,44);
-  addVarsLimitsF(vars,"quiltView.tilt",-10,10,0.01);
+  //vars.addFloat      ("quiltView.pitch"      ,354.42108f);
+  //vars.addFloat      ("quiltView.tilt"       ,-0.1153f);
+  //vars.addFloat      ("quiltView.center"     ,0.04239f);
+  //vars.addFloat      ("quiltView.invView"    ,1.00f);
+  //vars.addFloat      ("quiltView.subp"       ,0.00013f);
+  //vars.addInt32      ("quiltView.ri"         ,0);
+  //vars.addInt32      ("quiltView.bi"         ,2);
+  //vars.add<glm::vec4>("quiltView.tile"       ,5.00f, 9.00f, 45.00f, 45.00f);
+  //vars.add<glm::vec4>("quiltView.viewPortion",0.99976f, 0.99976f, 0.00f, 0.00f);
+  //vars.addFloat      ("quiltView.focus"      ,0.00f);
+  //addVarsLimitsF(vars,"quiltView.focus",-1,+1,0.001f);
+  //vars.addBool ("showQuilt");
+  //vars.addBool ("renderQuilt");
+  //vars.addBool ("renderScene",false);
+  //vars.addBool ("showAsSequence",false);
+  //vars.addBool ("drawOnlyOneImage",false);
+  //vars.addUint32("selectedView",0);
+  //addVarsLimitsU(vars,"selectedView",0,44);
+  //addVarsLimitsF(vars,"quiltView.tilt",-10,10,0.01);
 
-  vars.addFloat("quiltRender.size",5.f);
-  vars.addFloat("quiltRender.fov",90.f);
-  vars.addFloat("quiltRender.viewCone",10.f);
-  vars.addFloat("quiltRender.texScale",1.64f);
-  addVarsLimitsF(vars,"quiltRender.texScale",0.1f,5,0.01f);
-  vars.addFloat("quiltRender.texScaleAspect",0.745f);
-  addVarsLimitsF(vars,"quiltRender.texScaleAspect",0.1f,10,0.01f);
-  
+  //vars.addFloat("quiltRender.size",5.f);
+  //vars.addFloat("quiltRender.fov",90.f);
+  //vars.addFloat("quiltRender.viewCone",10.f);
+  //vars.addFloat("quiltRender.texScale",1.64f);
+  //addVarsLimitsF(vars,"quiltRender.texScale",0.1f,5,0.01f);
+  //vars.addFloat("quiltRender.texScaleAspect",0.745f);
+  //addVarsLimitsF(vars,"quiltRender.texScaleAspect",0.1f,10,0.01f);
+  //
 
-  vars.add<Quilt>("quilt",vars);
+  //vars.add<Quilt>("quilt",vars);
 
-  createCamera(vars);
-  
-  GLint dims[4];
-  ge::gl::glGetIntegerv(GL_MAX_VIEWPORT_DIMS, dims);
-  std::cerr << "maxFramebuffer: " << dims[0] << " x " << dims[1] << std::endl;
+  //createCamera(vars);
+  //
+  //GLint dims[4];
+  //ge::gl::glGetIntegerv(GL_MAX_VIEWPORT_DIMS, dims);
+  //std::cerr << "maxFramebuffer: " << dims[0] << " x " << dims[1] << std::endl;
 
-  ImGui::GetStyle().ScaleAllSizes(4.f);
-  ImGui::GetIO().FontGlobalScale = 4.f;
+  //ImGui::GetStyle().ScaleAllSizes(4.f);
+  //ImGui::GetIO().FontGlobalScale = 4.f;
 }
 
 void Holo::key(SDL_Event const& event, bool DOWN) {
@@ -654,44 +588,43 @@ void Holo::key(SDL_Event const& event, bool DOWN) {
 }
 
 void Holo::mouseMove(SDL_Event const& e) {
-  if(vars.getBool("useOrbitCamera")){
-    auto sensitivity = vars.getFloat("input.sensitivity");
-    auto orbitCamera =
-        vars.getReinterpret<basicCamera::OrbitCamera>("view");
-    auto const windowSize     = vars.get<glm::uvec2>("windowSize");
-    auto const orbitZoomSpeed = 0.1f;//vars.getFloat("args.camera.orbitZoomSpeed");
-    auto const xrel           = static_cast<float>(e.motion.xrel);
-    auto const yrel           = static_cast<float>(e.motion.yrel);
-    auto const mState         = e.motion.state;
-    if (mState & SDL_BUTTON_LMASK) {
-      if (orbitCamera) {
-        orbitCamera->addXAngle(yrel * sensitivity);
-        orbitCamera->addYAngle(xrel * sensitivity);
-      }
-    }
-    if (mState & SDL_BUTTON_RMASK) {
-      if (orbitCamera) orbitCamera->addDistance(yrel * orbitZoomSpeed);
-    }
-    if (mState & SDL_BUTTON_MMASK) {
-      orbitCamera->addXPosition(+orbitCamera->getDistance() * xrel /
-                                float(windowSize->x) * 2.f);
-      orbitCamera->addYPosition(-orbitCamera->getDistance() * yrel /
-                                float(windowSize->y) * 2.f);
-    }
-  }else{
-    auto const xrel           = static_cast<float>(e.motion.xrel);
-    auto const yrel           = static_cast<float>(e.motion.yrel);
-    auto view = vars.get<basicCamera::FreeLookCamera>("view");
-    auto sensitivity = vars.getFloat("input.sensitivity");
-    if (e.motion.state & SDL_BUTTON_LMASK) {
-      view->setAngle(
-          1, view->getAngle(1) + xrel * sensitivity);
-      view->setAngle(
-          0, view->getAngle(0) + yrel * sensitivity);
-    }
-  }
+  //if(vars.getBool("useOrbitCamera")){
+  //  auto sensitivity = vars.getFloat("input.sensitivity");
+  //  auto orbitCamera =
+  //      vars.getReinterpret<basicCamera::OrbitCamera>("view");
+  //  auto const windowSize     = vars.get<glm::uvec2>("windowSize");
+  //  auto const orbitZoomSpeed = 0.1f;//vars.getFloat("args.camera.orbitZoomSpeed");
+  //  auto const xrel           = static_cast<float>(e.motion.xrel);
+  //  auto const yrel           = static_cast<float>(e.motion.yrel);
+  //  auto const mState         = e.motion.state;
+  //  if (mState & SDL_BUTTON_LMASK) {
+  //    if (orbitCamera) {
+  //      orbitCamera->addXAngle(yrel * sensitivity);
+  //      orbitCamera->addYAngle(xrel * sensitivity);
+  //    }
+  //  }
+  //  if (mState & SDL_BUTTON_RMASK) {
+  //    if (orbitCamera) orbitCamera->addDistance(yrel * orbitZoomSpeed);
+  //  }
+  //  if (mState & SDL_BUTTON_MMASK) {
+  //    orbitCamera->addXPosition(+orbitCamera->getDistance() * xrel /
+  //                              float(windowSize->x) * 2.f);
+  //    orbitCamera->addYPosition(-orbitCamera->getDistance() * yrel /
+  //                              float(windowSize->y) * 2.f);
+  //  }
+  //}else{
+  //  auto const xrel           = static_cast<float>(e.motion.xrel);
+  //  auto const yrel           = static_cast<float>(e.motion.yrel);
+  //  auto view = vars.get<basicCamera::FreeLookCamera>("view");
+  //  auto sensitivity = vars.getFloat("input.sensitivity");
+  //  if (e.motion.state & SDL_BUTTON_LMASK) {
+  //    view->setAngle(
+  //        1, view->getAngle(1) + xrel * sensitivity);
+  //    view->setAngle(
+  //        0, view->getAngle(0) + yrel * sensitivity);
+  //  }
+  //}
 }
-
 
 void Holo::resize(uint32_t x,uint32_t y){
   auto windowSize = vars.get<glm::uvec2>("windowSize");
