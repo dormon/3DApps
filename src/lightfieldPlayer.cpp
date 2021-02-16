@@ -25,6 +25,7 @@ constexpr bool TEXTURE_STATISTICS{0};
 constexpr int WARP_SIZE{32};
 constexpr int LOCAL_SIZE_X{WARP_SIZE};
 constexpr int LOCAL_SIZE_Y{8};
+constexpr int BLOCK_SIZE{32};
 
 class LightFields: public simple3DApp::Application
 {
@@ -47,6 +48,8 @@ void addProgram(vars::Vars&vars, std::string name, std::string code1, std::strin
     std::map<std::string, std::string> substitutions ={
         {"LSX",std::to_string(LOCAL_SIZE_X)},
         {"LSY",std::to_string(LOCAL_SIZE_Y)},
+        {"BSY",std::to_string(BLOCK_SIZE)},
+        {"BSX",std::to_string(BLOCK_SIZE)},
         {"GSX",std::to_string(vars.get<glm::ivec2>("gridSize")->x)}
     };
     for(const auto& [key, value] : substitutions)
@@ -117,6 +120,7 @@ void createProgram(vars::Vars&vars)
     layout(bindless_image)uniform layout(r8ui) readonly uimage2D focusMap;
     layout(local_size_x=LSX*LSY)in;
     layout(bindless_image)uniform layout(rgba8) writeonly image2D lf;
+    const ivec2 size = imageSize(lf);
     TEXTURE_CHECK_INIT
 
     uniform int showFocusMap;
@@ -131,7 +135,9 @@ void createProgram(vars::Vars&vars)
     vec4 lfTexture(int i, vec2 coord)
     {
         TEXTURE_CHECK_EXEC
-        return texture(sampler2D(lfTextures[i]),coord);
+        //return texture(sampler2D(lfTextures[i]),coord); //this causes offset in the final image
+        return texelFetch(sampler2D(lfTextures[i]),ivec2(round(coord*vec2(size))),0);
+        //return texelFetch(sampler2D(lfTextures[i]),clamp(ivec2(round(coord*vec2(size))),ivec2(0,0), size),0);
     }
 
     void loadPixels(in ivec2 dt, out ivec4 e[3])
@@ -200,7 +206,6 @@ void createProgram(vars::Vars&vars)
 
     void main()
     {    
-        const ivec2 size = imageSize(lf);
         const ivec2 outCoords = ivec2(gl_GlobalInvocationID.x%size.x, gl_GlobalInvocationID.x/size.x);
         const vec2 inCoords = outCoords/vec2(size);
         int focusLvl = 0;
@@ -239,6 +244,21 @@ void createProgram(vars::Vars&vars)
         color /= n;
         color.w = 1.0;
 
+/*range detection test
+                color = vec4(0);
+                if(focus > 100.0) color.x = focusStep;
+                for(int x=0; x<2; x++)
+                    for(int y=0; y<2; y++)
+                    {
+                        vec2 offset = vec2(0.5)-vec2(x,y);
+                        offset.y *=-1;
+                        vec2 focusedCoords = clamp((inCoords+offset*focus)*vec2(1.0,aspect), 0.0, 1.0); 
+                        int slice = y*int(gridSize.x)+x;
+                        color.xyz += texelFetch(sampler2D(lfTextures[slice]),ivec2(round(focusedCoords*size)),0).xyz;
+                    }
+                color /= 4;
+                color.w = 1.0;
+*/
         if(showFocusMap != 0)
             color = vec4(vec3(focusLvl/float(focusLevels*(searchSubdiv+1))),1.0);
 
@@ -277,6 +297,7 @@ void createProgram(vars::Vars&vars)
         uniform int blockRadius;
         uniform float gridSampleDistance;
         uniform float saddleImpact;
+        uniform float saddleLimit;
         uniform int colMetric;
         uniform int searchSubdiv;
         uniform int sampleBlock;
@@ -288,7 +309,10 @@ void createProgram(vars::Vars&vars)
         vec4 lfTexture(int i, vec2 coord)
         {
             TEXTURE_CHECK_EXEC
-            return texture(sampler2D(lfTextures[i]),coord);
+            //return texture(sampler2D(lfTextures[i]),coord);
+            ivec2 resolution = textureSize(sampler2D(lfTextures[0]),0);
+            return texelFetch(sampler2D(lfTextures[i]),ivec2(round(coord*vec2(resolution))),0);
+            //return texelFetch(sampler2D(lfTextures[i]),clamp(ivec2(round(coord*vec2(resolution))), ivec2(0,0), resolution),0);
         }
 
         const float PI = 3.141592653589793238462643;
@@ -548,41 +572,54 @@ void main()
         float originalM2 = minM2;
         minM2 /= totalMax2;
 
-        //TODO fix when using subdivisions
+        //TODO fix when using subdivisions but hopefully subdivs are not needed anymore
         vec2 neighbours = vec2(minM2);
         if(gl_LocalInvocationID.x != 0)
             neighbours.x = shuffleUpNV(minM2,1,focusLevels);
         if(gl_LocalInvocationID.x != 31)
             neighbours.y = shuffleDownNV(minM2,1,focusLevels); 
         float saddle = abs(minM2-neighbours.x) + abs(minM2-neighbours.y);
+        saddle /= totalMax2;
         bool saddled = false;
         if(minM2 <= neighbours.x && minM2 <= neighbours.y)
         {
-            minM2 -= saddle*saddleImpact;
+            minM2 -= saddle*saddleImpact*0.1;
             saddled = true;
         }
 
-        //OR do it always when id=0? no MIN? 
         if(checkBorders == 1 && anyThreadNV(saddled)) 
         {
-            float MIN=0.01;
-            float DIF=0.006;
-            float difference = 0;
-            if(gl_LocalInvocationID.x == borderSize-1)
+            float MIN=0.05;
+            float DIF=0.0000001;
+            bool same = true;
+            //TODO determine which is smallest or try both ends and get smaller?
+            if(gl_LocalInvocationID.x == 0 && minM2 < MIN)
+                    minM2 -= 1+borderSize;
+            /*float mmmm = minM2;
+            if(gl_LocalInvocationID.x == 0 && minM2 < MIN)
             {
-                for(int i=1; i<borderSize; i++)
-                    difference += abs(minM2 - shuffleDownNV(minM2, i, focusLevels));
-                if(difference < DIF && minM2 < MIN)
+                    minM2 -= 1+borderSize;
+            }
+            if(gl_LocalInvocationID.x == focusLevels-1 && minM2 < MIN)
+            {
+                    if(minM2 < readFirstInvocationARB(mmmm))
+                    minM2 -= 2+borderSize;
+            }*/
+            //if(gl_LocalInvocationID.x == borderSize-1)
+            /*if(gl_LocalInvocationID.x == focusLevels-1)
+            {
+                for(int i=1; i<=borderSize; i++)
+                    same = same && (abs(minM2 - shuffleDownNV(minM2, i, focusLevels)) < DIF);
+                if(same && minM2 < MIN)
                     minM2 -= 1;
             }
-            if(gl_LocalInvocationID.x == focusLevels-borderSize)
+            else if(gl_LocalInvocationID.x == 0)
             {
-                float difference = 0;
-                for(int i=1; i<borderSize; i++)
-                    difference += abs(minM2 - shuffleUpNV(minM2, i, focusLevels));
-                if(difference < DIF && minM2 < MIN)
+                for(int i=1; i<=borderSize; i++)
+                    same = same && (abs(minM2 - shuffleUpNV(minM2, i, focusLevels)) < DIF);
+                if(same && minM2 < MIN)
                     minM2 -= 1;
-            }   
+            } */  
         }
     }
 
@@ -643,6 +680,138 @@ std::string csPostSrc = R".(
         }
         ).";    
 
+    std::string csRangeSrc = R".(
+        #extension GL_ARB_gpu_shader_int64 : require
+        #extension GL_ARB_bindless_texture : require
+        #extension GL_NV_shader_atomic_float : require
+        layout(local_size_x=BSX, local_size_y=BSY)in;
+        layout(std430, binding = 4) buffer minsBuffer
+        {
+            float mins[];
+        };
+        const ivec2 gridSize = ivec2(GSX);
+        const ivec2 gridIndex = gridSize-1;
+        const uint lfSize = gridSize.x*gridSize.x;
+        const float DIFFERENCE = 0.00001;
+        uniform uint64_t lfTextures[lfSize];
+        uniform float aspect;
+        uniform float range = 0.5;
+        uniform float step = 0.002;
+        shared float bestFocus;
+        //shared int passedPixels;
+        //shared int bestPassedPixels;
+        shared float currentVariance;
+        shared float bestVariance;
+ 
+        float colorDistance(vec3 c1, vec3 c2)
+        {
+            return max(max(abs(c1.r-c2.r), abs(c1.g-c2.g)), abs(c1.b-c2.b));
+        }
+
+        void main()
+        {
+            if(gl_LocalInvocationID == uvec3(0))    
+            {
+                //passedPixels = 0;
+                //bestPassedPixels = 0;
+                bestVariance = 9999;
+                currentVariance = 0;
+            }
+            memoryBarrierShared();
+            barrier();
+
+            ivec2 size = textureSize(sampler2D(lfTextures[0]),0);
+            vec2 coords = vec2(int(gl_GlobalInvocationID.x), int(gl_GlobalInvocationID.y))/size;
+            const int VIEWS = 4;
+            vec3 colors[VIEWS];
+            float minVariance = 99999999.0;
+            const int sampleCorner = gridIndex.x/2;
+ 
+            for(float f=-range; f<range; f+=step)
+            {
+                int i=0;
+                vec3 color = vec3(0,0,0);
+                const int po = 1;
+                //for(int x=0; x<gridSize.x; x+=gridIndex.x)
+                //    for(int y=0; y<gridSize.y; y+=gridIndex.y)
+                for(int x=sampleCorner; x<sampleCorner+2; x++)
+                    for(int y=sampleCorner; y<sampleCorner+2; y++)
+                    {
+                        //vec2 offset = vec2(gridIndex/2.0)-vec2(x,y);
+                        vec2 offset = vec2(sampleCorner+0.5)-vec2(x,y);
+                        offset.y *=-1;
+                        vec2 focusedCoords = clamp((coords+offset*f)*vec2(1.0,aspect), 0.0, 1.0); 
+                        int slice = y*int(gridSize.x)+x;
+                        
+                        ivec2 c = ivec2(round(focusedCoords*size));
+                        colors[i] = texelFetch(sampler2D(lfTextures[slice]),c,0).xyz;
+                        colors[i] += texelFetch(sampler2D(lfTextures[slice]),c+ivec2(po,po),0).xyz;
+                        colors[i] += texelFetch(sampler2D(lfTextures[slice]),c+ivec2(-po,-po),0).xyz;
+                        colors[i] += texelFetch(sampler2D(lfTextures[slice]),c+ivec2(po,-po),0).xyz;
+                        colors[i] += texelFetch(sampler2D(lfTextures[slice]),c+ivec2(-po,po),0).xyz;
+                        colors[i] += texelFetch(sampler2D(lfTextures[slice]),c+ivec2(0,po),0).xyz;
+                        colors[i] += texelFetch(sampler2D(lfTextures[slice]),c+ivec2(po,0),0).xyz;
+                        colors[i] += texelFetch(sampler2D(lfTextures[slice]),c+ivec2(-po,0),0).xyz;
+                        colors[i] += texelFetch(sampler2D(lfTextures[slice]),c+ivec2(0,-po),0).xyz;
+                        colors[i] /= 9.0;
+    
+                        color += colors[i];
+                        i++;
+                    }
+                color /= VIEWS;
+                float variance = 0;
+                for(int j=0; j<VIEWS; j++)
+                    //variance += pow(colorDistance(colors[j], color), 2);
+                    variance += colorDistance(colors[j], color);
+                //variance /= VIEWS;
+
+                if(variance < (minVariance + DIFFERENCE))
+                {
+                    minVariance = variance;
+                    //atomicAdd(passedPixels, 1);
+                }
+
+                atomicAdd(currentVariance, variance);
+
+                memoryBarrierShared();
+                barrier();
+                if(gl_LocalInvocationID == uvec3(0))
+                {
+                    /*
+                    if(passedPixels >= bestPassedPixels && f != -range)
+                    {
+                        bestPassedPixels = passedPixels;
+                        //bestFocus = f;
+                    }
+                    passedPixels = 0;
+                    */
+
+                    if(currentVariance <= bestVariance)
+                    {
+                        bestVariance = currentVariance;
+                        bestFocus = f;
+                    }
+                    currentVariance = 0;
+                } 
+                
+                memoryBarrierShared();
+                barrier();
+            }
+
+            memoryBarrierShared();
+            barrier();
+            if(gl_LocalInvocationID == uvec3(0))
+                mins[gl_WorkGroupID.y*gl_NumWorkGroups.x+gl_WorkGroupID.x] = bestFocus;
+                
+            memoryBarrierBuffer();
+            barrier();
+            if(gl_GlobalInvocationID.x >= size.x || gl_GlobalInvocationID.y >= size.y)
+            {
+                mins[gl_WorkGroupID.y*gl_NumWorkGroups.x+gl_WorkGroupID.x] = 0;
+            }
+        }    
+    ).";
+
     std::string statsInitCode{""}; 
     std::string statsExecCode{""}; 
     if constexpr (STATISTICS)
@@ -693,6 +862,7 @@ addProgram(vars, "mapProgram", csMapSrc, "");
 addProgram(vars, "lfProgram", csLfSrc, "");
 addProgram(vars, "postProgram", csPostSrc, "");
 addProgram(vars, "drawProgram", vsSrc, fsSrc);
+addProgram(vars, "rangeProgram",csRangeSrc, "");
 }
 
 void savePGM(int *buffer, int offset, glm::ivec2 resolution, std::string path)
@@ -755,8 +925,6 @@ std::vector<bool> createFramesMask(vars::Vars&vars)
 
 void recalculateViewCoords(vars::Vars&vars)
 {
-//    FUNCTION_PROLOGUE("all","decodingOptimization", "view");         
-
     auto newViewCoord = vars.get<glm::vec2>("newViewCoord");
     vars.reCreate<glm::vec2>("viewCoord", *newViewCoord);
 
@@ -776,7 +944,7 @@ void recalculateViewCoords(vars::Vars&vars)
     if(vars.getBool("decodingOptimization"))
         newFramesMask = createFramesMask(vars);
 }
-
+int mc=0;
 void asyncVideoLoading(vars::Vars &vars)
 {
     SDL_GLContext c = SDL_GL_CreateContext(*vars.get<SDL_Window*>("mainWindow")); 
@@ -854,6 +1022,13 @@ void asyncVideoLoading(vars::Vars &vars)
             vars.getBool("pause") = !vars.getBool("pause");
             vars.getBool("pauseTriggered") = false;
         }
+/*
+        if(mc<=99)
+        {std::cerr << vars.getFloat("elapsed.decoding") << std::endl;
+        mc++;}
+        else*/
+        
+        vars.getBool("pause") = true;
     }
 }
 
@@ -867,6 +1042,7 @@ void LightFields::init()
     auto const gridSize = args->getu32("--grid",8,"number of cameras in row/column (assuming a rectangle)");
     auto const focus = args->getf32("--focus",0,"focus level");
     auto const focusStep = args->getf32("--focusStep",0,"focus search step relative to focus level");
+    auto const resolutionOverride = glm::uvec2(args->getu32("--width",0,"width override"), args->getu32("--height",0,"height override"));
     auto const showHelp = args->isPresent("-h","shows help");
     if (showHelp || !args->validate()) {
         std::cerr << args->toStr();
@@ -901,7 +1077,7 @@ void LightFields::init()
     vars.addFloat("focus",focus);
     vars.addFloat("inputFocusStep",focusStep);
     vars.addFloat("focusStep",0.0f);
-    vars.addFloat("saddleImpact",0.1f);
+    vars.addFloat("saddleImpact",0.04f);
     vars.addFloat("gridSampleDistance",2.0f);
     vars.addFloat("gridSampleDistanceR",2.0f);
     vars.addBool("showFocusMap", false);
@@ -912,8 +1088,11 @@ void LightFields::init()
     vars.addBool("dof", false);
     vars.addFloat("dofDistance",0.0f);
     vars.addFloat("dofRange",0.0f);
-    vars.addInt32("blockRadius",1);
-    vars.addInt32("sampleMode",2);
+    vars.addFloat("searchRange",0.5f);
+    vars.addFloat("searchStep",0.01f);
+    vars.addFloat("scoreLimit",4.0);
+    vars.addInt32("blockRadius",2);
+    vars.addInt32("sampleMode",1);
     vars.addInt32("colMetric", 2);
     vars.addInt32("searchSubdiv", 0);
     vars.addInt32("borderSize", 3);
@@ -935,7 +1114,10 @@ void LightFields::init()
     ge::gl::glMakeTextureHandleResidentARB(*vars.get<GLuint64>("lf.texture"));
     ge::gl::glMakeTextureHandleResidentARB(*vars.get<GLuint64>("lf.postTexture"));
 
-    SDL_SetWindowSize(window->getWindow(),vars.getInt32("lf.width"), vars.getInt32("lf.height"));
+    SDL_SetWindowSize(window->getWindow(),
+        (resolutionOverride.x != 0) ? resolutionOverride.x : vars.getInt32("lf.width"),
+        (resolutionOverride.y != 0) ? resolutionOverride.y : vars.getInt32("lf.height"));
+
     SDL_GL_MakeCurrent(*vars.get<SDL_Window*>("mainWindow"),window->getContext("rendering"));
     vars.add<glm::uvec2>("windowSize",window->getWidth(),window->getHeight());
 
@@ -955,6 +1137,9 @@ void LightFields::init()
         auto stats = vars.add<ge::gl::Buffer>("textureStatistics", vars.getInt32("lf.width")*vars.getInt32("lf.height")*gridSize*gridSize*4*2);
         stats->bindBase(GL_SHADER_STORAGE_BUFFER, 3);
     }
+    
+    auto ranges = vars.add<ge::gl::Buffer>("ranges", (vars.getInt32("lf.width")*vars.getInt32("lf.height")*4)/(BLOCK_SIZE*BLOCK_SIZE));
+    ranges->bindBase(GL_SHADER_STORAGE_BUFFER, 4);
 }
 
 SDL_Surface* flipSurface(SDL_Surface* sfc)
@@ -995,6 +1180,76 @@ void screenShot(std::string filename, int w, int h)
     SDL_FreeSurface(ss); 
 }
 
+void detectRange(vars::Vars &vars)
+{
+    auto program = vars.get<ge::gl::Program>("rangeProgram");
+    program
+        ->set1f("aspect",vars.getFloat("texture.aspect"))
+        ->set1f("range",vars.getFloat("searchRange"))
+        ->set1f("step",vars.getFloat("searchStep"))
+        ->use();
+    std::string currentTexturesName = "lfTextures" + std::to_string(vars.getUint32("lfTexturesIndex"));
+    ge::gl::glProgramUniformHandleui64vARB(program->getId(), program->getUniformLocation("lfTextures"), vars.getInt32("lfCount"), vars.getVector<GLuint64>(currentTexturesName).data());
+
+    glm::ivec2 lfSize{vars.getUint32("lf.width"), vars.getUint32("lf.height")};
+    auto buffer = vars.get<ge::gl::Buffer>("ranges");
+    buffer->bind(GL_SHADER_STORAGE_BUFFER);
+
+    auto query = ge::gl::AsynchronousQuery(GL_TIME_ELAPSED, GL_QUERY_RESULT, ge::gl::AsynchronousQuery::UINT64);
+    if constexpr (MEASURE_TIME) query.begin();
+
+    ge::gl::glDispatchCompute(glm::ceil(lfSize.x/static_cast<float>(BLOCK_SIZE)),
+                              glm::ceil(lfSize.y/static_cast<float>(BLOCK_SIZE)),1);    
+    ge::gl::glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+    ge::gl::glFinish();
+
+    GLfloat *mappedBuffer = reinterpret_cast<GLfloat*>(buffer->map());
+    const float LIMIT = 99999999.0;
+    glm::vec2 range(LIMIT, -LIMIT);
+    int total = (lfSize.x*lfSize.y)/(BLOCK_SIZE*BLOCK_SIZE);
+    float average = 0;
+     
+    for(int i=0; i<total; i++)
+    {
+        average += mappedBuffer[i];
+    }
+    average /= total;
+    
+    float deviation = 0;
+    for(int i=0; i<total; i++)
+    {
+        deviation += glm::pow(mappedBuffer[i]-average,2);
+    }
+    deviation /= total;
+
+    for(int i=0; i<total; i++)
+    {
+/*
+        if(i % (lfSize.x/BLOCK_SIZE) == 0) std::cerr << std::endl;
+        std::cerr << mappedBuffer[i] << ",";
+*/
+        
+        float standardScore = (mappedBuffer[i] - average)/deviation;
+        if(glm::abs(standardScore) < vars.getFloat("scoreLimit"))
+        {
+            if(mappedBuffer[i] < range.s) range.s = mappedBuffer[i];
+            else if(mappedBuffer[i] > range.t) range.t = mappedBuffer[i];
+        }
+    }
+    buffer->unmap();
+
+    vars.reCreate<float>("focus", range.s);
+    vars.reCreate<float>("inputFocusStep", (range.t-range.s)/32);
+    std::cerr << std::endl << "avg:" << average << " dev:" << deviation << std::endl;
+    std::cerr << std::endl << range.s << " " << range.t << " " << (range.t-range.s)/32 << std::endl;
+
+    if constexpr (MEASURE_TIME)
+    {
+        query.end();
+        vars.reCreate<float>("elapsed.rangeDetection", query.getui64()/1000000.0);
+    } 
+}
+
 void drawGui(vars::Vars&vars, glm::ivec2 windowSize)
 {
     drawImguiVars(vars);
@@ -1004,7 +1259,15 @@ void drawGui(vars::Vars&vars, glm::ivec2 windowSize)
     ImGui::Selectable("Pause", &vars.getBool("pauseTriggered"));
     ImGui::DragFloat("Focus", &vars.getFloat("focus"),0.00001f, -10, 10, "%.5f");
     ImGui::DragFloat("Focus step", &vars.getFloat("inputFocusStep"),0.000001f,-10, 10, "%.6f");
-    ImGui::DragFloat("Focus sample distance", &vars.getFloat("gridSampleDistance"),0.1f,0,vars.get<glm::ivec2>("gridSize")->x); 
+    ImGui::DragFloat("Focus sample distance", &vars.getFloat("gridSampleDistance"),0.1f,0,vars.get<glm::ivec2>("gridSize")->x);
+    if(!vars.getBool("decodingOptimization")) 
+    {
+       if (ImGui::Button("Detect range"))
+            detectRange(vars);    
+       ImGui::DragFloat("Search range", &vars.getFloat("searchRange"),0.001f, -5, 5, "%.3f");
+       ImGui::DragFloat("Search step", &vars.getFloat("searchStep"),0.001f, -0, 0.1, "%.3f");
+       ImGui::DragFloat("Score limit", &vars.getFloat("scoreLimit"),0.1, 0.5, 10.0);
+    }
     if(ImGui::Checkbox("Decoding optimization", &vars.getBool("decodingOptimization")))
     {
         vars.updateTicks("decodingOptimization");
