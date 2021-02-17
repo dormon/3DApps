@@ -16,6 +16,8 @@
 #include <FreeImagePlus.h>
 #include <imguiDormon/imgui.h>
 #include <drawBunny.h>
+#include <sstream>
+#include <iomanip>
 
 #define ___ std::cerr << __FILE__ << " " << __LINE__ << std::endl
 
@@ -34,10 +36,9 @@ class Holo: public simple3DApp::Application{
   virtual void                mouseMove(SDL_Event const& event) override;
 };
 
-void loadColorTexture(vars::Vars&vars){
-  if(notChanged(vars,"all",__FUNCTION__,{"quiltFileName"}))return;
+void loadColorTexture(vars::Vars&vars,std::string const&v,std::string const&f){
   fipImage colorImg;
-  colorImg.load(vars.getString("quiltFileName").c_str());
+  colorImg.load(f.c_str());
   auto const width   = colorImg.getWidth();
   auto const height  = colorImg.getHeight();
   auto const BPP     = colorImg.getBitsPerPixel();
@@ -69,7 +70,7 @@ void loadColorTexture(vars::Vars&vars){
   }
 
   auto colorTex = vars.reCreate<ge::gl::Texture>(
-      "quiltTex",GL_TEXTURE_2D,GL_RGB8,1,width,height);
+      v,GL_TEXTURE_2D,GL_RGB8,1,width,height);
   //ge::gl::glPixelStorei(GL_UNPACK_ROW_LENGTH,width);
   //ge::gl::glPixelStorei(GL_UNPACK_ALIGNMENT ,1    );
   ge::gl::glTextureSubImage2D(colorTex->getId(),0,0,0,width,height,format,type,data);
@@ -89,9 +90,24 @@ void prepareTextureMethod(vars::Vars&vars){
   std::string const fsSrc = R".(
   out vec4 fColor;
   in vec2 vCoord;
-  layout(binding=0)uniform sampler2D tex;
+  layout(binding=0)uniform sampler2D tex[8];
+  uniform float offset = 0;
+  uniform int   mode   = 0;
   void main(){
-    fColor = vec4(texture(tex,vCoord));
+    vec4 meanColor = vec4(0);
+    for(int i=0;i<8;++i)
+      meanColor += texture(tex[i],vCoord+vec2(offset*i,0));
+    meanColor/=8;
+    vec4 varianceColor = vec4(0);
+    for(int i=0;i<8;++i){
+      vec4 diff = meanColor-texture(tex[i],vCoord+vec2(offset*i,0));
+      varianceColor += diff*diff;
+    }
+    varianceColor /= 8;
+    if(mode==0)
+      fColor = vec4(meanColor);
+    if(mode==1)
+      fColor = vec4(varianceColor);
   }
   ).";
 
@@ -107,15 +123,32 @@ void prepareTextureMethod(vars::Vars&vars){
 
   vars.reCreate<ge::gl::VertexArray>("textureVAO");
 
-  loadColorTexture(vars);
+  for(uint32_t i=0;i<8;++i){
+    std::stringstream ss;
+    ss<<"img"<<i;
+    std::stringstream is;
+    is<<"/home/dormon/Desktop/lego/" << std::setfill('0') << std::setw(2) << i << ".png";
+    loadColorTexture(vars,ss.str(),is.str());
+  }
+  vars.reCreate<float>("offset",0);
+  addVarsLimitsF(vars,"offset",-1,+1,0.001f);
 }
 
 void drawTriangles(vars::Vars&vars){
   prepareTextureMethod(vars);
-  vars.get<ge::gl::Program>("textureProgram")
+  auto prg=vars.get<ge::gl::Program>("textureProgram");
+  prg
+    ->set1f("offset",vars.getFloat("offset"))
+    ->set1i("mode",vars.addOrGetBool("mode",0))
     ->use();
   vars.get<ge::gl::VertexArray>("textureVAO")->bind();
-  vars.get<ge::gl::Texture>("quiltTex")->bind(0);
+
+
+  for(uint32_t i=0;i<8;++i){
+    std::stringstream ss;
+    ss<<"img"<<i;
+    vars.get<ge::gl::Texture>(ss.str())->bind(i);
+  }
   ge::gl::glDrawArrays(GL_TRIANGLE_STRIP,0,4);
   vars.get<ge::gl::VertexArray>("textureVAO")->unbind();
 }

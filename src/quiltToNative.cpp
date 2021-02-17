@@ -47,6 +47,7 @@ struct Params{
   float    pitch      ;
   float    center     ;
   float    viewPortion;
+  float    focus      ;
   bool     progress   ;
 };
 
@@ -80,7 +81,8 @@ void transform(fipImage &output,fipImage const&input,Params const&params){
     auto const selectedImage = (uint32_t)glm::floor(uvz.z * nofImages);
     auto const col           = selectedImage%params.columns;
     auto const row           = selectedImage/params.columns;
-    float x = (float)(col + uvz.x) / (float)params.columns;
+    float focusMod = params.focus*(1.f-2.f*glm::clamp(static_cast<float>(selectedImage)/static_cast<float>(nofImages),0.f,1.f));
+    float x = (float)(col + glm::clamp(uvz.x + focusMod,0.f,1.f)) / (float)params.columns;
     float y = (float)(row + uvz.y) / params.rows;
     return glm::vec2(x, y) * params.viewPortion;
   };
@@ -125,6 +127,7 @@ int main(int argc,char*argv[]){
   params.pitch        = args->getf32("--pitch"       ,354.42108f,"pitch of the holographics display"                                                                    );
   params.center       = args->getf32("--center"      ,0.04239f  ,"center of the holographics display"                                                                   );
   params.viewPortion  = args->getf32("--viewPortion" ,0.99976f  ,"viewPortion of the holographics display"                                                              );
+  params.focus        = args->getf32("--focus"       ,0.f       ,"focus"                                                                                                );
   params.progress     = args->isPresent("--progress","print progress");
   auto printHelp      = args->isPresent("--help","print help");
 
