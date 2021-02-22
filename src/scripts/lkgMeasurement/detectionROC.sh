@@ -26,3 +26,9 @@ for FILE in $1/*; do
     done < "$FILE"
     printf "$FILE,$TP,$FP,$TN,$FN\n" >> $OUTFILE
 done
+
+#test if filename is present in other file
+#NAME=$(basename "${LINEARR[0]}" .txt) 
+#NAME=${NAME%"_frames"}        
+#if  grep -Fxq "$NAME" $2 ; then
+
