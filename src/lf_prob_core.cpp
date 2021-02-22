@@ -3,37 +3,36 @@
 #include <Vars/Vars.h>
 #include <geGL/StaticCalls.h>
 #include <geGL/geGL.h>
-#include <BasicCamera/FreeLookCamera.h>
-#include <BasicCamera/PerspectiveCamera.h>
-#include <BasicCamera/OrbitCamera.h>
 #include <Barrier.h>
+#include <FunctionPrologue.h>
 #include <imguiSDL2OpenGL/imgui.h>
 #include <imguiVars/imguiVars.h>
 #include <imguiVars/addVarsLimits.h>
 #include <glm/glm.hpp>
 #include <glm/gtc/type_ptr.hpp>
-#include <drawGrid.h>
 #include <FreeImagePlus.h>
 #include <imguiDormon/imgui.h>
-#include <drawBunny.h>
 #include <sstream>
 #include <iomanip>
+#include <fstream>
+#include <utils/loadTxtFile.hpp>
+#include <utils/ls.hpp>
 
 #define ___ std::cerr << __FILE__ << " " << __LINE__ << std::endl
 
 class Holo: public simple3DApp::Application{
- public:
-  Holo(int argc, char* argv[]) : Application(argc, argv) {}
-  virtual ~Holo(){}
-  virtual void draw() override;
+  public:
+    Holo(int argc, char* argv[]) : Application(argc, argv) {}
+    virtual ~Holo(){}
+    virtual void draw() override;
 
-  vars::Vars vars;
-  bool fullscreen = false;
+    vars::Vars vars;
+    bool fullscreen = false;
 
-  virtual void                init() override;
-  virtual void                resize(uint32_t x,uint32_t y) override;
-  virtual void                key(SDL_Event const& e, bool down) override;
-  virtual void                mouseMove(SDL_Event const& event) override;
+    virtual void                init() override;
+    virtual void                resize(uint32_t x,uint32_t y) override;
+    virtual void                key(SDL_Event const& e, bool down) override;
+    virtual void                mouseMove(SDL_Event const& event) override;
 };
 
 void loadColorTexture(vars::Vars&vars,std::string const&v,std::string const&f){
@@ -76,41 +75,62 @@ void loadColorTexture(vars::Vars&vars,std::string const&v,std::string const&f){
   ge::gl::glTextureSubImage2D(colorTex->getId(),0,0,0,width,height,format,type,data);
 }
 
-void prepareTextureMethod(vars::Vars&vars){
-  if(notChanged(vars,"all",__FUNCTION__,{}))return;
+void loadProgramFromDir(vars::Vars&vars,std::string const&baseDir,std::string subDir){
+  auto fullDir = baseDir + subDir;
+}
 
-  std::string const vsSrc = R".(
-  out vec2 vCoord;
-  void main(){
-    vCoord = vec2(gl_VertexID&1u,gl_VertexID>>1u);
-    gl_Position = vec4(vCoord*2.f-1.f,0,1);
+std::string getExtension(std::string const&file){
+  auto dotpos = file.rfind(".");
+  if(dotpos==std::string::npos)return "";
+  return file.substr(dotpos);
+}
+
+bool hasExtension(std::string const&file,std::string const&ext){
+  return getExtension(file)==ext;
+}
+
+bool hasExtension(std::string file,std::vector<std::string>const&exts){
+  for(auto const&ext:exts)
+    if(hasExtension(file,ext))return true;
+  return false;
+}
+
+std::vector<std::string>filterFilesByExtension(std::vector<std::string>const&files,std::vector<std::string>const&exts){
+  std::vector<std::string>res;
+  for(auto const&file:files){
+    if(hasExtension(file,exts))
+      res.push_back(file);
   }
-  ).";
+  return res;
+}
 
-  std::string const fsSrc = R".(
-  out vec4 fColor;
-  in vec2 vCoord;
-  layout(binding=0)uniform sampler2D tex[8];
-  uniform float offset = 0;
-  uniform int   mode   = 0;
-  void main(){
-    vec4 meanColor = vec4(0);
-    for(int i=0;i<8;++i)
-      meanColor += texture(tex[i],vCoord+vec2(offset*i,0));
-    meanColor/=8;
-    vec4 varianceColor = vec4(0);
-    for(int i=0;i<8;++i){
-      vec4 diff = meanColor-texture(tex[i],vCoord+vec2(offset*i,0));
-      varianceColor += diff*diff;
-    }
-    varianceColor /= 8;
-    if(mode==0)
-      fColor = vec4(meanColor);
-    if(mode==1)
-      fColor = vec4(varianceColor);
-  }
-  ).";
+class ShaderProgramLoadInfo{
+  public:
+    struct Shader{
+      std::string file;
+      GLenum type;
+    };
+    std::vector<Shader>shaders;
+    std::string name;
+    ShaderProgramLoadInfo(std::string const&baseDir,std::string const&dir);
+};
 
+ShaderProgramLoadInfo::ShaderProgramLoadInfo(std::string const&baseDir,std::string const&subDir):name(subDir){
+  auto fullDir = baseDir + subDir;
+  auto allFiles = ls(fullDir);
+  std::vector<std::string>const exts = {"vp","cp","ep","gp","fp","mp"};
+  std::vector<GLenum>types = {GL_VERTEX_SHADER,GL_TESS_CONTROL_SHADER,GL_TESS_EVALUATION_SHADER,GL_GEOMETRY_SHADER,GL_FRAGMENT_SHADER,GL_COMPUTE_SHADER};
+  auto shaders = filterFilesByExtension(allFiles,exts);
+
+}
+
+void loadProgramFromFile(vars::Vars&vars){
+  FUNCTION_PROLOGUE("lf_prob_core");
+
+  std::string const shaderDir = "../../src/shaders/lf_prob_core/";
+
+  auto vsSrc = loadTxtFile(shaderDir+"textureProgram/"+"vertex.vp");
+  auto fsSrc = loadTxtFile(shaderDir+"textureProgram/"+"fragment.fp");
   auto vs = std::make_shared<ge::gl::Shader>(GL_VERTEX_SHADER,
       "#version 450\n",
       vsSrc
@@ -120,6 +140,85 @@ void prepareTextureMethod(vars::Vars&vars){
       fsSrc
       );
   vars.reCreate<ge::gl::Program>("textureProgram",vs,fs);
+}
+
+void getProgramInterface(vars::Vars&vars,std::string const&prgName){
+  FUNCTION_PROLOGUE("remsub",prgName);
+
+  auto prg = vars.get<ge::gl::Program>(prgName);
+  auto info = prg->getInfo();
+  vars.erase("uniforms");
+  for(auto const&u:info->uniforms){
+    auto const&name = u.first;
+    if(name.find("[")!=std::string::npos)continue;
+    auto const&unif = u.second;
+    auto type = std::get<ge::gl::ProgramInfo::TYPE>(unif);
+    switch(type){
+      case GL_UNSIGNED_INT:
+        {
+          uint32_t v;
+          ge::gl::glGetUniformuiv(prg->getId(),prg->getUniformLocation(name),&v);
+          vars.addUint32("uniforms."+name,v);break;
+        }
+      case GL_INT:
+        {
+          int v;
+          ge::gl::glGetUniformiv(prg->getId(),prg->getUniformLocation(name),(int*)&v);
+          vars.addInt32("uniforms."+name,v);break;
+        }
+      case GL_INT_VEC2:
+        {
+          glm::ivec2 v;
+          ge::gl::glGetUniformiv(prg->getId(),prg->getUniformLocation(name),(int*)&v);
+          vars.add<glm::ivec2>("uniforms."+name,v);break;
+        }
+      case GL_FLOAT       :
+        {
+          float v;
+          ge::gl::glGetUniformfv(prg->getId(),prg->getUniformLocation(name),&v);
+          vars.addFloat ("uniforms."+name,v);break;
+        }
+      case GL_BOOL:
+        {
+          bool v;
+          ge::gl::glGetUniformiv(prg->getId(),prg->getUniformLocation(name),(int*)&v);
+          vars.addBool ("uniforms."+name,v);break;
+        }
+      case GL_FLOAT_VEC2:
+        {
+          glm::vec2 v;
+          ge::gl::glGetUniformfv(prg->getId(),prg->getUniformLocation(name),(float*)&v);
+          vars.add<glm::vec2>("uniforms."+name,v);break;
+        }
+      default:break;
+
+
+    }
+
+
+  }
+}
+
+void setProgramUniforms(vars::Vars&vars,std::string const&prgName){
+  auto prg = vars.get<ge::gl::Program>(prgName);
+  std::vector<std::string>uniformNames;
+  vars.getDir(uniformNames,"uniforms");
+  for(auto const&n:uniformNames){
+    auto vName = "uniforms."+n;
+    auto const&type = vars.getType(vName);
+    if(type == typeid(bool    ))prg->set1i (n,vars.getBool  (vName));
+    if(type == typeid(uint32_t))prg->set1ui(n,vars.getUint32(vName));
+    if(type == typeid( int32_t))prg->set1i (n,vars.getInt32 (vName));
+    if(type == typeid(float   ))prg->set1f (n,vars.getFloat (vName));
+    //if(type == typeid(glm::vec2))prg->set2fv(n,(float*)&vars.getVec2(vName));
+  }
+}
+
+void prepareTextureMethod(vars::Vars&vars){
+  if(notChanged(vars,"all",__FUNCTION__,{}))return;
+
+  loadProgramFromFile(vars);
+  getProgramInterface(vars,"textureProgram");
 
   vars.reCreate<ge::gl::VertexArray>("textureVAO");
 
@@ -131,16 +230,17 @@ void prepareTextureMethod(vars::Vars&vars){
     loadColorTexture(vars,ss.str(),is.str());
   }
   vars.reCreate<float>("offset",0);
+  vars.reCreate<float>("shift",0);
   addVarsLimitsF(vars,"offset",-1,+1,0.001f);
+  addVarsLimitsF(vars,"shift",-1,+1,0.001f);
 }
 
 void drawTriangles(vars::Vars&vars){
   prepareTextureMethod(vars);
   auto prg=vars.get<ge::gl::Program>("textureProgram");
   prg
-    ->set1f("offset",vars.getFloat("offset"))
-    ->set1i("mode",vars.addOrGetBool("mode",0))
     ->use();
+  setProgramUniforms(vars,"textureProgram");
   vars.get<ge::gl::VertexArray>("textureVAO")->bind();
 
 
@@ -265,11 +365,11 @@ void createHoloProgram(vars::Vars&vars){
 
   std::string const fsSrc = R".(
   #version 450 core
-  
+
   in vec2 texCoords;
-  
+
   layout(location=0)out vec4 fragColor;
-  
+
   uniform int showQuilt = 0;
   uniform int showAsSequence = 0;
   uniform uint selectedView = 0;
@@ -287,15 +387,15 @@ void createHoloProgram(vars::Vars&vars){
   uniform vec4 viewPortion = vec4(0.99976f, 0.99976f, 0.00f, 0.00f);
   uniform vec4 aspect;
   uniform uint drawOnlyOneImage = 0;
-  
+
   layout(binding=0)uniform sampler2D screenTex;
-  
+
   uniform float focus = 0.f;
 
   vec2 texArr(vec3 uvz)
   {
       // decide which section to take from based on the z.
- 
+
 
       float z = floor(uvz.z * tile.z);
       float focusMod = focus*(1-2*clamp(z/tile.z,0,1));
@@ -303,11 +403,11 @@ void createHoloProgram(vars::Vars&vars){
       float y = (floor(z / tile.x) + uvz.y) / tile.y;
       return vec2(x, y) * viewPortion.xy;
   }
-  
+
   void main()
   {
   	vec3 nuv = vec3(texCoords.xy, 0.0);
-  
+
   	vec4 rgb[3];
   	for (int i=0; i < 3; i++) 
   	{
@@ -326,7 +426,7 @@ void createHoloProgram(vars::Vars&vars){
       }
   		//rgb[i] = vec4(nuv.z, nuv.z, nuv.z, 1.0);
   	}
-  
+
       if(showQuilt == 0)
         fragColor = vec4(rgb[ri].r, rgb[1].g, rgb[bi].b, 1.0);
       else{
@@ -334,21 +434,21 @@ void createHoloProgram(vars::Vars&vars){
           fragColor = texture(screenTex, texCoords.xy);
         else{
           uint sel = min(selectedView,uint(tile.x*tile.y-1));
-          fragColor = texture(screenTex, texCoords.xy/vec2(tile.xy) + vec2(vec2(1.f)/tile.xy)*vec2(sel%uint(tile.x),sel/uint(tile.x)));
-          
-        }
-      }
-  }
-  ).";
+  fragColor = texture(screenTex, texCoords.xy/vec2(tile.xy) + vec2(vec2(1.f)/tile.xy)*vec2(sel%uint(tile.x),sel/uint(tile.x)));
 
-  auto vs = std::make_shared<ge::gl::Shader>(GL_VERTEX_SHADER,
-      vsSrc
-      );
-  auto fs = std::make_shared<ge::gl::Shader>(GL_FRAGMENT_SHADER,
-      fsSrc
-      );
-  auto prg = vars.reCreate<ge::gl::Program>("holoProgram",vs,fs);
-  prg->setNonexistingUniformWarning(false);
+}
+}
+}
+).";
+
+auto vs = std::make_shared<ge::gl::Shader>(GL_VERTEX_SHADER,
+    vsSrc
+    );
+auto fs = std::make_shared<ge::gl::Shader>(GL_FRAGMENT_SHADER,
+    fsSrc
+    );
+auto prg = vars.reCreate<ge::gl::Program>("holoProgram",vs,fs);
+prg->setNonexistingUniformWarning(false);
 }
 
 class Quilt{
@@ -404,15 +504,15 @@ class Quilt{
           float const viewCone = glm::radians<float>(vars.getFloat("quiltRender.viewCone")); /// ?
           float const aspect = static_cast<float>(res.x) / static_cast<float>(res.y);
           float const viewConeSweep = -camDist * glm::tan(viewCone);
-			    float const projModifier = 1.f / (size * aspect);
+          float const projModifier = 1.f / (size * aspect);
           auto const numViews = counts.x * counts.y;
           float currentViewLerp = 0.f; // if numviews is 1, take center view
           if (numViews > 1)
             currentViewLerp = (float)counter / (numViews - 1) - 0.5f;
 
           // .5*size*tan(cone)/tan(fov/2)
-            // .5*tan(cone)/tan(fov/2)/aspect
-          
+          // .5*tan(cone)/tan(fov/2)/aspect
+
 
           glm::mat4 view = centerView;
           glm::mat4 proj = centerProj;
@@ -425,7 +525,7 @@ class Quilt{
           //addVarsLimitsF(vars,"quiltRender.S",0,4,0.01);
           //view[3][0] += d - 2*d*t;
           //proj[2][0] += (d - 2*d*t)*S;
-          
+
           float S = 0.5f*d*glm::tan(viewCone);
           float s = S-2*t*S;
           view[3][0] += s;
