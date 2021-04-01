@@ -66,6 +66,7 @@ addObjectLibrary(gpuDecoder       "src/gpuDecoder.h;src/gpuDecoder.cpp"         
 #addApp(gameOfLife src/gameOfLife.cpp)
 #addApp2(spirv "src/spirv.cpp" "")
 addApp2(emptyProject                          "src/emptyProject.cpp"                          "Simple3DApp::Simple3DApp;drawGrid;imguiVars::imguiVars;VarsGLMDecorator::VarsGLMDecorator")
+addApp2(splines                               "src/splines.cpp"                               "Simple3DApp::Simple3DApp;drawGrid;imguiVars::imguiVars;VarsGLMDecorator::VarsGLMDecorator")
 addApp2(skybox                                "src/skybox.cpp"                                "Simple3DApp::Simple3DApp;drawGrid;imguiVars::imguiVars;VarsGLMDecorator::VarsGLMDecorator")
 addApp2(svSide                                "src/svSide.cpp"                                "Simple3DApp::Simple3DApp;drawGrid;imguiVars::imguiVars;VarsGLMDecorator::VarsGLMDecorator")
 addApp2(shadowVolumes                         "src/shadowVolumes.cpp"                         "Simple3DApp::Simple3DApp;drawGrid;imguiVars::imguiVars;VarsGLMDecorator::VarsGLMDecorator")
