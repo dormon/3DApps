@@ -78,6 +78,7 @@ addApp2(pbr                                   "src/pbr.cpp"                     
 addApp2(drawVars                              "src/drawVars.cpp"                              "Simple3DApp::Simple3DApp;imguiVars::imguiVars")
 addApp2(pathTracing                           "src/pathTracing.cpp"                           "Simple3DApp::Simple3DApp;drawGrid;imguiVars::imguiVars")
 addApp2(rasterizationOrder                    "src/rasterizationOrder.cpp"                    "Simple3DApp::Simple3DApp;barrier;imguiVars::imguiVars")
+addApp2(fragCoords                            "src/fragCoords.cpp"                            "Simple3DApp::Simple3DApp;barrier;imguiVars::imguiVars")
 addApp2(relaxedOrder                          "src/relaxedOrder.cpp"                          "Simple3DApp::Simple3DApp;drawGrid;imguiVars::imguiVars;VarsGLMDecorator::VarsGLMDecorator")
 addApp2(noise                                 "src/noise.cpp"                                 "Simple3DApp::Simple3DApp;barrier;imguiVars::imguiVars")
 addApp2(uintGeometryShader                    "src/uintGeometryShader.cpp"                    "Simple3DApp::Simple3DApp;barrier;imguiVars::imguiVars")
