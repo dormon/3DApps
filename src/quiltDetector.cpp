@@ -1,3 +1,4 @@
+#include <glm/fwd.hpp>
 #include <iostream>
 #include <opencv2/calib3d.hpp>
 #include <opencv2/core.hpp>
@@ -10,9 +11,9 @@
 #include <vector>
 #include <math.h>
 #include <fstream>
-#include <algorithm>
 #include <numeric>
 #include <filesystem>
+#include <algorithm>
 #include <ArgumentViewer/ArgumentViewer.h>
 #include <opencv4/opencv2/opencv.hpp>
 #include <opencv4/opencv2/imgproc.hpp>
@@ -20,7 +21,10 @@
 #include <opencv2/cudaimgproc.hpp>
 #include <opencv2/cudaarithm.hpp>
 #include <opencv2/cudafeatures2d.hpp>
+#include <glm/gtc/quaternion.hpp>
 
+
+#include <glm/gtx/string_cast.hpp> 
 class Analyzer{
     private:
     class Accumulator
@@ -51,6 +55,27 @@ class Analyzer{
         {
             os << mf.number << " " << mf.direction.x << " " << mf.direction.y << " " << mf.magnitude.x << " " << mf.magnitude.y << " " << mf.bluriness << "  " << mf.distortion << " " << mf.panPattern;
             return os;
+        }
+    };
+
+    class SlamMetaFrame{
+        public:
+        int number{0};
+        cv::Point3f positionDelta;
+        glm::quat orientation;
+        float quatDelta{0};
+        float bluriness{0};
+
+        friend SlamMetaFrame operator-(SlamMetaFrame& a, SlamMetaFrame& b)
+        {
+            SlamMetaFrame result;
+            result.number = b.number;
+            result.positionDelta = b.positionDelta - a.positionDelta;
+            auto q1 = glm::normalize(a.orientation);
+            auto q2 = glm::normalize(b.orientation);
+            float d = glm::clamp(glm::dot(q1, q2),0.0f,1.0f);
+            result.quatDelta = 1.0-glm::abs((glm::acos(d)/glm::half_pi<float>())-1.0);
+            return result;
         }
     };
 
@@ -108,7 +133,7 @@ class Analyzer{
         static constexpr float maxBluriness{100};
         const float shakingLimit;
         public:
-        ScoreCounter(float yb=1.5) : shakingLimit{yb}
+        ScoreCounter(float yb=1.5) : shakingLimit{(yb > 0) ? yb : 1.0f}
         {}
         friend void operator<<(ScoreCounter& counter, MetaFrame& frame)
         {   if(frame.number % DISTORTION_INTERVAL == 0)
@@ -120,9 +145,19 @@ class Analyzer{
             counter.bluriness += frame.bluriness;
             counter.shaking += frame.magnitude.y;
         }
+        friend void operator<<(ScoreCounter& counter, SlamMetaFrame& frame)
+        {   
+            counter.panPattern += frame.quatDelta;
+            counter.bluriness += frame.bluriness;
+            counter.shaking += frame.positionDelta.y+frame.positionDelta.z;
+        }
         float getScore()
         {
             return (distortionAmount.avg()/maxDistortion)*0.2 + panPattern.avg()*0.5 + (bluriness.avg()/maxBluriness)*0.2 + (shaking.avg()/shakingLimit)*0.1;
+        }
+        float getSlamScore()
+        {
+            return (10*panPattern.avg()*0.7 + (bluriness.avg()/maxBluriness)*0.2 + (shaking.avg()/shakingLimit)*0.1);
         }
         void clear() {
             distortionAmount.clear();
@@ -134,6 +169,7 @@ class Analyzer{
  
     using SequencesVector = std::vector<std::vector<int>>;
     std::vector<MetaFrame> frames;
+    std::vector<SlamMetaFrame> slamFrames;
     SequencesVector sequences;
     SequencesVector quilts;
     SequencesVector trimmedQuilts;
@@ -145,11 +181,12 @@ class Analyzer{
     float xLimit{0.00001};
     float yBounds{1.5};
     bool gpuCompute{false};
+    bool slamInput{false};
     cv::Point2f previousDirection{0,0};
     static constexpr int flowWinSize{15};
-    static constexpr int QUILT_SIZE{10};
+    static constexpr int QUILT_SIZE{45};
     enum AnalysisMethod {SPARSE_FLOW, DENSE_FLOW, FEATURE_MATCHING};
-    AnalysisMethod method{SPARSE_FLOW};
+    AnalysisMethod method{FEATURE_MATCHING};
     cv::Mat denseFlowCache;
 
     float analyzeBluriness(cv::Mat &frame)
@@ -438,27 +475,65 @@ class Analyzer{
         } 
     }
 
-    void loadFrames(std::string inputFile)
+    void loadFrames(std::string inputFile, bool slamFile=false)
     {
         std::ifstream ifs(inputFile);
         std::string line;
-        std::stringstream linestream(line);
+        slamInput = slamFile || slamInput;
+        SlamMetaFrame previous;
+        bool first{true};
         while(std::getline(ifs, line))
-        {
-            MetaFrame val;
-            while(linestream >> val.number >> val.direction.x >> val.direction.y >> val.magnitude.x >> val.magnitude.y >> val.bluriness >> val.distortion >> val.panPattern)
-                frames.push_back(val);
+        {  
+            std::stringstream linestream(line);
+            if(slamInput)
+            {
+                SlamMetaFrame current;
+                while(linestream >> current.number >> current.positionDelta.x >> current.positionDelta.y >> current.positionDelta.z >> current.orientation.x >> current.orientation.y >> current.orientation.z >> current.orientation.w); 
+                if(!first)
+                {
+                    slamFrames.push_back(current-previous);
+                    //std::cerr << slamFrames.back().orientationDelta.y << " " << current.orientationDelta.y << " " << previous.orientationDelta.y << std::endl;
+                }
+                first=false;
+                previous = current;
+            }
+            else
+            {
+                frames.emplace_back();
+                while(linestream >> frames.back().number >> frames.back().direction.x >> frames.back().direction.y >> frames.back().magnitude.x >> frames.back().magnitude.y >> frames.back().bluriness >> frames.back().distortion >> frames.back().panPattern);
+            }
         }
+ 
+        //TODO remove, just one 
+        for(auto &frame : slamFrames)
+            frame.bluriness = frames[frame.number].bluriness;
     }
 
-    void createSequences()
+    void createSequences(bool directionTest)
     {
         ScoreCounter score(yBounds);
         sequences.emplace_back();
         sequencesScores.emplace_back();
+        int size = (slamInput) ? slamFrames.size() : frames.size(); 
+        float prevDir = (slamInput) ? slamFrames[0].positionDelta.x : frames[0].direction.x;
         for(int i=1; i<frames.size(); i++)
-            if((abs(frames[i].direction.x) < xLimit) || (abs(frames[i].direction.y) > yBounds))
-            //if((abs(frames[i].direction.x) < xLimit) || (abs(frames[i].direction.y) > yBounds) || ((frames[i].direction.x < 0) != (frames[i-1].direction.x < 0)))
+        {
+
+            //TODO refactor to one vector
+            float horizDir{0};
+            float shaking{0};
+            if(slamInput)
+            {
+                horizDir = slamFrames[i].positionDelta.x;
+                shaking = abs(slamFrames[i].positionDelta.y)+abs(slamFrames[i].positionDelta.z);
+            }
+            else
+            {
+                horizDir = frames[i].direction.x;
+                shaking = abs(frames[i].direction.y); 
+            }
+    
+            if((abs(horizDir) < xLimit) || (shaking > yBounds) || ( directionTest && ((horizDir < 0) != (prevDir < 0))))
             {
                 if(sequences.back().size() >= QUILT_SIZE)
                 {
@@ -474,15 +549,24 @@ class Analyzer{
             else
             {
                 sequences.back().push_back(i);
-                score << frames[i];
-                sequencesScores.back() = score.getScore();
+                if(slamInput)
+                {    
+                    score << slamFrames[i];
+                    sequencesScores.back() = score.getSlamScore();
+                }
+                else
+                {
+                    score << frames[i];
+                    sequencesScores.back() = score.getScore();
+                }
             }
+            prevDir = horizDir;
+        }
     } 
 
-    const SequencesVector& createQuilts(std::string outputFolder, std::string prefix)
+    const SequencesVector& createQuilts(std::string outputFolder, std::string prefix, bool directionTest=false)
     {
-        //TODO blur error
-        createSequences();
+        createSequences(directionTest);
         serializeFrameVector(&frames, outputFolder+prefix+"_frames.txt");
         serializeFrameVector(&sequences, outputFolder+prefix+"_sequences.txt");
         serializeFrameVector(&sequencesScores, outputFolder+prefix+"_sequenceScores.txt");
@@ -535,16 +619,102 @@ class Analyzer{
         return trimmedQuilts;
     } 
 
+    class Error{
+        public: 
+        float offset{0};
+        float error{0};
+        bool duplicates{false};
+        std::vector<int> window;
+    };
+
+    void printWindow(Error error)
+    {
+        std::cerr << "Offset: " << error.offset << "  Error:" << error.error << " " << ((error.duplicates) ? "Has duplicates" : "Is unique") << std::endl;
+        for(auto const &i : error.window)
+            std::cerr << i << " ";
+    }    
+
+    void checkLinearWindow(float frameDistance, float startPosition, float range, int sequenceIndex)
+    {
+        //positions and smallest gap
+        std::vector<float> positions;
+        float acc{0};
+        for(const auto &frame : sequences[sequenceIndex])
+        {
+            positions.push_back(acc);
+            acc += frames[frame].magnitude.x;
+        }                
+       
+        constexpr int STEP_RESOLUTION{1000};
+        std::vector<Error> errors;
+        errors.reserve(STEP_RESOLUTION+1);
+        const float STEP_SIZE{(range*2)/STEP_RESOLUTION};
+        for(float offset = startPosition-range; offset < startPosition+range; offset+=STEP_SIZE)
+        {
+            Error error;
+            error.offset = offset;
+            for(int i=0; i<QUILT_SIZE; i++)
+            {  
+                float sample = offset+i*frameDistance; 
+                error.window.emplace_back();
+                //nearest neigbour
+                float lastDistance{99999999999999999999.0f};
+                for(int j=0; j<positions.size(); j++)
+                {
+                    float distance = glm::abs(sample-positions[j]);
+                    if(distance < lastDistance)
+                    {
+                        lastDistance = distance;
+                        error.window.back() = j;
+                    }
+                }
+                error.error += lastDistance*lastDistance;
+            }
+            error.duplicates = std::adjacent_find(error.window.begin(), error.window.end()) != error.window.end();
+            errors.push_back(error);
+        }
+      
+        std::cerr << std::endl << "Distance: " << frameDistance << std::endl;
+        std::cerr << "Start: " << startPosition  << std::endl;
+        std::cerr << "Range: " << range << std::endl;
+        
+        std::cerr << std::endl << "Positions:" << std::endl; 
+        for(auto const &i : positions)
+            std::cerr << i << " ";
+        std::cerr << std::endl;
+
+        std::cerr << std::endl << "Middle window:" << std::endl;
+        Error bestError = errors[STEP_RESOLUTION/2];
+        printWindow(bestError);
+        
+        std::cerr << std::endl << "Random window:" << std::endl;
+        bestError = errors[rand()%STEP_RESOLUTION];
+        printWindow(bestError);
+
+        std::cerr << std::endl << "Best window:" << std::endl;
+        for(auto const &error : errors)
+            if(error.error < bestError.error)
+                bestError = error;
+        printWindow(bestError);
+        std::cerr << std::endl;
+        
+    }
+
     void printResults()
     {
         Accumulator a;
+        int size{QUILT_SIZE};
+        float s = 0;
         for(int i=0; i<sequences.size(); i++)
-            if(sequences[i].size() >= QUILT_SIZE)
+            if(sequences[i].size() > size)
             {
-             a+=sequencesScores[i];
-             std::cout << std::endl << sequences[i].front() << "-" << sequences[i].back() <<  " : " << sequencesScores[i];
+             size = sequences[i].size();
+             s = sequencesScores[i];
+             //a+=sequencesScores[i];
+             //std::cout << std::endl << sequences[i].front() << "-" << sequences[i].back() <<  " : " << sequencesScores[i];
             }
-        std::cout << std::endl <<  a.avg();
+        if( s< 0){ s=0.001;}
+        std::cout << s << "," << size << std::endl;
        /*     if(!sequences[i].empty())
                 std::cout << std::endl << sequences[i].front() << "-" << sequences[i].back() <<  " : " << sequencesScores[i];
         //std::cout << std::endl << "^^^^^^^^^^^^^" <<  std::endl << "start_frame-end_frame : score" << std::endl;*/
@@ -558,33 +728,46 @@ void process(int argc, char **argv)
     auto outputFolder =  args.gets("-o","","output folder");
     auto yBounds = args.getf32("-y", 1.5,"allowed amount of vertical movement");
     auto inputFrames =  args.gets("-f","","input pre-analyzed frames file");
+    auto inputSlamFrames =  args.gets("-s","","input pre-analyzed ORB_SLAM frames file");
     bool exportFrames = args.isPresent("-e","export quilts as image files");
     auto method = args.getu32("-m", 0, "method in the first phase of detection (0-Lucas-Kanade, 1-Farneback, 2-ORB)");
+    auto directionTest = args.isPresent("-d","strict test for the flow direction");
     auto gpu = args.getu32("-g", 0, "0-cpu flow, 1-gpu flow computations");
     auto const showHelp = args.isPresent("-h","shows help");
     if (showHelp || !args.validate()) {
         std::cerr << args.toStr();
         exit(0);
     }
-    if(inputFile.empty() || outputFolder.empty())
+    if( (inputFrames.empty() && inputFile.empty()) || outputFolder.empty())
         throw "Invalid output or input path \n"+args.toStr();
 
     if (outputFolder.back() != '/')
         outputFolder.push_back('/');
     if(!std::filesystem::exists(outputFolder))
         std::filesystem::create_directory(outputFolder);
-
-    cv::VideoCapture capture(inputFile);
-    Analyzer analyzer(method, gpu);
-    if(inputFrames.empty())
-        while(capture >> analyzer);
-    else
+    Analyzer analyzer(method, gpu, yBounds);
+    if(inputFrames.empty() && inputSlamFrames.empty())
+    {
+       cv::VideoCapture capture(inputFile);
+       while(capture >> analyzer);
+    }
+    else if(inputSlamFrames.empty())
         analyzer.loadFrames(inputFrames);
-    auto quilts = analyzer.createQuilts(outputFolder, std::filesystem::path(inputFile).stem());
+    else
+    {
+        //TODO remove
+        analyzer.loadFrames(inputFrames);
+        analyzer.loadFrames(inputSlamFrames, true);
+    }
+    auto quilts = analyzer.createQuilts(outputFolder, std::filesystem::path(inputFile).stem(), directionTest);
     analyzer.printResults();
 
-    if(exportFrames)
+    //testing the window check
+    analyzer.checkLinearWindow(20.0, 55.5, 5.0, 0);
+
+    if(exportFrames && !inputFile.empty())
     {
+        cv::VideoCapture capture(inputFile);
         for(int i=0; i<quilts.size(); i++)
             if(!quilts[i].empty())
                 std::filesystem::create_directory(outputFolder+std::to_string(i));
