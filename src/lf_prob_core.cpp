@@ -229,10 +229,6 @@ void prepareTextureMethod(vars::Vars&vars){
     is<<"/home/dormon/Desktop/lego/" << std::setfill('0') << std::setw(2) << i << ".png";
     loadColorTexture(vars,ss.str(),is.str());
   }
-  vars.reCreate<float>("offset",0);
-  vars.reCreate<float>("shift",0);
-  addVarsLimitsF(vars,"offset",-1,+1,0.001f);
-  addVarsLimitsF(vars,"shift",-1,+1,0.001f);
 }
 
 void drawTriangles(vars::Vars&vars){
