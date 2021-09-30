@@ -185,7 +185,7 @@ void createPointCloudProgram(vars::Vars&vars){
     invP[2] = vec4(0          ,0          ,0           ,-(f-n)/(2*f*n));
     invP[3] = vec4((R+L)/(2*n),(T+B)/(2*n),-1          , (n+f)/(2*f*n));
     
-    return vec4(normalize(vec3(ndc*vec2(R,T),-n))*d,1);
+    return vec4((vec3(ndc*vec2(R,T),-n))*d,1);
     //return invP * post;
 
   }

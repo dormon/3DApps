@@ -3,7 +3,7 @@ in vec2 vCoord;
 layout(binding=0)uniform sampler2D tex[8];
 uniform float inOffset = 0;
 uniform float inShift  = 0;
-uniform int   mode   = 0;
+uniform int   mode   = 7;
 uniform int   inplaceMeanSize = 4;
 uniform bool  showMix = false;
 uniform float contrast = 100;
@@ -58,6 +58,63 @@ void presentColor(vec4 color){
   fColor = clamp(color*contrast/100.f+brightness/256.f,vec4(0),vec4(1));
 }
 
+uniform float range=0.01f;
+uniform float steps=50.f;
+
+vec4 getDepth(){
+  float depth=0;
+  float inc=2.f*range/steps;
+  
+  float bestVariance=1e10f;
+  float bestFocus=-range;
+  for(float f=-range;f<range;f+=inc){
+    vec4 mean = vec4(0);
+    for(int i=0;i<8;++i)
+      mean+=texture(tex[i],vec2(vCoord.x+i*f,vCoord.y));
+    mean/=8.f;
+    float variance=0.f;
+    for(int i=0;i<8;++i)
+      variance+=length(texture(tex[i],vec2(vCoord.x+i*f,vCoord.y))-mean)/sqrt(4.f);
+    variance/=8.f;
+    if(variance<bestVariance){
+      bestFocus=f;
+      bestVariance=variance;
+    }
+  }
+  return vec4((bestFocus+range)/range/2.f);
+}
+
+uniform float stripSize=1.f;
+
+vec4 getDepth2(){
+  float depth=0;
+  float inc=2.f*range/steps;
+  
+  float bestVariance=1e10f;
+  float bestFocus=-range;
+  for(float f=-range;f<range;f+=inc){
+    const float pixs = 1.f/textureSize(tex[0],0).x;
+    const float pp=pixs*stripSize;
+    float globVar=0.f;
+    for(float p=-pp;p<pp;p+=pixs){
+      vec4 mean = vec4(0);
+      for(int i=0;i<8;++i)
+        mean+=texture(tex[i],vec2(vCoord.x+i*f+p,vCoord.y));
+      mean/=8.f;
+      float variance=0.f;
+      for(int i=0;i<8;++i)
+        variance+=length(texture(tex[i],vec2(vCoord.x+i*f+p,vCoord.y))-mean)/sqrt(4.f);
+      variance/=8.f;
+      globVar+=variance*((pp-abs(p))/pp);
+    }
+    if(globVar<bestVariance){
+      bestFocus=f;
+      bestVariance=globVar;
+    }
+  }
+  return vec4((bestFocus+range)/range/2.f);
+}
+
 void main(){
   float shift = inShift / 100.f;
   float offset = inOffset / 5000.f;
@@ -76,6 +133,8 @@ void main(){
   if(mode==3)presentColor(getInplaceMeanColor());
   if(mode==4)presentColor(getInplaceVarianceColor());
   if(mode==5)presentColor(getVarianceColor(offset,shift) / (getInplaceVarianceColor()));
+  if(mode==6)presentColor(getDepth());
+  if(mode==7)presentColor(getDepth2());
 
 
 }

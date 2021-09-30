@@ -37,6 +37,7 @@ class Holo: public simple3DApp::Application{
 
 void loadColorTexture(vars::Vars&vars,std::string const&v,std::string const&f){
   fipImage colorImg;
+  std::cerr << "loading: " << f << std::endl;
   colorImg.load(f.c_str());
   auto const width   = colorImg.getWidth();
   auto const height  = colorImg.getHeight();
@@ -72,6 +73,8 @@ void loadColorTexture(vars::Vars&vars,std::string const&v,std::string const&f){
       v,GL_TEXTURE_2D,GL_RGB8,1,width,height);
   //ge::gl::glPixelStorei(GL_UNPACK_ROW_LENGTH,width);
   //ge::gl::glPixelStorei(GL_UNPACK_ALIGNMENT ,1    );
+  ge::gl::glTextureParameteri(colorTex->getId(),GL_TEXTURE_WRAP_S,GL_CLAMP_TO_EDGE);
+  ge::gl::glTextureParameteri(colorTex->getId(),GL_TEXTURE_WRAP_T,GL_CLAMP_TO_EDGE);
   ge::gl::glTextureSubImage2D(colorTex->getId(),0,0,0,width,height,format,type,data);
 }
 
@@ -226,7 +229,7 @@ void prepareTextureMethod(vars::Vars&vars){
     std::stringstream ss;
     ss<<"img"<<i;
     std::stringstream is;
-    is<<"/home/dormon/Desktop/lego/" << std::setfill('0') << std::setw(2) << i << ".png";
+    is<<"/home/dormon/Desktop/pav/" << std::setfill('0') << std::setw(4) << (i+1) << ".png";
     loadColorTexture(vars,ss.str(),is.str());
   }
 }
