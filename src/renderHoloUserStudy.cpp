@@ -571,21 +571,25 @@ class Quilt{
       fbo->bind();
       ge::gl::glClearColor(0,1,0,1);
       ge::gl::glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
-      size_t counter = 0;
 
+      float const fov = glm::radians<float>(vars.getFloat("quiltRender.fov"));
+      float const size = vars.getFloat("quiltRender.size");
+      float const camDist  =  size / glm::tan(fov * 0.5f); /// ?
+      float const viewCone = glm::radians<float>(vars.getFloat("quiltRender.viewCone")); /// ?
+      float const aspect = static_cast<float>(res.x) / static_cast<float>(res.y);
+      float const viewConeSweep = -camDist * glm::tan(viewCone);
+      float const projModifier = 1.f / (size * aspect);
+      auto const numViews = counts.x * counts.y;
+      float d = vars.addOrGetFloat("quiltRender.d",0.70f);
+      addVarsLimitsF(vars,"quiltRender.d",0,400,0.01);
+      float S = 0.5f*d*glm::tan(viewCone);
+      float tilt = d*aspect*glm::tan(vars.getFloat("camera.fovy")/2);
+
+      size_t counter = 0;
       for(size_t j=0;j<counts.y;++j)
         for(size_t i=0;i<counts.x;++i){
           ge::gl::glViewport(i*(res.x),j*(res.y),res.x,res.y);
 
-
-          float const fov = glm::radians<float>(vars.getFloat("quiltRender.fov"));
-          float const size = vars.getFloat("quiltRender.size");
-          float const camDist  =  size / glm::tan(fov * 0.5f); /// ?
-          float const viewCone = glm::radians<float>(vars.getFloat("quiltRender.viewCone")); /// ?
-          float const aspect = static_cast<float>(res.x) / static_cast<float>(res.y);
-          float const viewConeSweep = -camDist * glm::tan(viewCone);
-			    float const projModifier = 1.f / (size * aspect);
-          auto const numViews = counts.x * counts.y;
           float currentViewLerp = 0.f; // if numviews is 1, take center view
           if (numViews > 1)
             currentViewLerp = (float)counter / (numViews - 1) - 0.5f;
@@ -594,20 +598,15 @@ class Quilt{
           glm::mat4 proj = centerProj;
 
           float t = (float)counter / (float)(numViews - 1);
-
-          float d = vars.addOrGetFloat("quiltRender.d",0.70f);
-          addVarsLimitsF(vars,"quiltRender.d",0,400,0.01);
           
-          float S = 0.5f*d*glm::tan(viewCone);
           float s = S-2*t*S;
           view[3][0] += s;
-          proj[2][0] += s/(d*aspect*glm::tan(vars.getFloat("camera.fovy")/2));
+          proj[2][0] += s/tilt;
 
           fce(view,proj);
           counter++;
         }
       fbo->unbind();
-
       ge::gl::glViewport(origViewport[0],origViewport[1],origViewport[2],origViewport[3]);
     }
 };
@@ -641,6 +640,30 @@ void drawHolo(vars::Vars&vars){
     ->use();
 
   ge::gl::glDrawArrays(GL_TRIANGLE_STRIP,0,4);
+}
+
+void drawGui(vars::Vars&vars)
+{
+    const std::vector<std::string> labels{"Move the slider to the highest (righmost) value which is still producing visually acceptable and pleasant result.",
+                                 "Move the slider wherever you need to achieve the nicest result for you.",
+                                 "Turn on or off the effect (checkbox) and leave it at the state which looks better."};
+    const std::string varsPrefix{"measurements"};
+    enum TestType {MAX_SLIDER=0, BEST_SLIDER, CHECKBOX}; 
+    const std::vector<std::pair<std::string, TestType>> items{ {"vertical", MAX_SLIDER} };
+    auto currentID{vars.addOrGet<size_t>(varsPrefix+"current",0)};
+    auto currentVar{vars.addOrGet<float>(varsPrefix+items[*currentID].first,0)};  
+   
+    auto type = items[*currentID].second; 
+    ImGui::LabelText("Task", "%s", labels[type].c_str());
+    if(type == MAX_SLIDER || type == BEST_SLIDER)
+        ImGui::DragFloat("Search range", &vars.getFloat("searchRange"),0.001f, -5, 5, "%.3f");
+    else
+        ImGui::Checkbox("Enable effect", 0);
+
+    ImGui::Begin("Testing");
+    if (ImGui::Button("Next"))
+        *currentID++;
+    ImGui::End();
 }
 
 void Holo::draw(){
