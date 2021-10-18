@@ -16,6 +16,7 @@
 #include <drawGrid.h>
 #include <FreeImagePlus.h>
 #include <imguiDormon/imgui.h>
+#include <Timer.h>
 #include <holoCalibration.h>
 
 #include<assimp/cimport.h>
@@ -28,11 +29,12 @@
 #include<glm/gtc/matrix_transform.hpp>
 #include<glm/gtc/type_ptr.hpp>
 #include<glm/gtc/matrix_access.hpp>
-#include <memory>
 
+#include <memory>
+#include <time.h>
+#include <fstream>
 
 #define ___ std::cerr << __FILE__ << " " << __LINE__ << std::endl
-
 
 SDL_Surface* flipSurface(SDL_Surface* sfc) {
      SDL_Surface* result = SDL_CreateRGBSurface(sfc->flags, sfc->w, sfc->h,
@@ -76,6 +78,7 @@ class Holo: public simple3DApp::Application{
   Holo(int argc, char* argv[]) : Application(argc, argv) {}
   virtual ~Holo(){}
   virtual void draw() override;
+  void stop() {mainLoop->stop();};
 
   vars::Vars vars;
   bool fullscreen = false;
@@ -642,27 +645,74 @@ void drawHolo(vars::Vars&vars){
   ge::gl::glDrawArrays(GL_TRIANGLE_STRIP,0,4);
 }
 
-void drawGui(vars::Vars&vars)
+class TestCase
 {
+    public:
+    enum TestType {MAX_SLIDER=0, BEST_SLIDER, CHECKBOX}; 
+    std::string name;
+    TestType type;
+    static const std::string varsPrefix;
+};
+const std::string TestCase::varsPrefix{"measurements"};
+
+void saveResults(vars::Vars&vars, const std::vector<TestCase> &items)
+{
+  time_t rawtime;
+  struct tm * timeinfo;
+  time (&rawtime);
+  timeinfo = localtime (&rawtime);
+  std::string fileName{asctime(timeinfo)};
+  fileName.pop_back();
+  std::ofstream f(vars.getString("resultDir")+fileName+".txt");
+
+  for(const auto &item : items)
+    f   << item.name << " " << vars.getFloat(TestCase::varsPrefix+item.name) << std::endl
+        << "sick: " << vars.getFloat(TestCase::varsPrefix+item.name+"Sick") << std::endl
+        << "time: " << *vars.get<double>(TestCase::varsPrefix+item.name+"Time") << std::endl << std::endl;
+  f.close();
+}
+
+void drawTestingGui(vars::Vars&vars)
+{
+    auto timer = vars.addOrGet<Timer<double>>("timer");
+    auto resetTimer = vars.get<bool>("resetTimer");
+    if(*resetTimer)
+    {
+        timer->reset();
+        *resetTimer = false;
+    }
     const std::vector<std::string> labels{"Move the slider to the highest (righmost) value which is still producing visually acceptable and pleasant result.",
                                  "Move the slider wherever you need to achieve the nicest result for you.",
                                  "Turn on or off the effect (checkbox) and leave it at the state which looks better."};
-    const std::string varsPrefix{"measurements"};
-    enum TestType {MAX_SLIDER=0, BEST_SLIDER, CHECKBOX}; 
-    const std::vector<std::pair<std::string, TestType>> items{ {"vertical", MAX_SLIDER} };
-    auto currentID{vars.addOrGet<size_t>(varsPrefix+"current",0)};
-    auto currentVar{vars.addOrGet<float>(varsPrefix+items[*currentID].first,0)};  
-   
-    auto type = items[*currentID].second; 
-    ImGui::LabelText("Task", "%s", labels[type].c_str());
-    if(type == MAX_SLIDER || type == BEST_SLIDER)
-        ImGui::DragFloat("Search range", &vars.getFloat("searchRange"),0.001f, -5, 5, "%.3f");
-    else
-        ImGui::Checkbox("Enable effect", 0);
-
+    const std::vector<TestCase> items{ {"vertical", TestCase::MAX_SLIDER} };
+    auto currentID{vars.addOrGet<size_t>(TestCase::varsPrefix+"current",0)};
+    auto currentItem{items[*currentID]};
+    auto prefixedName = TestCase::varsPrefix+currentItem.name;
+    auto currentVar{vars.addOrGet<float>(prefixedName,0)};
+    auto currentSickVar{vars.addOrGet<float>(prefixedName+"Sick",0)};
+    
     ImGui::Begin("Testing");
+    //ImGui::GetStyle().ScaleAllSizes(5.f);
+    //ImGui::GetIO().FontGlobalScale = 5.f;
+
+    ImGui::TextWrapped("%s", (labels[currentItem.type]+" If you feel sick during the adjusting of the slider, also adjust the sickness level (0 not sick at all, 1 very dizzy)").c_str());
+    if(currentItem.type == TestCase::MAX_SLIDER || currentItem.type == TestCase::BEST_SLIDER)
+        ImGui::SliderFloat("Slider", currentVar, 0, 1, "%.6f");
+    else
+        ImGui::Checkbox("Enable effect", reinterpret_cast<bool*>(currentVar));
+
+    ImGui::SliderFloat("Sickness level", currentSickVar, 0, 1, "%.1f");
     if (ImGui::Button("Next"))
-        *currentID++;
+    {
+        vars.reCreate<double>(prefixedName+"Time", vars.get<Timer<double>>("timer")->elapsedFromStart());
+        *resetTimer = true;    
+        (*currentID)++;
+        if(*currentID > items.size()-1)
+        {
+            saveResults(vars, items);
+            (*vars.get<Holo*>("thisApp"))->stop();
+        }
+    }
     ImGui::End();
 }
 
@@ -722,7 +772,7 @@ void Holo::draw(){
 
   vars.get<ge::gl::VertexArray>("emptyVao")->unbind();
 
-
+  drawTestingGui(vars);
   drawImguiVars(vars);
 
   swap();
@@ -737,6 +787,7 @@ void Holo::init(){
   auto const modelFile = args->gets("--model","","model file");
   auto const textureFile = args->gets("--texture","","texture file");
   auto const backgroundFile = args->gets("--bckg","","background file");
+  auto const resultDir = args->gets("--outDir","","where to save results");
   auto const showHelp = args->isPresent("-h","shows help");
   if (showHelp || !args->validate()) {
     std::cerr << args->toStr();
@@ -748,10 +799,13 @@ void Holo::init(){
     SDL_SetWindowResizable(window->getWindow(),SDL_FALSE);
   window->setSize(windowSize[0],windowSize[1]);
 
+  vars.add<Holo*>("thisApp", this);
+
   vars.addString("quiltTexFileName",quiltFile);
   vars.addString("bckgTexFileName",backgroundFile);
   vars.addString("modelFileName",modelFile);
   vars.addString("modelTexFileName",textureFile);
+  vars.addString("resultDir",resultDir);
   
   vars.add<ge::gl::VertexArray>("emptyVao");
   vars.add<glm::uvec2>("windowSize",window->getWidth(),window->getHeight());
@@ -761,6 +815,8 @@ void Holo::init(){
   vars.addFloat("camera.far",1000.f);
   vars.add<std::map<SDL_Keycode, bool>>("input.keyDown");
   vars.addBool("useOrbitCamera",false);
+
+  vars.addBool("resetTimer", true);
 
   HoloCalibration::Calibration cal = HoloCalibration::getCalibration();
   vars.addFloat      ("quiltView.pitch"      ,cal.recalculatedPitch());
@@ -819,6 +875,8 @@ void Holo::key(SDL_Event const& event, bool DOWN) {
     auto const windowSize     = vars.get<glm::uvec2>("windowSize");
     screenShot("screenshot",windowSize->x,windowSize->y);
   }
+  if(event.key.keysym.sym == SDLK_ESCAPE && DOWN)
+   (*vars.get<Holo*>("thisApp"))->stop();
 }
 
 void Holo::mouseMove(SDL_Event const& e) {
