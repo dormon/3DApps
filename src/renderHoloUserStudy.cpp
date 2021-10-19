@@ -603,8 +603,31 @@ class Quilt{
           float t = (float)counter / (float)(numViews - 1);
           
           float s = S-2*t*S;
+          view[3][2] += *vars.addOrGet<float>("ff",0.f)*counter*0.01f;
+          //view[3][1] += (*vars.addOrGet<float>("ff",0.f))*(-1.f+2.f*(float)(counter%2))*0.01f;
           view[3][0] += s;
-          proj[2][0] += s/tilt;
+          proj[2][0] += s/tilt;//(tilt+vars.addOrGetFloat("DTilt",0.f)*counter*0.01f);
+
+          uint32_t mode = vars.addOrGetUint32("DMode",0);
+          uint32_t axis = vars.addOrGetUint32("DAxis",0);
+          uint32_t freq = vars.addOrGetFloat ("DFreq",1.f);
+          bool jagged    = vars.addOrGetBool("DJagged");
+          bool translate = vars.addOrGetBool("DTranslate?");
+          float deform = 0.f;
+          if(jagged)deform = (vars.addOrGetFloat("DStrength",0.f))*(glm::sin((float)(counter)*freq/100.f*glm::pi<float>()*2.f))*0.01f; 
+          else      deform =  vars.addOrGetFloat("DStrength",0.f)*                   counter                                   *0.01f;
+       
+          if(translate){
+            for(int k=0;k<3;++k)
+              view[3][k] += ((axis>>k)&1)*deform;
+          }else{
+            auto camPos = glm::inverse(view)*glm::vec4(0.f,0.f,0.f,1.f);
+            view = glm::translate(glm::mat4(1.f),+glm::vec3(camPos))*
+                   glm::rotate   (glm::mat4(1.f),deform,glm::vec3((axis>>0)&1,(axis>>1)&1,(axis>>2)&1))*
+                   glm::translate(glm::mat4(1.f),-glm::vec3(camPos))*
+                   view;
+          }
+
 
           fce(view,proj);
           counter++;
