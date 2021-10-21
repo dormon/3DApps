@@ -8,6 +8,7 @@
 #include <BasicCamera/OrbitCamera.h>
 #include <Barrier.h>
 #include <geGL/Texture.h>
+#include <glm/gtc/constants.hpp>
 #include <imguiSDL2OpenGL/imgui.h>
 #include <imguiVars/imguiVars.h>
 #include <imguiVars/addVarsLimits.h>
@@ -37,19 +38,19 @@
 #define ___ std::cerr << __FILE__ << " " << __LINE__ << std::endl
 
 SDL_Surface* flipSurface(SDL_Surface* sfc) {
-     SDL_Surface* result = SDL_CreateRGBSurface(sfc->flags, sfc->w, sfc->h,
-         sfc->format->BytesPerPixel * 8, sfc->format->Rmask, sfc->format->Gmask,
-         sfc->format->Bmask, sfc->format->Amask);
-     const auto pitch = sfc->pitch;
-     const auto pxlength = pitch*(sfc->h - 1);
-     auto pixels = static_cast<unsigned char*>(sfc->pixels) + pxlength;
-     auto rpixels = static_cast<unsigned char*>(result->pixels) ;
-     for(auto line = 0; line < sfc->h; ++line) {
-         memcpy(rpixels,pixels,pitch);
-         pixels -= pitch;
-         rpixels += pitch;
-     }
-     return result;
+    SDL_Surface* result = SDL_CreateRGBSurface(sfc->flags, sfc->w, sfc->h,
+            sfc->format->BytesPerPixel * 8, sfc->format->Rmask, sfc->format->Gmask,
+            sfc->format->Bmask, sfc->format->Amask);
+    const auto pitch = sfc->pitch;
+    const auto pxlength = pitch*(sfc->h - 1);
+    auto pixels = static_cast<unsigned char*>(sfc->pixels) + pxlength;
+    auto rpixels = static_cast<unsigned char*>(result->pixels) ;
+    for(auto line = 0; line < sfc->h; ++line) {
+        memcpy(rpixels,pixels,pitch);
+        pixels -= pitch;
+        rpixels += pitch;
+    }
+    return result;
 }
 
 void screenShot(std::string filename, int w, int h)
@@ -73,191 +74,200 @@ void screenShot(std::string filename, int w, int h)
     SDL_FreeSurface(ss); 
 }
 
-class Holo: public simple3DApp::Application{
- public:
-  Holo(int argc, char* argv[]) : Application(argc, argv) {}
-  virtual ~Holo(){}
-  virtual void draw() override;
-  void stop() {mainLoop->stop();};
-
-  vars::Vars vars;
-  bool fullscreen = false;
-
-  virtual void                init() override;
-  virtual void                resize(uint32_t x,uint32_t y) override;
-  virtual void                key(SDL_Event const& e, bool down) override;
-  virtual void                mouseMove(SDL_Event const& event) override;
+class TestCase
+{
+    public:
+        enum TestType {MAX_SLIDER=0, BEST_SLIDER, CHECKBOX}; 
+        std::string name;
+        TestType type;
+        static const std::string varsPrefix;
 };
 
+const std::string TestCase::varsPrefix{"measurements"};
 
+class Holo: public simple3DApp::Application{
+    public:
+        Holo(int argc, char* argv[]) : Application(argc, argv) {}
+        virtual ~Holo(){}
+        virtual void draw() override;
+        void stop() {mainLoop->stop();};
+
+        vars::Vars vars;
+        bool fullscreen = false;
+
+        virtual void                init() override;
+        virtual void                resize(uint32_t x,uint32_t y) override;
+        virtual void                key(SDL_Event const& e, bool down) override;
+        virtual void                mouseMove(SDL_Event const& event) override;
+};
 
 std::shared_ptr<ge::gl::Texture> loadColorTexture(std::string fileName)
 { 
-  if(fileName.empty())   
-      return std::make_shared<ge::gl::Texture>(GL_TEXTURE_2D,GL_RGB8,1,1,1);
+    if(fileName.empty())   
+        return std::make_shared<ge::gl::Texture>(GL_TEXTURE_2D,GL_RGB8,1,1,1);
 
-  fipImage colorImg;
-  colorImg.load(fileName.c_str());
-  auto const width   = colorImg.getWidth();
-  auto const height  = colorImg.getHeight();
-  auto const BPP     = colorImg.getBitsPerPixel();
-  auto const imgType = colorImg.getImageType();
-  auto const data    = colorImg.accessPixels();
+    fipImage colorImg;
+    colorImg.load(fileName.c_str());
+    auto const width   = colorImg.getWidth();
+    auto const height  = colorImg.getHeight();
+    auto const BPP     = colorImg.getBitsPerPixel();
+    auto const imgType = colorImg.getImageType();
+    auto const data    = colorImg.accessPixels();
 
-  std::cerr << "color BPP : " << BPP << std::endl;
-  std::cerr << "color type: " << imgType << std::endl;
+    std::cerr << "color BPP : " << BPP << std::endl;
+    std::cerr << "color type: " << imgType << std::endl;
 
-  GLenum format;
-  GLenum type;
-  if(imgType == FIT_BITMAP){
-    std::cerr << "color imgType: FIT_BITMAP" << std::endl;
-    if(BPP == 24)format = GL_BGR;
-    if(BPP == 32)format = GL_BGRA;
-    type = GL_UNSIGNED_BYTE;
-  }
-  if(imgType == FIT_RGBAF){
-    std::cerr << "color imgType: FIT_RGBAF" << std::endl;
-    if(BPP == 32*4)format = GL_RGBA;
-    if(BPP == 32*3)format = GL_RGB;
-    type = GL_FLOAT;
-  }
-  if(imgType == FIT_RGBA16){
-    std::cerr << "color imgType: FIT_RGBA16" << std::endl;
-    if(BPP == 48)format = GL_RGB ;
-    if(BPP == 64)format = GL_RGBA;
-    type = GL_UNSIGNED_SHORT;
-  }
+    GLenum format;
+    GLenum type;
+    if(imgType == FIT_BITMAP){
+        std::cerr << "color imgType: FIT_BITMAP" << std::endl;
+        if(BPP == 24)format = GL_BGR;
+        if(BPP == 32)format = GL_BGRA;
+        type = GL_UNSIGNED_BYTE;
+    }
+    if(imgType == FIT_RGBAF){
+        std::cerr << "color imgType: FIT_RGBAF" << std::endl;
+        if(BPP == 32*4)format = GL_RGBA;
+        if(BPP == 32*3)format = GL_RGB;
+        type = GL_FLOAT;
+    }
+    if(imgType == FIT_RGBA16){
+        std::cerr << "color imgType: FIT_RGBA16" << std::endl;
+        if(BPP == 48)format = GL_RGB ;
+        if(BPP == 64)format = GL_RGBA;
+        type = GL_UNSIGNED_SHORT;
+    }
 
-  auto colorTex = std::make_shared<ge::gl::Texture>(GL_TEXTURE_2D,GL_RGB8,1,width,height);
-  //ge::gl::glPixelStorei(GL_UNPACK_ROW_LENGTH,width);
-  //ge::gl::glPixelStorei(GL_UNPACK_ALIGNMENT ,1    );
-  ge::gl::glTextureSubImage2D(colorTex->getId(),0,0,0,width,height,format,type,data);
-  return colorTex;
+    auto colorTex = std::make_shared<ge::gl::Texture>(GL_TEXTURE_2D,GL_RGB8,1,width,height);
+    //ge::gl::glPixelStorei(GL_UNPACK_ROW_LENGTH,width);
+    //ge::gl::glPixelStorei(GL_UNPACK_ALIGNMENT ,1    );
+    ge::gl::glTextureSubImage2D(colorTex->getId(),0,0,0,width,height,format,type,data);
+    return colorTex;
 }
 
 
 class Model{
-  public:
-    aiScene const*model = nullptr;
-    Model(std::string const&name);
-    virtual ~Model();
-	std::vector<float> getVertices() const;
-	std::vector<float> getNormals() const;
-	std::vector<float> getUVs() const;
+    public:
+        aiScene const*model = nullptr;
+        Model(std::string const&name);
+        virtual ~Model();
+        std::vector<float> getVertices() const;
+        std::vector<float> getNormals() const;
+        std::vector<float> getUVs() const;
 
-	std::string getName() const { return name; };
+        std::string getName() const { return name; };
 
-protected:
-	void generateVertices();
-	std::vector<float> vertices;
-	std::vector<float> normals;
-	std::vector<float> uvs;
+    protected:
+        void generateVertices();
+        std::vector<float> vertices;
+        std::vector<float> normals;
+        std::vector<float> uvs;
 
-	std::string name;
+        std::string name;
 };
 
 class RenderModel: public ge::gl::Context{
-  public:
-    RenderModel(Model*mdl, std::string textureFileName, std::string bckgFileName);
-    ~RenderModel();
-    void draw(glm::mat4 const&view,glm::mat4 const&projection);
-    std::shared_ptr<ge::gl::VertexArray>vao           = nullptr;
-    std::shared_ptr<ge::gl::Buffer     >vertices      = nullptr;
-    std::shared_ptr<ge::gl::Buffer     >normals       = nullptr;
-    std::shared_ptr<ge::gl::Buffer     >uvs       = nullptr;
-    std::shared_ptr<ge::gl::Buffer     >indices       = nullptr;
-    std::shared_ptr<ge::gl::Buffer     >indexVertices = nullptr;
-    std::shared_ptr<ge::gl::Program    >program       = nullptr;
-    std::shared_ptr<ge::gl::Program    >bckgProgram       = nullptr;
-    std::shared_ptr<ge::gl::Texture>   bckgTex = nullptr;
-    std::shared_ptr<ge::gl::Texture>   modelTex = nullptr;
-    glm::vec3 lightPos{0,0,1000};   
-    uint32_t nofVertices = 0;
+    public:
+        RenderModel(Model*mdl, std::string textureFileName, std::string bckgFileName);
+        ~RenderModel();
+        void draw(glm::mat4 const&view,glm::mat4 const&projection);
+        std::shared_ptr<ge::gl::VertexArray>vao           = nullptr;
+        std::shared_ptr<ge::gl::Buffer     >vertices      = nullptr;
+        std::shared_ptr<ge::gl::Buffer     >normals       = nullptr;
+        std::shared_ptr<ge::gl::Buffer     >uvs       = nullptr;
+        std::shared_ptr<ge::gl::Buffer     >indices       = nullptr;
+        std::shared_ptr<ge::gl::Buffer     >indexVertices = nullptr;
+        std::shared_ptr<ge::gl::Program    >program       = nullptr;
+        std::shared_ptr<ge::gl::Program    >bckgProgram       = nullptr;
+        std::shared_ptr<ge::gl::Texture>   bckgTex = nullptr;
+        std::shared_ptr<ge::gl::Texture>   modelTex = nullptr;
+        glm::vec3 lightPos{0,0,1000};   
+        uint32_t nofVertices = 0;
 };
 
 Model::Model(std::string const&fileName)
 {
-	model = aiImportFile(fileName.c_str(),aiProcess_Triangulate|aiProcess_GenNormals|aiProcess_SortByPType);
+    model = aiImportFile(fileName.c_str(),aiProcess_Triangulate|aiProcess_GenNormals|aiProcess_SortByPType);
 
-	if (model == nullptr)
-	{
-		std::cerr << "Can't open file: " << fileName << std::endl;
-	}
-	else
-	{
-		generateVertices();
-		name = model->GetShortFilename(fileName.c_str());
-	}
+    if (model == nullptr)
+    {
+        std::cerr << "Can't open file: " << fileName << std::endl;
+    }
+    else
+    {
+        generateVertices();
+        name = model->GetShortFilename(fileName.c_str());
+    }
 }
 
 Model::~Model(){
-  assert(this!=nullptr);
-  if(this->model)aiReleaseImport(this->model);
+    assert(this!=nullptr);
+    if(this->model)aiReleaseImport(this->model);
 }
 
 std::vector<float> Model::getVertices() const
 {
-	return vertices;
+    return vertices;
 }
 
 std::vector<float> Model::getNormals() const
 {
-	return normals;
+    return normals;
 }
 
 std::vector<float> Model::getUVs() const
 {
-	return uvs;
+    return uvs;
 }
 
 void Model::generateVertices(){
-  size_t nofVertices = 0;
-  for(size_t i=0;i<model->mNumMeshes;++i)
-    nofVertices+=model->mMeshes[i]->mNumFaces*3;
-  vertices.reserve(nofVertices*3);
-  for(size_t i=0;i<model->mNumMeshes;++i){
-    auto mesh = model->mMeshes[i];
-    for(size_t j=0;j<mesh->mNumFaces;++j)
-      for(size_t k=0;k<3;++k)
-        for(size_t l=0;l<3;++l)
-        {
-          auto element = mesh->mFaces[j].mIndices[k];
-          vertices.push_back(mesh->mVertices[element][l]);
-          normals.push_back(mesh->mNormals[element][l]);
-            if(l<2)
-              uvs.push_back(mesh->mTextureCoords[0][element][l]);
-        }
-  }
+    size_t nofVertices = 0;
+    for(size_t i=0;i<model->mNumMeshes;++i)
+        nofVertices+=model->mMeshes[i]->mNumFaces*3;
+    vertices.reserve(nofVertices*3);
+    for(size_t i=0;i<model->mNumMeshes;++i){
+        auto mesh = model->mMeshes[i];
+        for(size_t j=0;j<mesh->mNumFaces;++j)
+            for(size_t k=0;k<3;++k)
+                for(size_t l=0;l<3;++l)
+                {
+                    auto element = mesh->mFaces[j].mIndices[k];
+                    vertices.push_back(mesh->mVertices[element][l]);
+                    normals.push_back(mesh->mNormals[element][l]);
+                    if(l<2)
+                        uvs.push_back(mesh->mTextureCoords[0][element][l]);
+                }
+    }
 }
 
 RenderModel::RenderModel(Model*mdl, std::string textureFileName, std::string bckgFileName){
-  assert(this!=nullptr);
-  if(mdl==nullptr)
-    std::cerr << "mdl is nullptr!" << std::endl;
-  this->nofVertices = 0;
-  auto model = mdl->model;
-  for(size_t i=0;i<model->mNumMeshes;++i)
-    this->nofVertices+=model->mMeshes[i]->mNumFaces*3;
-  
-  std::vector<float>vertData;
-  vertData = mdl->getVertices();
-  this->vertices = std::make_shared<ge::gl::Buffer>(this->nofVertices*sizeof(float)*3,vertData.data());
-  auto normData = mdl->getNormals();
-  this->normals = std::make_shared<ge::gl::Buffer>(this->nofVertices*sizeof(float)*3,normData.data());
-  auto uvData = mdl->getUVs();
-  this->uvs = std::make_shared<ge::gl::Buffer>(this->nofVertices*sizeof(float)*2,uvData.data());
+    assert(this!=nullptr);
+    if(mdl==nullptr)
+        std::cerr << "mdl is nullptr!" << std::endl;
+    this->nofVertices = 0;
+    auto model = mdl->model;
+    for(size_t i=0;i<model->mNumMeshes;++i)
+        this->nofVertices+=model->mMeshes[i]->mNumFaces*3;
 
-  this->vao = std::make_shared<ge::gl::VertexArray>();
-  this->vao->addAttrib(this->vertices,0,3,GL_FLOAT);
-  this->vao->addAttrib(this->normals,1,3,GL_FLOAT);
-  this->vao->addAttrib(this->uvs,2,2,GL_FLOAT);
-  
-  bckgTex = loadColorTexture(bckgFileName);
-  modelTex = loadColorTexture(textureFileName);
+    std::vector<float>vertData;
+    vertData = mdl->getVertices();
+    this->vertices = std::make_shared<ge::gl::Buffer>(this->nofVertices*sizeof(float)*3,vertData.data());
+    auto normData = mdl->getNormals();
+    this->normals = std::make_shared<ge::gl::Buffer>(this->nofVertices*sizeof(float)*3,normData.data());
+    auto uvData = mdl->getUVs();
+    this->uvs = std::make_shared<ge::gl::Buffer>(this->nofVertices*sizeof(float)*2,uvData.data());
 
-  const std::string vertSrc =
-"#version 450 \n"
-R".(
+    this->vao = std::make_shared<ge::gl::VertexArray>();
+    this->vao->addAttrib(this->vertices,0,3,GL_FLOAT);
+    this->vao->addAttrib(this->normals,1,3,GL_FLOAT);
+    this->vao->addAttrib(this->uvs,2,2,GL_FLOAT);
+
+    bckgTex = loadColorTexture(bckgFileName);
+    modelTex = loadColorTexture(textureFileName);
+
+    const std::string vertSrc =
+        "#version 450 \n"
+        R".(
   uniform mat4 projection = mat4(1);
   uniform mat4 view       = mat4(1);
 
@@ -278,9 +288,9 @@ R".(
     vNormal   = normal;
     vUV   = uv;
   }).";
-  const std::string fragSrc = 
-"#version 450\n" 
-R".(
+        const std::string fragSrc = 
+        "#version 450\n" 
+        R".(
   layout(location=0)out vec4 fColor;
   layout(binding=0)uniform sampler2D modelTex;
 
@@ -324,24 +334,24 @@ R".(
     fColor = vec4(dl + sl,1);
 
   }).";
-  auto vs = std::make_shared<ge::gl::Shader>(GL_VERTEX_SHADER, vertSrc);
-  auto fs = std::make_shared<ge::gl::Shader>(GL_FRAGMENT_SHADER, fragSrc);
-  this->program = std::make_shared<ge::gl::Program>(vs,fs);
+        auto vs = std::make_shared<ge::gl::Shader>(GL_VERTEX_SHADER, vertSrc);
+    auto fs = std::make_shared<ge::gl::Shader>(GL_FRAGMENT_SHADER, fragSrc);
+    this->program = std::make_shared<ge::gl::Program>(vs,fs);
 
-  const std::string bckgVertSrc =
-  "#version 450 \n"
-  R".(
+    const std::string bckgVertSrc =
+        "#version 450 \n"
+        R".(
   #extension GL_KHR_vulkan_glsl : enable
   out vec2 uv;
-  
+
   void main(){
     uv = vec2((gl_VertexID << 1) & 2, gl_VertexID & 2);
     gl_Position = vec4(2.0f*uv-1.0f, 0.9999999f, 1.0f);
   }
 ).";
-  const std::string bckgFragSrc = 
-"#version 450\n" 
-R".(
+        const std::string bckgFragSrc = 
+        "#version 450\n" 
+        R".(
   in vec2 uv;
   layout(location = 0) out vec4 outColor;
   layout(binding=0)uniform sampler2D bckgTex;
@@ -350,89 +360,89 @@ R".(
     outColor = texture(bckgTex,uv);
 
   }).";
-  auto bckgVs = std::make_shared<ge::gl::Shader>(GL_VERTEX_SHADER, bckgVertSrc);
-  auto bckgFs = std::make_shared<ge::gl::Shader>(GL_FRAGMENT_SHADER, bckgFragSrc);
-  this->bckgProgram = std::make_shared<ge::gl::Program>(bckgVs,bckgFs);
+        auto bckgVs = std::make_shared<ge::gl::Shader>(GL_VERTEX_SHADER, bckgVertSrc);
+    auto bckgFs = std::make_shared<ge::gl::Shader>(GL_FRAGMENT_SHADER, bckgFragSrc);
+    this->bckgProgram = std::make_shared<ge::gl::Program>(bckgVs,bckgFs);
 }
 
 RenderModel::~RenderModel(){
-  assert(this!=nullptr);
+    assert(this!=nullptr);
 }
 
 
 void RenderModel::draw(glm::mat4 const&view,glm::mat4 const&projection){
-  assert(this!=nullptr);
-  ge::gl::glEnable(GL_DEPTH_TEST);
-  this->bckgProgram->use();
-  this->bckgTex->bind(0);
-  this->vao->bind(); 
-  this->glDrawArrays(GL_TRIANGLES,0,3);
-  this->program->use();
-  this->modelTex->bind(0);
-  this->program->set3fv("lightPos", glm::value_ptr(this->lightPos));
-  this->program->setMatrix4fv("projection",glm::value_ptr(projection));
-  this->program->setMatrix4fv("view"      ,glm::value_ptr(view      ));
-  this->glDrawArrays(GL_TRIANGLES,0,this->nofVertices);
-  this->vao->unbind();
+    assert(this!=nullptr);
+    ge::gl::glEnable(GL_DEPTH_TEST);
+    this->bckgProgram->use();
+    this->bckgTex->bind(0);
+    this->vao->bind(); 
+    this->glDrawArrays(GL_TRIANGLES,0,3);
+    this->program->use();
+    this->modelTex->bind(0);
+    this->program->set3fv("lightPos", glm::value_ptr(this->lightPos));
+    this->program->setMatrix4fv("projection",glm::value_ptr(projection));
+    this->program->setMatrix4fv("view"      ,glm::value_ptr(view      ));
+    this->glDrawArrays(GL_TRIANGLES,0,this->nofVertices);
+    this->vao->unbind();
 }
 
 void preprareDrawModel(vars::Vars&vars){
-  if(notChanged(vars,"all",__FUNCTION__,{"modelFileName"}))return;
+    if(notChanged(vars,"all",__FUNCTION__,{"modelFileName"}))return;
 
-  vars.add<Model          >("model"      ,vars.getString("modelFileName"));
-  vars.add<RenderModel    >("renderModel",vars.get<Model>("model"), vars.getString("modelTexFileName"), vars.getString("bckgTexFileName"));
+    vars.add<Model          >("model"      ,vars.getString("modelFileName"));
+    vars.add<RenderModel    >("renderModel",vars.get<Model>("model"), vars.getString("modelTexFileName"), vars.getString("bckgTexFileName"));
 }
 
 void drawModel(vars::Vars&vars,glm::mat4 const&view,glm::mat4 const&proj){
-  preprareDrawModel(vars);
+    preprareDrawModel(vars);
 
-  auto rm = vars.get<RenderModel>("renderModel");
-  rm->draw(view,proj);
+    auto rm = vars.get<RenderModel>("renderModel");
+    rm->draw(view,proj);
 }
 
 void drawModel(vars::Vars&vars){
-  auto view = vars.getReinterpret<basicCamera::CameraTransform>("view");
-  auto projection = vars.get<basicCamera::PerspectiveCamera>("projection");
-  drawModel(vars,view->getView(),projection->getProjection());
+    auto view = vars.getReinterpret<basicCamera::CameraTransform>("view");
+    auto projection = vars.get<basicCamera::PerspectiveCamera>("projection");
+    drawModel(vars,view->getView(),projection->getProjection());
 }
 
 void createView(vars::Vars&vars){
-  if(notChanged(vars,"all",__FUNCTION__,{"useOrbitCamera"}))return;
+    if(notChanged(vars,"all",__FUNCTION__,{"useOrbitCamera"}))return;
 
-  if(vars.getBool("useOrbitCamera"))
-    vars.reCreate<basicCamera::OrbitCamera>("view");
-  else
-    vars.reCreate<basicCamera::FreeLookCamera>("view");
+    if(vars.getBool("useOrbitCamera"))
+        vars.reCreate<basicCamera::OrbitCamera>("view");
+    else
+        vars.reCreate<basicCamera::FreeLookCamera>("view");
 }
 
 void createProjection(vars::Vars&vars){
-  if(notChanged(vars,"all",__FUNCTION__,{"windowSize","camera.fovy","camera.near","camera.far"}))return;
+    if(notChanged(vars,"all",__FUNCTION__,{"windowSize","camera.fovy","camera.near","camera.far"}))return;
 
-  auto windowSize = vars.get<glm::uvec2>("windowSize");
-  auto width = windowSize->x;
-  auto height = windowSize->y;
-  auto aspect = (float)width/(float)height;
-  auto nearv = vars.getFloat("camera.near");
-  auto farv  = vars.getFloat("camera.far" );
-  auto fovy = vars.getFloat("camera.fovy");
+    auto windowSize = vars.get<glm::uvec2>("windowSize");
+    auto width = windowSize->x;
+    auto height = windowSize->y;
+    auto aspect = (float)width/(float)height;
+    auto nearv = vars.getFloat("camera.near");
+    auto farv  = vars.getFloat("camera.far" );
+    auto fovy = vars.getFloat("camera.fovy");
 
-  vars.reCreate<basicCamera::PerspectiveCamera>("projection",fovy,aspect,nearv,farv);
+    vars.reCreate<basicCamera::PerspectiveCamera>("projection",fovy,aspect,nearv,farv);
 }
 
 void createCamera(vars::Vars&vars){
-  createProjection(vars);
-  createView(vars);
+    createProjection(vars);
+    createView(vars);
 }
 
 void loadTextures(vars::Vars&vars){
-  if(notChanged(vars,"all",__FUNCTION__,{"quiltTexFileName"}))return;
-  vars.add<std::shared_ptr<ge::gl::Texture>>("quiltTex",loadColorTexture(vars.getString("quiltTexFileName")));
+    if(notChanged(vars,"all",__FUNCTION__,{"quiltTexFileName"}))return;
+    vars.add<std::shared_ptr<ge::gl::Texture>>("quiltTex",loadColorTexture(vars.getString("quiltTexFileName")));
 }
 
 void createHoloProgram(vars::Vars&vars){
-  if(notChanged(vars,"all",__FUNCTION__,{}))return;
+    if(notChanged(vars,"all",__FUNCTION__,{}))return;
 
-  std::string const vsSrc = R".(
+    std::string const vsSrc = R".(
   #version 450 core
 
   out vec2 texCoords;
@@ -443,13 +453,13 @@ void createHoloProgram(vars::Vars&vars){
   }
   ).";
 
-  std::string const fsSrc = R".(
+    std::string const fsSrc = R".(
   #version 450 core
-  
+
   in vec2 texCoords;
-  
+
   layout(location=0)out vec4 fragColor;
-  
+
   uniform int showQuilt = 0;
   uniform int showAsSequence = 0;
   uniform uint selectedView = 0;
@@ -467,9 +477,9 @@ void createHoloProgram(vars::Vars&vars){
   uniform vec4 viewPortion = vec4(0.99976f, 0.99976f, 0.00f, 0.00f);
   uniform vec4 aspect;
   uniform uint drawOnlyOneImage = 0;
-  
+
   layout(binding=0)uniform sampler2D screenTex;
-  
+
   uniform float focus = 0.f;
 
   uniform uint stride = 1;
@@ -477,7 +487,7 @@ void createHoloProgram(vars::Vars&vars){
   vec2 texArr(vec3 uvz)
   {
       // decide which section to take from based on the z.
- 
+
 
       float z = floor(uvz.z * tile.z);
       float focusMod = focus*(1-2*clamp(z/tile.z,0,1));
@@ -485,11 +495,11 @@ void createHoloProgram(vars::Vars&vars){
       float y = (floor(z / tile.x) + uvz.y) / tile.y;
       return vec2(x, y) * viewPortion.xy;
   }
-  
+
   void main()
   {
   	vec3 nuv = vec3(texCoords.xy, 0.0);
-  
+
   	vec4 rgb[3];
   	for (int i=0; i < 3; i++) 
   	{
@@ -509,190 +519,203 @@ void createHoloProgram(vars::Vars&vars){
         }
       }
   	}
-  
+
       if(showQuilt == 0)
         fragColor = vec4(rgb[ri].r, rgb[1].g, rgb[bi].b, 1.0);
       else{
         if(showAsSequence == 0)
-          fragColor = texture(screenTex, texCoords.xy);
+    fragColor = texture(screenTex, texCoords.xy);
         else{
-          uint sel = min(selectedView,uint(tile.x*tile.y-1));
-          fragColor = texture(screenTex, texCoords.xy/vec2(tile.xy) + vec2(vec2(1.f)/tile.xy)*vec2(sel%uint(tile.x),sel/uint(tile.x)));
-          
-        }
-      }
-  }
-  ).";
+            uint sel = min(selectedView,uint(tile.x*tile.y-1));
+            fragColor = texture(screenTex, texCoords.xy/vec2(tile.xy) + vec2(vec2(1.f)/tile.xy)*vec2(sel%uint(tile.x),sel/uint(tile.x)));
 
-  auto vs = std::make_shared<ge::gl::Shader>(GL_VERTEX_SHADER,
-      vsSrc
-      );
-  auto fs = std::make_shared<ge::gl::Shader>(GL_FRAGMENT_SHADER,
-      fsSrc
-      );
-  auto prg = vars.reCreate<ge::gl::Program>("holoProgram",vs,fs);
-  prg->setNonexistingUniformWarning(false);
+        }
+}
+}
+).";
+
+auto vs = std::make_shared<ge::gl::Shader>(GL_VERTEX_SHADER,
+        vsSrc
+        );
+auto fs = std::make_shared<ge::gl::Shader>(GL_FRAGMENT_SHADER,
+        fsSrc
+        );
+auto prg = vars.reCreate<ge::gl::Program>("holoProgram",vs,fs);
+prg->setNonexistingUniformWarning(false);
 }
 
 class Quilt{
-  public:
-    glm::uvec2 counts = glm::uvec2(5,9);
-    glm::uvec2 baseRes = glm::uvec2(380,238);
-    glm::uvec2 res = glm::uvec2(1024,512);
-    std::shared_ptr<ge::gl::Framebuffer>fbo;
-    std::shared_ptr<ge::gl::Texture>color;
-    std::shared_ptr<ge::gl::Texture>depth;
-    vars::Vars&vars;
-    void createTextures(){
-      if(notChanged(vars,"all",__FUNCTION__,{"quiltRender.texScale","quiltRender.texScaleAspect"}))return;
-      float texScale = vars.getFloat("quiltRender.texScale");
-      float texScaleAspect =  vars.getFloat("quiltRender.texScaleAspect");
-      auto newRes = glm::uvec2(glm::vec2(baseRes) * texScale * glm::vec2(texScaleAspect,1.f));
-      if(newRes == res)return;
-      res = newRes;
-      std::cerr << "reallocate quilt textures - " << res.x << " x " << res.y << std::endl;
-      fbo = std::make_shared<ge::gl::Framebuffer>();
-      color = std::make_shared<ge::gl::Texture>(GL_TEXTURE_2D,GL_RGB8,1,res.x*counts.x,res.y*counts.y);
-      color->texParameteri(GL_TEXTURE_WRAP_S,GL_CLAMP_TO_EDGE);
-      color->texParameteri(GL_TEXTURE_WRAP_T,GL_CLAMP_TO_EDGE);
-      depth = std::make_shared<ge::gl::Texture>(GL_TEXTURE_RECTANGLE,GL_DEPTH24_STENCIL8,1,res.x*counts.x,res.y*counts.y);
-      depth->texParameteri(GL_TEXTURE_WRAP_S,GL_CLAMP_TO_EDGE);
-      depth->texParameteri(GL_TEXTURE_WRAP_T,GL_CLAMP_TO_EDGE);
-      fbo->attachTexture(GL_COLOR_ATTACHMENT0,color);
-      fbo->attachTexture(GL_DEPTH_ATTACHMENT,depth);
-      GLenum buffers[] = {GL_COLOR_ATTACHMENT0};
-      fbo->drawBuffers(1,buffers);
-    }
-    Quilt(vars::Vars&vars):vars(vars){
-      createTextures();
-    }
-    void draw(std::function<void(glm::mat4 const&view,glm::mat4 const&proj)>const&fce,glm::mat4 const&centerView,glm::mat4 const&centerProj){
-      createTextures();
-      GLint origViewport[4];
-      ge::gl::glGetIntegerv(GL_VIEWPORT,origViewport);
-
-      fbo->bind();
-      ge::gl::glClearColor(0,1,0,1);
-      ge::gl::glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
-
-      float const fov = glm::radians<float>(vars.getFloat("quiltRender.fov"));
-      float const size = vars.getFloat("quiltRender.size");
-      float const camDist  =  size / glm::tan(fov * 0.5f); /// ?
-      float const viewCone = glm::radians<float>(vars.getFloat("quiltRender.viewCone")); /// ?
-      float const aspect = static_cast<float>(res.x) / static_cast<float>(res.y);
-      float const viewConeSweep = -camDist * glm::tan(viewCone);
-      float const projModifier = 1.f / (size * aspect);
-      auto const numViews = counts.x * counts.y;
-      float d = vars.addOrGetFloat("quiltRender.d",0.70f);
-      addVarsLimitsF(vars,"quiltRender.d",0,400,0.01);
-      float S = 0.5f*d*glm::tan(viewCone);
-      float tilt = d*aspect*glm::tan(vars.getFloat("camera.fovy")/2);
-
-      size_t counter = 0;
-      for(size_t j=0;j<counts.y;++j)
-        for(size_t i=0;i<counts.x;++i){
-          ge::gl::glViewport(i*(res.x),j*(res.y),res.x,res.y);
-
-          float currentViewLerp = 0.f; // if numviews is 1, take center view
-          if (numViews > 1)
-            currentViewLerp = (float)counter / (numViews - 1) - 0.5f;
-
-          glm::mat4 view = centerView;
-          glm::mat4 proj = centerProj;
-
-          float t = (float)counter / (float)(numViews - 1);
-          
-          float s = S-2*t*S;
-          view[3][2] += *vars.addOrGet<float>("ff",0.f)*counter*0.01f;
-          //view[3][1] += (*vars.addOrGet<float>("ff",0.f))*(-1.f+2.f*(float)(counter%2))*0.01f;
-          view[3][0] += s;
-          proj[2][0] += s/tilt;//(tilt+vars.addOrGetFloat("DTilt",0.f)*counter*0.01f);
-
-          uint32_t mode = vars.addOrGetUint32("DMode",0);
-          uint32_t axis = vars.addOrGetUint32("DAxis",0);
-          uint32_t freq = vars.addOrGetFloat ("DFreq",1.f);
-          bool jagged    = vars.addOrGetBool("DJagged");
-          bool translate = vars.addOrGetBool("DTranslate?");
-          float deform = 0.f;
-          if(jagged)deform = (vars.addOrGetFloat("DStrength",0.f))*(glm::sin((float)(counter)*freq/100.f*glm::pi<float>()*2.f))*0.01f; 
-          else      deform =  vars.addOrGetFloat("DStrength",0.f)*                   counter                                   *0.01f;
-       
-          if(translate){
-            for(int k=0;k<3;++k)
-              view[3][k] += ((axis>>k)&1)*deform;
-          }else{
-            auto camPos = glm::inverse(view)*glm::vec4(0.f,0.f,0.f,1.f);
-            view = glm::translate(glm::mat4(1.f),+glm::vec3(camPos))*
-                   glm::rotate   (glm::mat4(1.f),deform,glm::vec3((axis>>0)&1,(axis>>1)&1,(axis>>2)&1))*
-                   glm::translate(glm::mat4(1.f),-glm::vec3(camPos))*
-                   view;
-          }
-
-
-          fce(view,proj);
-          counter++;
+    public:
+        glm::uvec2 counts = glm::uvec2(5,9);
+        glm::uvec2 baseRes = glm::uvec2(380,238);
+        glm::uvec2 res = glm::uvec2(1024,512);
+        std::shared_ptr<ge::gl::Framebuffer>fbo;
+        std::shared_ptr<ge::gl::Texture>color;
+        std::shared_ptr<ge::gl::Texture>depth;
+        vars::Vars&vars;
+        void createTextures(){
+            if(notChanged(vars,"all",__FUNCTION__,{"quiltRender.texScale","quiltRender.texScaleAspect"}))return;
+            float texScale = vars.getFloat("quiltRender.texScale");
+            float texScaleAspect =  vars.getFloat("quiltRender.texScaleAspect");
+            auto newRes = glm::uvec2(glm::vec2(baseRes) * texScale * glm::vec2(texScaleAspect,1.f));
+            if(newRes == res)return;
+            res = newRes;
+            std::cerr << "reallocate quilt textures - " << res.x << " x " << res.y << std::endl;
+            fbo = std::make_shared<ge::gl::Framebuffer>();
+            color = std::make_shared<ge::gl::Texture>(GL_TEXTURE_2D,GL_RGB8,1,res.x*counts.x,res.y*counts.y);
+            color->texParameteri(GL_TEXTURE_WRAP_S,GL_CLAMP_TO_EDGE);
+            color->texParameteri(GL_TEXTURE_WRAP_T,GL_CLAMP_TO_EDGE);
+            depth = std::make_shared<ge::gl::Texture>(GL_TEXTURE_RECTANGLE,GL_DEPTH24_STENCIL8,1,res.x*counts.x,res.y*counts.y);
+            depth->texParameteri(GL_TEXTURE_WRAP_S,GL_CLAMP_TO_EDGE);
+            depth->texParameteri(GL_TEXTURE_WRAP_T,GL_CLAMP_TO_EDGE);
+            fbo->attachTexture(GL_COLOR_ATTACHMENT0,color);
+            fbo->attachTexture(GL_DEPTH_ATTACHMENT,depth);
+            GLenum buffers[] = {GL_COLOR_ATTACHMENT0};
+            fbo->drawBuffers(1,buffers);
         }
-      fbo->unbind();
-      ge::gl::glViewport(origViewport[0],origViewport[1],origViewport[2],origViewport[3]);
-    }
+        Quilt(vars::Vars&vars):vars(vars){
+            createTextures();
+        }
+        void draw(std::function<void(glm::mat4 const&view,glm::mat4 const&proj)>const&fce,glm::mat4 const&centerView,glm::mat4 const&centerProj){
+            createTextures();
+            GLint origViewport[4];
+            ge::gl::glGetIntegerv(GL_VIEWPORT,origViewport);
+
+            fbo->bind();
+            ge::gl::glClearColor(0,1,0,1);
+            ge::gl::glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
+
+            float strength = vars.addOrGetFloat("DStrength",0.f);
+            auto currentTestID{vars.addOrGet<size_t>(TestCase::varsPrefix+"current",0)};
+
+            float const fov = glm::radians<float>(vars.getFloat("quiltRender.fov"));
+            float const size = vars.getFloat("quiltRender.size");
+            float const camDist  =  size / glm::tan(fov * 0.5f); /// ?
+            float viewCone = glm::radians<float>(vars.getFloat("quiltRender.viewCone")); /// ?
+            float defaultCone = glm::half_pi<float>();
+            if(*currentTestID == 13)
+                viewCone = defaultCone*strength;
+            if(*currentTestID == 14)
+                viewCone = defaultCone*(1.0f-strength);
+
+            float const aspect = static_cast<float>(res.x) / static_cast<float>(res.y);
+            float const viewConeSweep = -camDist * glm::tan(viewCone);
+            float const projModifier = 1.f / (size * aspect);
+            auto const numViews = counts.x * counts.y;
+            float d = vars.addOrGetFloat("quiltRender.d",0.70f);
+            addVarsLimitsF(vars,"quiltRender.d",0,400,0.01);
+            float S = 0.5f*d*glm::tan(viewCone);
+            float tilt = d*aspect*glm::tan(vars.getFloat("camera.fovy")/2);
+            uint32_t axis = (*currentTestID%3)+1; //vars.addOrGetUint32("DAxis",1);
+            if(axis == 3) axis = 4;
+            uint32_t freq = vars.addOrGetFloat ("DFreq",25.f);
+            bool jagged    = (*currentTestID/3)%2;//vars.addOrGetBool("DJagged");
+            bool translate = (*currentTestID/6); //vars.addOrGetBool("DTranslate");
+            float deform = 0.f;
+
+            size_t counter = 0;
+            for(size_t j=0;j<counts.y;++j)
+                for(size_t i=0;i<counts.x;++i){
+                    ge::gl::glViewport(i*(res.x),j*(res.y),res.x,res.y);
+
+                    float currentViewLerp = 0.f; // if numviews is 1, take center view
+                    if (numViews > 1)
+                        currentViewLerp = (float)counter / (numViews - 1) - 0.5f;
+
+                    glm::mat4 view = centerView;
+                    glm::mat4 proj = centerProj;
+
+                    float t = (float)counter / (float)(numViews - 1);
+
+                    float s = S-2*t*S;
+                    view[3][2] += *vars.addOrGet<float>("ff",0.f)*counter*0.01f;
+                    view[3][0] += s;
+                    proj[2][0] += s/tilt;//(tilt+vars.addOrGetFloat("DTilt",0.f)*counter*0.01f);
+
+                    if(*currentTestID < 12)
+                    {
+
+                        if(jagged)deform = strength*(glm::sin((float)(counter)*freq/100.f*glm::pi<float>()*2.f))*0.5f; 
+                        else      deform = strength*counter*0.05f;
+
+                        if(translate){
+                            for(int k=0;k<3;++k)
+                                view[3][k] += ((axis>>k)&1)*deform;
+                        }else{
+                            auto camPos = glm::inverse(view)*glm::vec4(0.f,0.f,0.f,1.f);
+                            view = glm::translate(glm::mat4(1.f),+glm::vec3(camPos))*
+                                glm::rotate   (glm::mat4(1.f),deform,glm::vec3((axis>>0)&1,(axis>>1)&1,(axis>>2)&1))*
+                                glm::translate(glm::mat4(1.f),-glm::vec3(camPos))*
+                                view;
+                        }
+                    }
+                    else if(*currentTestID == 12)
+                    {
+                        auto camPos = glm::inverse(view)*glm::vec4(0.f,0.f,0.f,1.f);
+                        const float r = vars.addOrGetFloat("radius",1.f);;
+                        float offset = 3*glm::half_pi<float>()+t*glm::pi<float>();
+                        auto circular = strength;//vars.addOrGetFloat("circular", 1.0f);
+                        float x = glm::sin(offset) * 2;
+                        float y = glm::cos(offset) * 2 * circular;
+                        auto direction = glm::mix(glm::vec3(x, 0, y-1), glm::vec3(0.0), circular); 
+                        y+=(1-circular)*3;
+                        view = glm::lookAt(glm::vec3(x, 0, y+camPos.z), direction, glm::vec3(0.0, 1.0, 0.0));
+                    }
+
+                    fce(view,proj);
+                    counter++;
+                }
+            fbo->unbind();
+            ge::gl::glViewport(origViewport[0],origViewport[1],origViewport[2],origViewport[3]);
+        }
 };
 
 void drawHolo(vars::Vars&vars){
-  loadTextures(vars);
-  createHoloProgram(vars);
+    loadTextures(vars);
+    createHoloProgram(vars);
 
-  if(vars.getBool("renderQuilt")){
-    vars.get<Quilt>("quilt")->color->bind(0);
-  }else{
-    vars.get<std::shared_ptr<ge::gl::Texture>>("quiltTex")->get()->bind(0);
-  }
-  vars.get<ge::gl::Program>("holoProgram")
-    ->set1i ("showQuilt"       ,                vars.getBool       ("showQuilt"            ))
-    ->set1i ("showAsSequence"  ,                vars.getBool       ("showAsSequence"       ))
-    ->set1ui("selectedView"    ,                vars.getUint32     ("selectedView"         ))
-    ->set1i ("showQuilt"       ,                vars.getBool       ("showQuilt"            ))
-    ->set1f ("pitch"           ,                vars.getFloat      ("quiltView.pitch"      ))
-    ->set1f ("tilt"            ,                vars.getFloat      ("quiltView.tilt"       ))
-    ->set1f ("center"          ,                vars.getFloat      ("quiltView.center"     ))
-    ->set1f ("invView"         ,                vars.getFloat      ("quiltView.invView"    ))
-    ->set1f ("subp"            ,                vars.getFloat      ("quiltView.subp"       ))
-    ->set1i ("ri"              ,                vars.getInt32      ("quiltView.ri"         ))
-    ->set1i ("bi"              ,                vars.getInt32      ("quiltView.bi"         ))
-    ->set4fv("tile"            ,glm::value_ptr(*vars.get<glm::vec4>("quiltView.tile"       )))
-    ->set4fv("viewPortion"     ,glm::value_ptr(*vars.get<glm::vec4>("quiltView.viewPortion")))
-    ->set1ui("drawOnlyOneImage",                vars.getBool       ("drawOnlyOneImage"     ))
-    ->set1f ("focus"           ,                vars.getFloat      ("quiltView.focus"      ))
-    ->set1ui("stride"          ,                vars.getUint32     ("quiltView.stride"     ))
-    ->use();
+    if(vars.getBool("renderQuilt")){
+        vars.get<Quilt>("quilt")->color->bind(0);
+    }else{
+        vars.get<std::shared_ptr<ge::gl::Texture>>("quiltTex")->get()->bind(0);
+    }
+    vars.get<ge::gl::Program>("holoProgram")
+        ->set1i ("showQuilt"       ,                vars.getBool       ("showQuilt"            ))
+        ->set1i ("showAsSequence"  ,                vars.getBool       ("showAsSequence"       ))
+        ->set1ui("selectedView"    ,                vars.getUint32     ("selectedView"         ))
+        ->set1i ("showQuilt"       ,                vars.getBool       ("showQuilt"            ))
+        ->set1f ("pitch"           ,                vars.getFloat      ("quiltView.pitch"      ))
+        ->set1f ("tilt"            ,                vars.getFloat      ("quiltView.tilt"       ))
+        ->set1f ("center"          ,                vars.getFloat      ("quiltView.center"     ))
+        ->set1f ("invView"         ,                vars.getFloat      ("quiltView.invView"    ))
+        ->set1f ("subp"            ,                vars.getFloat      ("quiltView.subp"       ))
+        ->set1i ("ri"              ,                vars.getInt32      ("quiltView.ri"         ))
+        ->set1i ("bi"              ,                vars.getInt32      ("quiltView.bi"         ))
+        ->set4fv("tile"            ,glm::value_ptr(*vars.get<glm::vec4>("quiltView.tile"       )))
+        ->set4fv("viewPortion"     ,glm::value_ptr(*vars.get<glm::vec4>("quiltView.viewPortion")))
+        ->set1ui("drawOnlyOneImage",                vars.getBool       ("drawOnlyOneImage"     ))
+        ->set1f ("focus"           ,                vars.getFloat      ("quiltView.focus"      ))
+        ->set1ui("stride"          ,                vars.getUint32     ("quiltView.stride"     ))
+        ->use();
 
-  ge::gl::glDrawArrays(GL_TRIANGLE_STRIP,0,4);
+    ge::gl::glDrawArrays(GL_TRIANGLE_STRIP,0,4);
 }
-
-class TestCase
-{
-    public:
-    enum TestType {MAX_SLIDER=0, BEST_SLIDER, CHECKBOX}; 
-    std::string name;
-    TestType type;
-    static const std::string varsPrefix;
-};
-const std::string TestCase::varsPrefix{"measurements"};
 
 void saveResults(vars::Vars&vars, const std::vector<TestCase> &items)
 {
-  time_t rawtime;
-  struct tm * timeinfo;
-  time (&rawtime);
-  timeinfo = localtime (&rawtime);
-  std::string fileName{asctime(timeinfo)};
-  fileName.pop_back();
-  std::ofstream f(vars.getString("resultDir")+fileName+".txt");
+    time_t rawtime;
+    struct tm * timeinfo;
+    time (&rawtime);
+    timeinfo = localtime (&rawtime);
+    std::string fileName{asctime(timeinfo)};
+    fileName.pop_back();
+    std::ofstream f(vars.getString("resultDir")+fileName+".txt");
 
-  for(const auto &item : items)
-    f   << item.name << " " << vars.getFloat(TestCase::varsPrefix+item.name) << std::endl
-        << "sick: " << vars.getFloat(TestCase::varsPrefix+item.name+"Sick") << std::endl
-        << "time: " << *vars.get<double>(TestCase::varsPrefix+item.name+"Time") << std::endl << std::endl;
-  f.close();
+    for(const auto &item : items)
+        f   << item.name << " " << vars.getFloat(TestCase::varsPrefix+item.name) << std::endl
+            << "sick: " << vars.getFloat(TestCase::varsPrefix+item.name+"Sick") << std::endl
+            << "time: " << *vars.get<double>(TestCase::varsPrefix+item.name+"Time") << std::endl << std::endl;
+    f.close();
 }
 
 void drawTestingGui(vars::Vars&vars)
@@ -705,28 +728,47 @@ void drawTestingGui(vars::Vars&vars)
         *resetTimer = false;
     }
     const std::vector<std::string> labels{"Move the slider to the highest (righmost) value which is still producing visually acceptable and pleasant result.",
-                                 "Move the slider wherever you need to achieve the nicest result for you.",
-                                 "Turn on or off the effect (checkbox) and leave it at the state which looks better."};
-    const std::vector<TestCase> items{ {"vertical", TestCase::MAX_SLIDER} };
+        "Move the slider wherever you need to achieve the nicest result for you.",
+        "Turn on or off the effect (checkbox) and leave it at the state which looks better."};
+    const std::vector<TestCase> items{ 
+        {"YawNoiseLinear", TestCase::MAX_SLIDER},
+            {"PitchNoiseLinear", TestCase::MAX_SLIDER},
+            {"RollNoiseLinear", TestCase::MAX_SLIDER},
+            {"YawNoiseJagged", TestCase::MAX_SLIDER},
+            {"PitchNoiseJagged", TestCase::MAX_SLIDER},
+            {"RollJagged", TestCase::MAX_SLIDER},
+            {"HorizontalNoiseLinear", TestCase::MAX_SLIDER},
+            {"VerticalNoiseLinear", TestCase::MAX_SLIDER},
+            {"ZoomNoiseLinear", TestCase::MAX_SLIDER},
+            {"HorizontalNoiseJagged", TestCase::MAX_SLIDER},
+            {"VerticalNoiseJagged", TestCase::MAX_SLIDER},
+            {"ZoomJagged", TestCase::MAX_SLIDER},
+            {"Circular", TestCase::MAX_SLIDER},
+            {"3DEffectMax", TestCase::MAX_SLIDER},
+            {"3DEffectMin", TestCase::MAX_SLIDER},
+    };
+    auto slider{vars.addOrGet<float>("DStrength",0.f)};
     auto currentID{vars.addOrGet<size_t>(TestCase::varsPrefix+"current",0)};
     auto currentItem{items[*currentID]};
     auto prefixedName = TestCase::varsPrefix+currentItem.name;
     auto currentVar{vars.addOrGet<float>(prefixedName,0)};
     auto currentSickVar{vars.addOrGet<float>(prefixedName+"Sick",0)};
-    
+
     ImGui::Begin("Testing");
     //ImGui::GetStyle().ScaleAllSizes(5.f);
     //ImGui::GetIO().FontGlobalScale = 5.f;
 
     ImGui::TextWrapped("%s", (labels[currentItem.type]+" If you feel sick during the adjusting of the slider, also adjust the sickness level (0 not sick at all, 1 very dizzy)").c_str());
     if(currentItem.type == TestCase::MAX_SLIDER || currentItem.type == TestCase::BEST_SLIDER)
-        ImGui::SliderFloat("Slider", currentVar, 0, 1, "%.6f");
+        ImGui::SliderFloat("Slider", slider, 0, 1, "%.6f");
     else
-        ImGui::Checkbox("Enable effect", reinterpret_cast<bool*>(currentVar));
+        ImGui::Checkbox("Enable effect", reinterpret_cast<bool*>(slider));
 
     ImGui::SliderFloat("Sickness level", currentSickVar, 0, 1, "%.1f");
     if (ImGui::Button("Next"))
     {
+        *currentVar = *slider;
+        *slider = 0;
         vars.reCreate<double>(prefixedName+"Time", vars.get<Timer<double>>("timer")->elapsedFromStart());
         *resetTimer = true;    
         (*currentID)++;
@@ -740,221 +782,221 @@ void drawTestingGui(vars::Vars&vars)
 }
 
 void Holo::draw(){
-  ge::gl::glClear(GL_DEPTH_BUFFER_BIT);
-  createCamera(vars);
-  basicCamera::CameraTransform*view;
+    ge::gl::glClear(GL_DEPTH_BUFFER_BIT);
+    createCamera(vars);
+    basicCamera::CameraTransform*view;
 
-  if(vars.getBool("useOrbitCamera"))
-    view = vars.getReinterpret<basicCamera::CameraTransform>("view");
-  else{
-    auto freeView = vars.get<basicCamera::FreeLookCamera>("view");
+    if(vars.getBool("useOrbitCamera"))
+        view = vars.getReinterpret<basicCamera::CameraTransform>("view");
+    else{
+        auto freeView = vars.get<basicCamera::FreeLookCamera>("view");
 
-    float freeCameraSpeed = vars.addOrGetFloat("camera.speed",0.01f);
-    auto keys = vars.get<std::map<SDL_Keycode, bool>>("input.keyDown");
-    for (int a = 0; a < 3; ++a)
-      freeView->move(a, float((*keys)["d s"[a]] - (*keys)["acw"[a]]) *
-                            freeCameraSpeed);
-    view = freeView;
-  }
-
-
-  ge::gl::glClearColor(0.1f,0.1f,0.1f,1.f);
-  ge::gl::glClear(GL_COLOR_BUFFER_BIT);
-
-  vars.get<ge::gl::VertexArray>("emptyVao")->bind();
-
-  auto drawScene = [&](glm::mat4 const&view,glm::mat4 const&proj){
-    if(vars.addOrGetBool("drawGrid",true)){
-      vars.get<ge::gl::VertexArray>("emptyVao")->bind();
-      drawGrid(vars,view,proj);
-      vars.get<ge::gl::VertexArray>("emptyVao")->unbind();
+        float freeCameraSpeed = vars.addOrGetFloat("camera.speed",0.01f);
+        auto keys = vars.get<std::map<SDL_Keycode, bool>>("input.keyDown");
+        for (int a = 0; a < 3; ++a)
+            freeView->move(a, float((*keys)["d s"[a]] - (*keys)["acw"[a]]) *
+                    freeCameraSpeed);
+        view = freeView;
     }
-    drawModel(vars,view,proj);
-  };
-  auto drawSceneSimple = [&](){
-    auto view = vars.getReinterpret<basicCamera::CameraTransform>("view")->getView();
-    auto proj = vars.getReinterpret<basicCamera::CameraProjection>("projection")->getProjection();
-    drawScene(view,proj);
-  };
-  if(vars.getBool("renderScene")){
-    drawSceneSimple();
-  }
-  else{
-    auto quilt = vars.get<Quilt>("quilt");
+
+
+    ge::gl::glClearColor(0.1f,0.1f,0.1f,1.f);
+    ge::gl::glClear(GL_COLOR_BUFFER_BIT);
+
     vars.get<ge::gl::VertexArray>("emptyVao")->bind();
-    quilt->draw(
-        drawScene,
-        vars.getReinterpret<basicCamera::CameraTransform>("view")->getView(),
-        vars.getReinterpret<basicCamera::CameraProjection>("projection")->getProjection()
-        );
+
+    auto drawScene = [&](glm::mat4 const&view,glm::mat4 const&proj){
+        if(vars.addOrGetBool("drawGrid",true)){
+            vars.get<ge::gl::VertexArray>("emptyVao")->bind();
+            drawGrid(vars,view,proj);
+            vars.get<ge::gl::VertexArray>("emptyVao")->unbind();
+        }
+        drawModel(vars,view,proj);
+    };
+    auto drawSceneSimple = [&](){
+        auto view = vars.getReinterpret<basicCamera::CameraTransform>("view")->getView();
+        auto proj = vars.getReinterpret<basicCamera::CameraProjection>("projection")->getProjection();
+        drawScene(view,proj);
+    };
+    if(vars.getBool("renderScene")){
+        drawSceneSimple();
+    }
+    else{
+        auto quilt = vars.get<Quilt>("quilt");
+        vars.get<ge::gl::VertexArray>("emptyVao")->bind();
+        quilt->draw(
+                drawScene,
+                vars.getReinterpret<basicCamera::CameraTransform>("view")->getView(),
+                vars.getReinterpret<basicCamera::CameraProjection>("projection")->getProjection()
+                );
+        vars.get<ge::gl::VertexArray>("emptyVao")->unbind();
+        vars.get<ge::gl::VertexArray>("emptyVao")->bind();
+        drawHolo(vars);
+        vars.get<ge::gl::VertexArray>("emptyVao")->unbind();
+    }
+
     vars.get<ge::gl::VertexArray>("emptyVao")->unbind();
-    vars.get<ge::gl::VertexArray>("emptyVao")->bind();
-    drawHolo(vars);
-    vars.get<ge::gl::VertexArray>("emptyVao")->unbind();
-  }
 
-  vars.get<ge::gl::VertexArray>("emptyVao")->unbind();
+    drawTestingGui(vars);
+    drawImguiVars(vars);
 
-  drawTestingGui(vars);
-  drawImguiVars(vars);
-
-  swap();
+    swap();
 }
 
 void Holo::init(){
-  auto args = vars.add<argumentViewer::ArgumentViewer>("args",argc,argv);
-  auto const windowSize = args->getu32v("--window-size",{1024,1024});
-  auto const notResizable = args->isPresent("--notResizable");
+    auto args = vars.add<argumentViewer::ArgumentViewer>("args",argc,argv);
+    auto const windowSize = args->getu32v("--window-size",{1024,1024});
+    auto const notResizable = args->isPresent("--notResizable");
 
-  auto const quiltFile = args->gets("--quilt","","quilt image 5x9");
-  auto const modelFile = args->gets("--model","","model file");
-  auto const textureFile = args->gets("--texture","","texture file");
-  auto const backgroundFile = args->gets("--bckg","","background file");
-  auto const resultDir = args->gets("--outDir","","where to save results");
-  auto const showHelp = args->isPresent("-h","shows help");
-  if (showHelp || !args->validate()) {
-    std::cerr << args->toStr();
-    exit(0);
-  }
+    auto const quiltFile = args->gets("--quilt","","quilt image 5x9");
+    auto const modelFile = args->gets("--model","","model file");
+    auto const textureFile = args->gets("--texture","","texture file");
+    auto const backgroundFile = args->gets("--bckg","","background file");
+    auto const resultDir = args->gets("--outDir","","where to save results");
+    auto const showHelp = args->isPresent("-h","shows help");
+    if (showHelp || !args->validate()) {
+        std::cerr << args->toStr();
+        exit(0);
+    }
 
 
-  if(notResizable)
-    SDL_SetWindowResizable(window->getWindow(),SDL_FALSE);
-  window->setSize(windowSize[0],windowSize[1]);
+    if(notResizable)
+        SDL_SetWindowResizable(window->getWindow(),SDL_FALSE);
+    window->setSize(windowSize[0],windowSize[1]);
 
-  vars.add<Holo*>("thisApp", this);
+    vars.add<Holo*>("thisApp", this);
 
-  vars.addString("quiltTexFileName",quiltFile);
-  vars.addString("bckgTexFileName",backgroundFile);
-  vars.addString("modelFileName",modelFile);
-  vars.addString("modelTexFileName",textureFile);
-  vars.addString("resultDir",resultDir);
-  
-  vars.add<ge::gl::VertexArray>("emptyVao");
-  vars.add<glm::uvec2>("windowSize",window->getWidth(),window->getHeight());
-  vars.addFloat("input.sensitivity",0.01f);
-  vars.addFloat("camera.fovy",glm::half_pi<float>());
-  vars.addFloat("camera.near",.1f);
-  vars.addFloat("camera.far",1000.f);
-  vars.add<std::map<SDL_Keycode, bool>>("input.keyDown");
-  vars.addBool("useOrbitCamera",false);
+    vars.addString("quiltTexFileName",quiltFile);
+    vars.addString("bckgTexFileName",backgroundFile);
+    vars.addString("modelFileName",modelFile);
+    vars.addString("modelTexFileName",textureFile);
+    vars.addString("resultDir",resultDir);
 
-  vars.addBool("resetTimer", true);
+    vars.add<ge::gl::VertexArray>("emptyVao");
+    vars.add<glm::uvec2>("windowSize",window->getWidth(),window->getHeight());
+    vars.addFloat("input.sensitivity",0.01f);
+    vars.addFloat("camera.fovy",glm::half_pi<float>());
+    vars.addFloat("camera.near",.1f);
+    vars.addFloat("camera.far",1000.f);
+    vars.add<std::map<SDL_Keycode, bool>>("input.keyDown");
+    vars.addBool("useOrbitCamera",false);
 
-  HoloCalibration::Calibration cal = HoloCalibration::getCalibration();
-  vars.addFloat      ("quiltView.pitch"      ,cal.recalculatedPitch());
-  vars.addFloat      ("quiltView.tilt"       ,cal.tilt());
-  vars.addFloat      ("quiltView.center"     ,cal.center);
-  vars.addFloat      ("quiltView.invView"    ,cal.invView);
-  vars.addFloat      ("quiltView.subp"       ,cal.subp());
-  vars.addInt32      ("quiltView.ri"         ,0);
-  vars.addInt32      ("quiltView.bi"         ,2);
-  vars.add<glm::vec4>("quiltView.tile"       ,5.00f, 9.00f, 45.00f, 45.00f);
-  vars.add<glm::vec4>("quiltView.viewPortion",0.99976f, 0.99976f, 0.00f, 0.00f);
-  vars.addFloat      ("quiltView.focus"      ,0.00f);
-  vars.addUint32     ("quiltView.stride"     ,1);
-  addVarsLimitsF(vars,"quiltView.focus",-1,+1,0.001f);
-  vars.addBool ("showQuilt");
-  vars.addBool ("renderQuilt", true);
-  vars.addBool ("renderScene",false);
-  vars.addBool ("showAsSequence",false);
-  vars.addBool ("drawOnlyOneImage",false);
-  vars.addUint32("selectedView",0);
-  addVarsLimitsU(vars,"selectedView",0,44);
-  addVarsLimitsF(vars,"quiltView.tilt",-10,10,0.01);
+    vars.addBool("resetTimer", true);
 
-  vars.addFloat("quiltRender.size",5.f);
-  vars.addFloat("quiltRender.fov",90.f);
-  vars.addFloat("quiltRender.viewCone",10.f);
-  vars.addFloat("quiltRender.texScale",1.64f);
-  addVarsLimitsF(vars,"quiltRender.texScale",0.1f,5,0.01f);
-  vars.addFloat("quiltRender.texScaleAspect",0.745f);
-  addVarsLimitsF(vars,"quiltRender.texScaleAspect",0.1f,10,0.01f);
-  
+    HoloCalibration::Calibration cal = HoloCalibration::getCalibration();
+    vars.addFloat      ("quiltView.pitch"      ,cal.recalculatedPitch());
+    vars.addFloat      ("quiltView.tilt"       ,cal.tilt());
+    vars.addFloat      ("quiltView.center"     ,cal.center);
+    vars.addFloat      ("quiltView.invView"    ,cal.invView);
+    vars.addFloat      ("quiltView.subp"       ,cal.subp());
+    vars.addInt32      ("quiltView.ri"         ,0);
+    vars.addInt32      ("quiltView.bi"         ,2);
+    vars.add<glm::vec4>("quiltView.tile"       ,5.00f, 9.00f, 45.00f, 45.00f);
+    vars.add<glm::vec4>("quiltView.viewPortion",0.99976f, 0.99976f, 0.00f, 0.00f);
+    vars.addFloat      ("quiltView.focus"      ,0.00f);
+    vars.addUint32     ("quiltView.stride"     ,1);
+    addVarsLimitsF(vars,"quiltView.focus",-1,+1,0.001f);
+    vars.addBool ("showQuilt");
+    vars.addBool ("renderQuilt", true);
+    vars.addBool ("renderScene",false);
+    vars.addBool ("showAsSequence",false);
+    vars.addBool ("drawOnlyOneImage",false);
+    vars.addUint32("selectedView",0);
+    addVarsLimitsU(vars,"selectedView",0,44);
+    addVarsLimitsF(vars,"quiltView.tilt",-10,10,0.01);
 
-  vars.add<Quilt>("quilt",vars);
+    vars.addFloat("quiltRender.size",5.f);
+    vars.addFloat("quiltRender.fov",90.f);
+    vars.addFloat("quiltRender.viewCone",10.f);
+    vars.addFloat("quiltRender.texScale",1.64f);
+    addVarsLimitsF(vars,"quiltRender.texScale",0.1f,5,0.01f);
+    vars.addFloat("quiltRender.texScaleAspect",0.745f);
+    addVarsLimitsF(vars,"quiltRender.texScaleAspect",0.1f,10,0.01f);
 
-  createCamera(vars);
-  
-  GLint dims[4];
-  ge::gl::glGetIntegerv(GL_MAX_VIEWPORT_DIMS, dims);
-  std::cerr << "maxFramebuffer: " << dims[0] << " x " << dims[1] << std::endl;
 
-  ImGui::GetStyle().ScaleAllSizes(4.f);
-  ImGui::GetIO().FontGlobalScale = 4.f;
+    vars.add<Quilt>("quilt",vars);
+
+    createCamera(vars);
+
+    GLint dims[4];
+    ge::gl::glGetIntegerv(GL_MAX_VIEWPORT_DIMS, dims);
+    std::cerr << "maxFramebuffer: " << dims[0] << " x " << dims[1] << std::endl;
+
+    ImGui::GetStyle().ScaleAllSizes(4.f);
+    ImGui::GetIO().FontGlobalScale = 4.f;
 }
 
 void Holo::key(SDL_Event const& event, bool DOWN) {
-  auto keys = vars.get<std::map<SDL_Keycode, bool>>("input.keyDown");
-  (*keys)[event.key.keysym.sym] = DOWN;
-  if(event.key.keysym.sym == SDLK_f && DOWN){
-    fullscreen = !fullscreen;
-    if(fullscreen)
-      window->setFullscreen(sdl2cpp::Window::FULLSCREEN_DESKTOP);
-    else
-      window->setFullscreen(sdl2cpp::Window::WINDOW);
-  }
-  if(event.key.keysym.sym == SDLK_p && DOWN){
-    auto const windowSize     = vars.get<glm::uvec2>("windowSize");
-    screenShot("screenshot",windowSize->x,windowSize->y);
-  }
-  if(event.key.keysym.sym == SDLK_ESCAPE && DOWN)
-   (*vars.get<Holo*>("thisApp"))->stop();
+    auto keys = vars.get<std::map<SDL_Keycode, bool>>("input.keyDown");
+    (*keys)[event.key.keysym.sym] = DOWN;
+    if(event.key.keysym.sym == SDLK_f && DOWN){
+        fullscreen = !fullscreen;
+        if(fullscreen)
+            window->setFullscreen(sdl2cpp::Window::FULLSCREEN_DESKTOP);
+        else
+            window->setFullscreen(sdl2cpp::Window::WINDOW);
+    }
+    if(event.key.keysym.sym == SDLK_p && DOWN){
+        auto const windowSize     = vars.get<glm::uvec2>("windowSize");
+        screenShot("screenshot",windowSize->x,windowSize->y);
+    }
+    if(event.key.keysym.sym == SDLK_ESCAPE && DOWN)
+        (*vars.get<Holo*>("thisApp"))->stop();
 }
 
 void Holo::mouseMove(SDL_Event const& e) {
-  if(vars.getBool("useOrbitCamera")){
-    auto sensitivity = vars.getFloat("input.sensitivity");
-    auto orbitCamera =
-        vars.getReinterpret<basicCamera::OrbitCamera>("view");
-    auto const windowSize     = vars.get<glm::uvec2>("windowSize");
-    auto const orbitZoomSpeed = 0.1f;//vars.getFloat("args.camera.orbitZoomSpeed");
-    auto const xrel           = static_cast<float>(e.motion.xrel);
-    auto const yrel           = static_cast<float>(e.motion.yrel);
-    auto const mState         = e.motion.state;
-    if (mState & SDL_BUTTON_LMASK) {
-      if (orbitCamera) {
-        orbitCamera->addXAngle(yrel * sensitivity);
-        orbitCamera->addYAngle(xrel * sensitivity);
-      }
+    if(vars.getBool("useOrbitCamera")){
+        auto sensitivity = vars.getFloat("input.sensitivity");
+        auto orbitCamera =
+            vars.getReinterpret<basicCamera::OrbitCamera>("view");
+        auto const windowSize     = vars.get<glm::uvec2>("windowSize");
+        auto const orbitZoomSpeed = 0.1f;//vars.getFloat("args.camera.orbitZoomSpeed");
+        auto const xrel           = static_cast<float>(e.motion.xrel);
+        auto const yrel           = static_cast<float>(e.motion.yrel);
+        auto const mState         = e.motion.state;
+        if (mState & SDL_BUTTON_LMASK) {
+            if (orbitCamera) {
+                orbitCamera->addXAngle(yrel * sensitivity);
+                orbitCamera->addYAngle(xrel * sensitivity);
+            }
+        }
+        if (mState & SDL_BUTTON_RMASK) {
+            if (orbitCamera) orbitCamera->addDistance(yrel * orbitZoomSpeed);
+        }
+        if (mState & SDL_BUTTON_MMASK) {
+            orbitCamera->addXPosition(+orbitCamera->getDistance() * xrel /
+                    float(windowSize->x) * 2.f);
+            orbitCamera->addYPosition(-orbitCamera->getDistance() * yrel /
+                    float(windowSize->y) * 2.f);
+        }
+    }else{
+        auto const xrel           = static_cast<float>(e.motion.xrel);
+        auto const yrel           = static_cast<float>(e.motion.yrel);
+        auto view = vars.get<basicCamera::FreeLookCamera>("view");
+        auto sensitivity = vars.getFloat("input.sensitivity");
+        if (e.motion.state & SDL_BUTTON_LMASK) {
+            view->setAngle(
+                    1, view->getAngle(1) + xrel * sensitivity);
+            view->setAngle(
+                    0, view->getAngle(0) + yrel * sensitivity);
+        }
     }
-    if (mState & SDL_BUTTON_RMASK) {
-      if (orbitCamera) orbitCamera->addDistance(yrel * orbitZoomSpeed);
-    }
-    if (mState & SDL_BUTTON_MMASK) {
-      orbitCamera->addXPosition(+orbitCamera->getDistance() * xrel /
-                                float(windowSize->x) * 2.f);
-      orbitCamera->addYPosition(-orbitCamera->getDistance() * yrel /
-                                float(windowSize->y) * 2.f);
-    }
-  }else{
-    auto const xrel           = static_cast<float>(e.motion.xrel);
-    auto const yrel           = static_cast<float>(e.motion.yrel);
-    auto view = vars.get<basicCamera::FreeLookCamera>("view");
-    auto sensitivity = vars.getFloat("input.sensitivity");
-    if (e.motion.state & SDL_BUTTON_LMASK) {
-      view->setAngle(
-          1, view->getAngle(1) + xrel * sensitivity);
-      view->setAngle(
-          0, view->getAngle(0) + yrel * sensitivity);
-    }
-  }
 }
 
 
 void Holo::resize(uint32_t x,uint32_t y){
-  auto windowSize = vars.get<glm::uvec2>("windowSize");
-  windowSize->x = x;
-  windowSize->y = y;
-  vars.updateTicks("windowSize");
-  ge::gl::glViewport(0,0,x,y);
-  std::cerr << "resize(" << x << "," << y << ")" << std::endl;
+    auto windowSize = vars.get<glm::uvec2>("windowSize");
+    windowSize->x = x;
+    windowSize->y = y;
+    vars.updateTicks("windowSize");
+    ge::gl::glViewport(0,0,x,y);
+    std::cerr << "resize(" << x << "," << y << ")" << std::endl;
 }
 
 
 int main(int argc,char*argv[]){
-  SDL_GL_SetAttribute(SDL_GL_FRAMEBUFFER_SRGB_CAPABLE,1);
-  Holo app{argc, argv};
-  app.start();
-  return EXIT_SUCCESS;
+    SDL_GL_SetAttribute(SDL_GL_FRAMEBUFFER_SRGB_CAPABLE,1);
+    Holo app{argc, argv};
+    app.start();
+    return EXIT_SUCCESS;
 }
