@@ -8,6 +8,7 @@
 #include <BasicCamera/OrbitCamera.h>
 #include <Barrier.h>
 #include <geGL/Texture.h>
+#include <glm/detail/func_exponential.hpp>
 #include <glm/gtc/constants.hpp>
 #include <imguiSDL2OpenGL/imgui.h>
 #include <imguiVars/imguiVars.h>
@@ -30,12 +31,15 @@
 #include<glm/gtc/matrix_transform.hpp>
 #include<glm/gtc/type_ptr.hpp>
 #include<glm/gtc/matrix_access.hpp>
+#include<glm/gtx/vector_angle.hpp>
 
 #include <memory>
 #include <time.h>
 #include <fstream>
 
 #define ___ std::cerr << __FILE__ << " " << __LINE__ << std::endl
+
+std::string const varsPrefix = "measurements";
 
 SDL_Surface* flipSurface(SDL_Surface* sfc) {
     SDL_Surface* result = SDL_CreateRGBSurface(sfc->flags, sfc->w, sfc->h,
@@ -80,10 +84,8 @@ class TestCase
         enum TestType {MAX_SLIDER=0, BEST_SLIDER, CHECKBOX}; 
         std::string name;
         TestType type;
-        static const std::string varsPrefix;
 };
 
-const std::string TestCase::varsPrefix{"measurements"};
 
 class Holo: public simple3DApp::Application{
     public:
@@ -268,72 +270,72 @@ RenderModel::RenderModel(Model*mdl, std::string textureFileName, std::string bck
     const std::string vertSrc =
         "#version 450 \n"
         R".(
-  uniform mat4 projection = mat4(1);
-  uniform mat4 view       = mat4(1);
+      uniform mat4 projection = mat4(1);
+      uniform mat4 view       = mat4(1);
 
-  layout(location=0)in vec3 position;
-  layout(location=1)in vec3 normal;
-  layout(location=2)in vec2 uv;
+      layout(location=0)in vec3 position;
+      layout(location=1)in vec3 normal;
+      layout(location=2)in vec2 uv;
 
-  out vec3 vPosition;
-  out vec3 vNormal;
-  out vec2 vUV;
+      out vec3 vPosition;
+      out vec3 vNormal;
+      out vec2 vUV;
 
-  flat out uint vID;
+      flat out uint vID;
 
-  void main(){
-    vID = gl_VertexID/3;
-    gl_Position = projection*view*vec4(position,1);
-    vPosition = position;
-    vNormal   = normal;
-    vUV   = uv;
-  }).";
+      void main(){
+        vID = gl_VertexID/3;
+        gl_Position = projection*view*vec4(position,1);
+        vPosition = position;
+        vNormal   = normal;
+        vUV   = uv;
+      }).";
         const std::string fragSrc = 
         "#version 450\n" 
         R".(
-  layout(location=0)out vec4 fColor;
-  layout(binding=0)uniform sampler2D modelTex;
+      layout(location=0)out vec4 fColor;
+      layout(binding=0)uniform sampler2D modelTex;
 
-  uniform mat4 view = mat4(1);
-  uniform vec3 lightPos = vec3(0,1000,0);
+      uniform mat4 view = mat4(1);
+      uniform vec3 lightPos = vec3(0,1000,0);
 
-  in vec3 vPosition;
-  in vec3 vNormal;
-  in vec2 vUV;
+      in vec3 vPosition;
+      in vec3 vNormal;
+      in vec2 vUV;
 
-  flat in uint vID;
-  vec3 hue(float t){
-    t = fract(t);
-    if(t<1/6.)return mix(vec3(1,0,0),vec3(1,1,0),(t-0/6.)*6);
-    if(t<2/6.)return mix(vec3(1,1,0),vec3(0,1,0),(t-1/6.)*6);
-    if(t<3/6.)return mix(vec3(0,1,0),vec3(0,1,1),(t-2/6.)*6);
-    if(t<4/6.)return mix(vec3(0,1,1),vec3(0,0,1),(t-3/6.)*6);
-    if(t<5/6.)return mix(vec3(0,0,1),vec3(1,0,1),(t-4/6.)*6);
-              return mix(vec3(1,0,1),vec3(1,0,0),(t-5/6.)*6);
-  }
+      flat in uint vID;
+      vec3 hue(float t){
+        t = fract(t);
+        if(t<1/6.)return mix(vec3(1,0,0),vec3(1,1,0),(t-0/6.)*6);
+        if(t<2/6.)return mix(vec3(1,1,0),vec3(0,1,0),(t-1/6.)*6);
+        if(t<3/6.)return mix(vec3(0,1,0),vec3(0,1,1),(t-2/6.)*6);
+        if(t<4/6.)return mix(vec3(0,1,1),vec3(0,0,1),(t-3/6.)*6);
+        if(t<5/6.)return mix(vec3(0,0,1),vec3(1,0,1),(t-4/6.)*6);
+                  return mix(vec3(1,0,1),vec3(1,0,0),(t-5/6.)*6);
+      }
 
-  void main(){
+      void main(){
 
-    vec3  diffuseColor   = texture(modelTex, vUV).rgb;//hue(vID*3.14159254f);
-    vec3  specularColor  = vec3(1);
-    float specularFactor = 1;
+        vec3  diffuseColor   = texture(modelTex, vUV).rgb;//hue(vID*3.14159254f);
+        vec3  specularColor  = vec3(1);
+        float specularFactor = 1;
 
-    vec3 cameraPos = vec3(inverse(view)*vec4(0,0,0,1));
+        vec3 cameraPos = vec3(inverse(view)*vec4(0,0,0,1));
 
-    vec3 N = normalize(vNormal);
-    vec3 L = normalize(lightPos-vPosition);
-    vec3 V = normalize(cameraPos-vPosition   );
-    vec3 R = reflect(V,N);
+        vec3 N = normalize(vNormal);
+        vec3 L = normalize(lightPos-vPosition);
+        vec3 V = normalize(cameraPos-vPosition   );
+        vec3 R = reflect(V,N);
 
-    float dF = max(dot(L,N),0);
-    float sF = max(dot(R,L),0)*dF;
+        float dF = max(dot(L,N),0);
+        float sF = max(dot(R,L),0)*dF;
 
-    vec3 dl = dF * diffuseColor;
-    vec3 sl = sF * specularColor;
+        vec3 dl = dF * diffuseColor;
+        vec3 sl = sF * specularColor;
 
-    fColor = vec4(dl + sl,1);
+        fColor = vec4(dl + sl,1);
 
-  }).";
+      }).";
         auto vs = std::make_shared<ge::gl::Shader>(GL_VERTEX_SHADER, vertSrc);
     auto fs = std::make_shared<ge::gl::Shader>(GL_FRAGMENT_SHADER, fragSrc);
     this->program = std::make_shared<ge::gl::Program>(vs,fs);
@@ -341,25 +343,25 @@ RenderModel::RenderModel(Model*mdl, std::string textureFileName, std::string bck
     const std::string bckgVertSrc =
         "#version 450 \n"
         R".(
-  #extension GL_KHR_vulkan_glsl : enable
-  out vec2 uv;
+      #extension GL_KHR_vulkan_glsl : enable
+      out vec2 uv;
 
-  void main(){
-    uv = vec2((gl_VertexID << 1) & 2, gl_VertexID & 2);
-    gl_Position = vec4(2.0f*uv-1.0f, 0.9999999f, 1.0f);
-  }
-).";
+      void main(){
+        uv = vec2((gl_VertexID << 1) & 2, gl_VertexID & 2);
+        gl_Position = vec4(2.0f*uv-1.0f, 0.9999999f, 1.0f);
+      }
+    ).";
         const std::string bckgFragSrc = 
         "#version 450\n" 
         R".(
-  in vec2 uv;
-  layout(location = 0) out vec4 outColor;
-  layout(binding=0)uniform sampler2D bckgTex;
+      in vec2 uv;
+      layout(location = 0) out vec4 outColor;
+      layout(binding=0)uniform sampler2D bckgTex;
 
-  void main(){
-    outColor = texture(bckgTex,uv);
+      void main(){
+        outColor = texture(bckgTex,uv);
 
-  }).";
+      }).";
         auto bckgVs = std::make_shared<ge::gl::Shader>(GL_VERTEX_SHADER, bckgVertSrc);
     auto bckgFs = std::make_shared<ge::gl::Shader>(GL_FRAGMENT_SHADER, bckgFragSrc);
     this->bckgProgram = std::make_shared<ge::gl::Program>(bckgVs,bckgFs);
@@ -443,93 +445,93 @@ void createHoloProgram(vars::Vars&vars){
     if(notChanged(vars,"all",__FUNCTION__,{}))return;
 
     std::string const vsSrc = R".(
-  #version 450 core
+      #version 450 core
 
-  out vec2 texCoords;
+      out vec2 texCoords;
 
-  void main(){
-    texCoords = vec2(gl_VertexID&1,gl_VertexID>>1);
-    gl_Position = vec4(texCoords*2-1,0,1);
-  }
-  ).";
+      void main(){
+        texCoords = vec2(gl_VertexID&1,gl_VertexID>>1);
+        gl_Position = vec4(texCoords*2-1,0,1);
+      }
+      ).";
 
     std::string const fsSrc = R".(
-  #version 450 core
+      #version 450 core
 
-  in vec2 texCoords;
+      in vec2 texCoords;
 
-  layout(location=0)out vec4 fragColor;
+      layout(location=0)out vec4 fragColor;
 
-  uniform int showQuilt = 0;
-  uniform int showAsSequence = 0;
-  uniform uint selectedView = 0;
-  // HoloPlay values
-  uniform float pitch = 354.42108f;
-  uniform float tilt = -0.1153f;
-  uniform float center = 0.04239f;
-  uniform float invView = 1.f;
-  uniform float flipX;
-  uniform float flipY;
-  uniform float subp = 0.00013f;
-  uniform int ri = 0;
-  uniform int bi = 2;
-  uniform vec4 tile = vec4(5,9,45,45);
-  uniform vec4 viewPortion = vec4(0.99976f, 0.99976f, 0.00f, 0.00f);
-  uniform vec4 aspect;
-  uniform uint drawOnlyOneImage = 0;
+      uniform int showQuilt = 0;
+      uniform int showAsSequence = 0;
+      uniform uint selectedView = 0;
+      // HoloPlay values
+      uniform float pitch = 354.42108f;
+      uniform float tilt = -0.1153f;
+      uniform float center = 0.04239f;
+      uniform float invView = 1.f;
+      uniform float flipX;
+      uniform float flipY;
+      uniform float subp = 0.00013f;
+      uniform int ri = 0;
+      uniform int bi = 2;
+      uniform vec4 tile = vec4(5,9,45,45);
+      uniform vec4 viewPortion = vec4(0.99976f, 0.99976f, 0.00f, 0.00f);
+      uniform vec4 aspect;
+      uniform uint drawOnlyOneImage = 0;
 
-  layout(binding=0)uniform sampler2D screenTex;
+      layout(binding=0)uniform sampler2D screenTex;
 
-  uniform float focus = 0.f;
+      uniform float focus = 0.f;
 
-  uniform uint stride = 1;
+      uniform uint stride = 1;
 
-  vec2 texArr(vec3 uvz)
-  {
-      // decide which section to take from based on the z.
-
-
-      float z = floor(uvz.z * tile.z);
-      float focusMod = focus*(1-2*clamp(z/tile.z,0,1));
-      float x = (mod(z, tile.x) + clamp(uvz.x+focusMod,0,1)) / tile.x;
-      float y = (floor(z / tile.x) + uvz.y) / tile.y;
-      return vec2(x, y) * viewPortion.xy;
-  }
-
-  void main()
-  {
-  	vec3 nuv = vec3(texCoords.xy, 0.0);
-
-  	vec4 rgb[3];
-  	for (int i=0; i < 3; i++) 
-  	{
-  		nuv.z = (texCoords.x + i * subp + texCoords.y * tilt) * pitch - center;
-  		nuv.z = fract(nuv.z);
-        if(invView > 0.5)
-      		nuv.z = (1.0 - nuv.z);
-        nuv.z = (floor(nuv.z*tile.z/stride)*stride + fract(nuv.z*tile.z))/tile.z;
+      vec2 texArr(vec3 uvz)
       {
-        if(drawOnlyOneImage == 1){
-          if(uint(nuv.z *tile.z) == selectedView || uint(nuv.z *tile.z) == 19)
-  		      rgb[i] = texture(screenTex, texArr(nuv));
-          else
-            rgb[i] = vec4(0);
-        }else{
-  		    rgb[i] = texture(screenTex, texArr(nuv));
-        }
+          // decide which section to take from based on the z.
+
+
+          float z = floor(uvz.z * tile.z);
+          float focusMod = focus*(1-2*clamp(z/tile.z,0,1));
+          float x = (mod(z, tile.x) + clamp(uvz.x+focusMod,0,1)) / tile.x;
+          float y = (floor(z / tile.x) + uvz.y) / tile.y;
+          return vec2(x, y) * viewPortion.xy;
       }
-  	}
 
-      if(showQuilt == 0)
-        fragColor = vec4(rgb[ri].r, rgb[1].g, rgb[bi].b, 1.0);
-      else{
-        if(showAsSequence == 0)
-    fragColor = texture(screenTex, texCoords.xy);
-        else{
-            uint sel = min(selectedView,uint(tile.x*tile.y-1));
-            fragColor = texture(screenTex, texCoords.xy/vec2(tile.xy) + vec2(vec2(1.f)/tile.xy)*vec2(sel%uint(tile.x),sel/uint(tile.x)));
+      void main()
+      {
+        vec3 nuv = vec3(texCoords.xy, 0.0);
 
+        vec4 rgb[3];
+        for (int i=0; i < 3; i++) 
+        {
+            nuv.z = (texCoords.x + i * subp + texCoords.y * tilt) * pitch - center;
+            nuv.z = fract(nuv.z);
+            if(invView > 0.5)
+                nuv.z = (1.0 - nuv.z);
+            nuv.z = (floor(nuv.z*tile.z/stride)*stride + fract(nuv.z*tile.z))/tile.z;
+          {
+            if(drawOnlyOneImage == 1){
+              if(uint(nuv.z *tile.z) == selectedView || uint(nuv.z *tile.z) == 19)
+                  rgb[i] = texture(screenTex, texArr(nuv));
+              else
+                rgb[i] = vec4(0);
+            }else{
+                rgb[i] = texture(screenTex, texArr(nuv));
+            }
+          }
         }
+
+          if(showQuilt == 0)
+            fragColor = vec4(rgb[ri].r, rgb[1].g, rgb[bi].b, 1.0);
+          else{
+            if(showAsSequence == 0)
+    fragColor = texture(screenTex, texCoords.xy);
+            else{
+                uint sel = min(selectedView,uint(tile.x*tile.y-1));
+                fragColor = texture(screenTex, texCoords.xy/vec2(tile.xy) + vec2(vec2(1.f)/tile.xy)*vec2(sel%uint(tile.x),sel/uint(tile.x)));
+
+            }
 }
 }
 ).";
@@ -586,32 +588,27 @@ class Quilt{
             ge::gl::glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
 
             float strength = vars.addOrGetFloat("DStrength",0.f);
-            auto currentTestID{vars.addOrGet<size_t>(TestCase::varsPrefix+"current",0)};
+            auto currentTestID = vars.addOrGetUint32(varsPrefix+"current",0);
+
 
             float const fov = glm::radians<float>(vars.getFloat("quiltRender.fov"));
             float const size = vars.getFloat("quiltRender.size");
             float const camDist  =  size / glm::tan(fov * 0.5f); /// ?
             float viewCone = glm::radians<float>(vars.getFloat("quiltRender.viewCone")); /// ?
-            float defaultCone = glm::half_pi<float>();
-            if(*currentTestID == 13)
+            float defaultCone = glm::pi<float>()/6.0f;
+            if(currentTestID == 13)
                 viewCone = defaultCone*strength;
-            if(*currentTestID == 14)
+            if(currentTestID == 14)
                 viewCone = defaultCone*(1.0f-strength);
 
             float const aspect = static_cast<float>(res.x) / static_cast<float>(res.y);
-            float const viewConeSweep = -camDist * glm::tan(viewCone);
+            //float const viewConeSweep = -camDist * glm::tan(viewCone);
             float const projModifier = 1.f / (size * aspect);
             auto const numViews = counts.x * counts.y;
             float d = vars.addOrGetFloat("quiltRender.d",0.70f);
             addVarsLimitsF(vars,"quiltRender.d",0,400,0.01);
             float S = 0.5f*d*glm::tan(viewCone);
-            float tilt = d*aspect*glm::tan(vars.getFloat("camera.fovy")/2);
-            uint32_t axis = (*currentTestID%3)+1; //vars.addOrGetUint32("DAxis",1);
-            if(axis == 3) axis = 4;
-            uint32_t freq = vars.addOrGetFloat ("DFreq",25.f);
-            bool jagged    = (*currentTestID/3)%2;//vars.addOrGetBool("DJagged");
-            bool translate = (*currentTestID/6); //vars.addOrGetBool("DTranslate");
-            float deform = 0.f;
+            //float tilt = d*aspect*glm::tan(vars.getFloat("camera.fovy")/2);
 
             size_t counter = 0;
             for(size_t j=0;j<counts.y;++j)
@@ -628,39 +625,10 @@ class Quilt{
                     float t = (float)counter / (float)(numViews - 1);
 
                     float s = S-2*t*S;
-                    view[3][2] += *vars.addOrGet<float>("ff",0.f)*counter*0.01f;
                     view[3][0] += s;
-                    proj[2][0] += s/tilt;//(tilt+vars.addOrGetFloat("DTilt",0.f)*counter*0.01f);
+                    //proj[2][0] += s/tilt;//(tilt+vars.addOrGetFloat("DTilt",0.f)*counter*0.01f);
 
-                    if(*currentTestID < 12)
-                    {
-
-                        if(jagged)deform = strength*(glm::sin((float)(counter)*freq/100.f*glm::pi<float>()*2.f))*0.5f; 
-                        else      deform = strength*counter*0.05f;
-
-                        if(translate){
-                            for(int k=0;k<3;++k)
-                                view[3][k] += ((axis>>k)&1)*deform;
-                        }else{
-                            auto camPos = glm::inverse(view)*glm::vec4(0.f,0.f,0.f,1.f);
-                            view = glm::translate(glm::mat4(1.f),+glm::vec3(camPos))*
-                                glm::rotate   (glm::mat4(1.f),deform,glm::vec3((axis>>0)&1,(axis>>1)&1,(axis>>2)&1))*
-                                glm::translate(glm::mat4(1.f),-glm::vec3(camPos))*
-                                view;
-                        }
-                    }
-                    else if(*currentTestID == 12)
-                    {
-                        auto camPos = glm::inverse(view)*glm::vec4(0.f,0.f,0.f,1.f);
-                        const float r = vars.addOrGetFloat("radius",1.f);;
-                        float offset = 3*glm::half_pi<float>()+t*glm::pi<float>();
-                        auto circular = strength;//vars.addOrGetFloat("circular", 1.0f);
-                        float x = glm::sin(offset) * 2;
-                        float y = glm::cos(offset) * 2 * circular;
-                        auto direction = glm::mix(glm::vec3(x, 0, y-1), glm::vec3(0.0), circular); 
-                        y+=(1-circular)*3;
-                        view = glm::lookAt(glm::vec3(x, 0, y+camPos.z), direction, glm::vec3(0.0, 1.0, 0.0));
-                    }
+                    view = getTestMatrix(vars,counter,view);
 
                     fce(view,proj);
                     counter++;
@@ -668,6 +636,87 @@ class Quilt{
             fbo->unbind();
             ge::gl::glViewport(origViewport[0],origViewport[1],origViewport[2],origViewport[3]);
         }
+
+        glm::mat4 rotateViewMatrix(glm::mat4 const&mat, float angle, glm::vec3 axis)
+        {
+            auto camPos = glm::inverse(mat)*glm::vec4(0.f,0.f,0.f,1.f);
+            return  glm::translate(glm::mat4(1.f),+glm::vec3(camPos))*
+                glm::rotate   (glm::mat4(1.f),angle,axis)*
+                glm::translate(glm::mat4(1.f),-glm::vec3(camPos))*
+                mat;
+        }
+
+        glm::mat4 getTestMatrix(vars::Vars&vars,uint32_t counter,glm::mat4 const&inView){
+            auto        currentTestID =                     vars.addOrGetUint32(varsPrefix+"current"  ,0    );
+            float       viewCone      = glm::radians<float>(vars.getFloat      ("quiltRender.viewCone"     )); /// ?
+            float       strength      =                     vars.addOrGetFloat ("DStrength"           ,0.f  );
+            float       d             =                     vars.addOrGetFloat ("quiltRender.d"       ,0.7f );
+            auto        view          = inView;
+
+            addVarsLimitsF(vars,"quiltRender.d",0,400,0.01);
+
+            float defaultCone = glm::pi<float>()/6.0f;
+            if(currentTestID == 14)
+                viewCone = defaultCone*strength;
+            if(currentTestID == 15)
+                viewCone = defaultCone*(1.0f-strength);
+
+            auto const numViews = counts.x * counts.y;
+            float t = (float)counter / (float)(numViews - 1);
+
+            float S = 0.5f*d*glm::tan(viewCone);
+            uint32_t axis = (currentTestID%3)+1; //vars.addOrGetUint32("DAxis",1);
+            if(axis == 3) axis = 4;
+            uint32_t freq = vars.addOrGetFloat ("DFreq",25.f);
+            bool jagged    = (currentTestID/3)%2;//vars.addOrGetBool("DJagged");
+            bool translate = (currentTestID/6); //vars.addOrGetBool("DTranslate");
+            float deform = 0.f;
+            
+               if(currentTestID < 12)
+               {
+
+               if(jagged)deform = strength*(glm::sin((float)(counter)*freq/100.f*glm::pi<float>()*2.f))*0.5f; 
+               else      deform = strength*counter*0.05f;
+
+               if(translate){
+               for(int k=0;k<3;++k)
+               view[3][k] += ((axis>>k)&1)*deform;
+               }else{
+                
+               auto camPos = glm::inverse(view)*glm::vec4(0.f,0.f,0.f,1.f);
+               view = glm::translate(glm::mat4(1.f),+glm::vec3(camPos))*
+               glm::rotate   (glm::mat4(1.f),deform,glm::vec3((axis>>0)&1,(axis>>1)&1,(axis>>2)&1))*
+               glm::translate(glm::mat4(1.f),-glm::vec3(camPos))*
+               view;
+
+               view = rotateViewMatrix(view, deform, glm::vec3((axis>>0)&1,(axis>>1)&1,(axis>>2)&1));
+               }
+               }
+               else if(currentTestID < 15)
+            {
+                auto camPos = glm::inverse(view)*glm::vec4(0.f,0.f,0.f,1.f);
+                const float r = vars.addOrGetFloat("radius",1.f);
+                float s = S-2*t*S;
+                /*
+                   float offset = 3*glm::half_pi<float>()+t*glm::pi<float>();
+                   auto circular = strength;//vars.addOrGetFloat("circular", 1.0f);
+                   float x = glm::sin(offset) * 2;
+                   float y = glm::cos(offset) * 2 * circular;
+                   auto direction = glm::mix(glm::vec3(x, 0, y-1), glm::vec3(0.0), circular); 
+                   y+=(1-circular)*3;
+                   view = glm::lookAt(glm::vec3(x, 0, y+camPos.z), direction, glm::vec3(0.0, 1.0, 0.0));
+                 */
+                glm::vec2 circleCenter{camPos[0]-s+(S-2*0.5*S), camPos[2]+r};
+                float invert = (currentTestID == 12) ? 1 : -1;
+                auto circleCoord = glm::vec2(s,invert*glm::sqrt(r*r-s*s))+circleCenter;
+                view[3][2] = -circleCoord.y;
+                float angle = glm::angle(glm::vec2(0,1), glm::normalize(circleCenter-circleCoord));
+                view = rotateViewMatrix(view, glm::radians(angle) ,glm::vec3(0,1,0));
+
+            }
+            return view;
+        }
+
 };
 
 void drawHolo(vars::Vars&vars){
@@ -712,9 +761,9 @@ void saveResults(vars::Vars&vars, const std::vector<TestCase> &items)
     std::ofstream f(vars.getString("resultDir")+fileName+".txt");
 
     for(const auto &item : items)
-        f   << item.name << " " << vars.getFloat(TestCase::varsPrefix+item.name) << std::endl
-            << "sick: " << vars.getFloat(TestCase::varsPrefix+item.name+"Sick") << std::endl
-            << "time: " << *vars.get<double>(TestCase::varsPrefix+item.name+"Time") << std::endl << std::endl;
+        f   << item.name << " " << vars.getFloat(varsPrefix+item.name) << std::endl
+            //<< "sick: " << vars.getFloat(TestCase::varsPrefix+item.name+"Sick") << std::endl
+            << "time: " << *vars.get<double>(varsPrefix+item.name+"Time") << std::endl << std::endl;
     f.close();
 }
 
@@ -744,35 +793,37 @@ void drawTestingGui(vars::Vars&vars)
             {"VerticalNoiseJagged", TestCase::MAX_SLIDER},
             {"ZoomJagged", TestCase::MAX_SLIDER},
             {"Circular", TestCase::MAX_SLIDER},
+            {"CircularInvert", TestCase::MAX_SLIDER},
             {"3DEffectMax", TestCase::MAX_SLIDER},
             {"3DEffectMin", TestCase::MAX_SLIDER},
     };
     auto slider{vars.addOrGet<float>("DStrength",0.f)};
-    auto currentID{vars.addOrGet<size_t>(TestCase::varsPrefix+"current",0)};
-    auto currentItem{items[*currentID]};
-    auto prefixedName = TestCase::varsPrefix+currentItem.name;
-    auto currentVar{vars.addOrGet<float>(prefixedName,0)};
+    auto &currentID{vars.addOrGetUint32(varsPrefix+"current",0)};
+    auto currentItem{items[currentID]};
+    auto prefixedName = varsPrefix+currentItem.name;
+    auto &currentVar{vars.addOrGetFloat(prefixedName,0)};
     auto currentSickVar{vars.addOrGet<float>(prefixedName+"Sick",0)};
 
     ImGui::Begin("Testing");
     //ImGui::GetStyle().ScaleAllSizes(5.f);
     //ImGui::GetIO().FontGlobalScale = 5.f;
 
-    ImGui::TextWrapped("%s", (labels[currentItem.type]+" If you feel sick during the adjusting of the slider, also adjust the sickness level (0 not sick at all, 1 very dizzy)").c_str());
+    ImGui::TextWrapped("%s", (labels[currentItem.type].c_str()));//+" If you feel sick during the adjusting of the slider, also adjust the sickness level (0 not sick at all, 1 very dizzy)").c_str());
     if(currentItem.type == TestCase::MAX_SLIDER || currentItem.type == TestCase::BEST_SLIDER)
         ImGui::SliderFloat("Slider", slider, 0, 1, "%.6f");
     else
         ImGui::Checkbox("Enable effect", reinterpret_cast<bool*>(slider));
 
-    ImGui::SliderFloat("Sickness level", currentSickVar, 0, 1, "%.1f");
+    //ImGui::SliderFloat("Sickness level", currentSickVar, 0, 1, "%.1f");
     if (ImGui::Button("Next"))
     {
-        *currentVar = *slider;
+        currentVar = *slider;
         *slider = 0;
         vars.reCreate<double>(prefixedName+"Time", vars.get<Timer<double>>("timer")->elapsedFromStart());
         *resetTimer = true;    
-        (*currentID)++;
-        if(*currentID > items.size()-1)
+        currentID++;
+
+        if(currentID > items.size()-1)
         {
             saveResults(vars, items);
             (*vars.get<Holo*>("thisApp"))->stop();
@@ -907,12 +958,11 @@ void Holo::init(){
 
     vars.addFloat("quiltRender.size",5.f);
     vars.addFloat("quiltRender.fov",90.f);
-    vars.addFloat("quiltRender.viewCone",10.f);
+    vars.addFloat("quiltRender.viewCone",30.f);
     vars.addFloat("quiltRender.texScale",1.64f);
     addVarsLimitsF(vars,"quiltRender.texScale",0.1f,5,0.01f);
     vars.addFloat("quiltRender.texScaleAspect",0.745f);
     addVarsLimitsF(vars,"quiltRender.texScaleAspect",0.1f,10,0.01f);
-
 
     vars.add<Quilt>("quilt",vars);
 
