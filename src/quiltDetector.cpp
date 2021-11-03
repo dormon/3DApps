@@ -586,18 +586,21 @@ class Analyzer{
             float offsetAcc{0};
             for(int i=0; i<sequence.size(); i++)
             {
+                //TODO quilt spaces
+                quilts.back().push_back(frames[sequence[i]].number);
+                /*
                 offsetAcc += abs(frames[sequence[i]].magnitude.x);
                 if(offsetAcc >= maxOffset)
                 {
                     if(i == 0)
                         quilts.back().push_back(frames[sequence[i]].number);
-                    //else if(fmod(offsetAcc,maxOffset) < fmod(offsetAcc+abs(sequence[i+1].direction.x),maxOffset))
+                    //else if(fmod(offsetAcc,maxOffset) < fmod(offsetAcc+abs(sequence[i+1].direction.x),maxOffset)) 
                     else if(offsetAcc-maxOffset < abs(offsetAcc-maxOffset-abs(frames[sequence[i-1]].direction.x)))
                         quilts.back().push_back(frames[sequence[i]].number);
                     else
                         quilts.back().push_back(frames[sequence[i-1]].number);
                     offsetAcc -= maxOffset;
-                }
+                }*/
             }
         }
         serializeFrameVector(&quilts, outputFolder+prefix+"_quilts.txt");
@@ -616,7 +619,8 @@ class Analyzer{
             }
  
         serializeFrameVector(&trimmedQuilts, outputFolder+prefix+"_trimmedQuilts.txt");
-        return trimmedQuilts;
+        return quilts;
+        //return trimmedQuilts;
     } 
 
     class Error{
@@ -774,6 +778,7 @@ void process(int argc, char **argv)
                 std::filesystem::create_directory(outputFolder+std::to_string(i));
         int frameNum{0};
         capture.set(cv::CAP_PROP_POS_AVI_RATIO, 0);
+
         while(true)
         {
             cv::Mat frame;
