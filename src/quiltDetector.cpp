@@ -184,7 +184,7 @@ class Analyzer{
     bool slamInput{false};
     cv::Point2f previousDirection{0,0};
     static constexpr int flowWinSize{15};
-    static constexpr int QUILT_SIZE{45};
+    static constexpr int QUILT_SIZE{10};
     enum AnalysisMethod {SPARSE_FLOW, DENSE_FLOW, FEATURE_MATCHING};
     AnalysisMethod method{FEATURE_MATCHING};
     cv::Mat denseFlowCache;
@@ -705,16 +705,17 @@ class Analyzer{
         Accumulator a;
         int size{QUILT_SIZE};
         float s = 0;
+        std::cout << std::endl << "Sequence start - sequence end : score";
         for(int i=0; i<sequences.size(); i++)
             if(sequences[i].size() > size)
             {
              size = sequences[i].size();
              s = sequencesScores[i];
              //a+=sequencesScores[i];
-             //std::cout << std::endl << sequences[i].front() << "-" << sequences[i].back() <<  " : " << sequencesScores[i];
+             std::cout << std::endl << sequences[i].front() << "-" << sequences[i].back() <<  " : " << sequencesScores[i];
             }
-        if( s< 0){ s=0.001;}
-        std::cout << s << "," << size << std::endl;
+        //if( s< 0){ s=0.001;}
+        //std::cout << s << "," << size << std::endl;
        /*     if(!sequences[i].empty())
                 std::cout << std::endl << sequences[i].front() << "-" << sequences[i].back() <<  " : " << sequencesScores[i];
         //std::cout << std::endl << "^^^^^^^^^^^^^" <<  std::endl << "start_frame-end_frame : score" << std::endl;*/
@@ -763,7 +764,7 @@ void process(int argc, char **argv)
     analyzer.printResults();
 
     //testing the window check
-    analyzer.checkLinearWindow(20.0, 55.5, 5.0, 0);
+    //analyzer.checkLinearWindow(20.0, 55.5, 5.0, 0);
 
     if(exportFrames && !inputFile.empty())
     {

@@ -629,6 +629,7 @@ class Quilt{
                     //proj[2][0] += s/tilt;//(tilt+vars.addOrGetFloat("DTilt",0.f)*counter*0.01f);
 
                     view = getTestMatrix(vars,counter,view);
+                    vars.getVector<glm::mat4>("cameraTransformations").push_back(view);
 
                     fce(view,proj);
                     counter++;
@@ -955,6 +956,7 @@ void Holo::init(){
     vars.addUint32("selectedView",0);
     addVarsLimitsU(vars,"selectedView",0,44);
     addVarsLimitsF(vars,"quiltView.tilt",-10,10,0.01);
+    vars.addVector<glm::mat4>("cameraTransformations");
 
     vars.addFloat("quiltRender.size",5.f);
     vars.addFloat("quiltRender.fov",90.f);
