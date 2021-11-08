@@ -479,6 +479,8 @@ void createHoloProgram(vars::Vars&vars){
       uniform vec4 viewPortion = vec4(0.99976f, 0.99976f, 0.00f, 0.00f);
       uniform vec4 aspect;
       uniform uint drawOnlyOneImage = 0;
+      uniform mat4 cameraTransformations[45];
+      uniform mat4 projection;
 
       layout(binding=0)uniform sampler2D screenTex;
 
@@ -489,8 +491,6 @@ void createHoloProgram(vars::Vars&vars){
       vec2 texArr(vec3 uvz)
       {
           // decide which section to take from based on the z.
-
-
           float z = floor(uvz.z * tile.z);
           float focusMod = focus*(1-2*clamp(z/tile.z,0,1));
           float x = (mod(z, tile.x) + clamp(uvz.x+focusMod,0,1)) / tile.x;
@@ -526,7 +526,21 @@ void createHoloProgram(vars::Vars&vars){
             fragColor = vec4(rgb[ri].r, rgb[1].g, rgb[bi].b, 1.0);
           else{
             if(showAsSequence == 0)
-    fragColor = texture(screenTex, texCoords.xy);
+            {
+                //fragColor = texture(screenTex, texCoords.xy);
+                ivec2 gridCoords = ivec2(trunc(texCoords.xy*tile.xy));
+                int index = gridCoords.y*int(tile.x)+gridCoords.x;
+                vec2 coords = texArr(vec3(mod(texCoords.xy*tile.xy,vec2(1)),index/float(tile.z)));
+
+                vec2 tileSize = 1.0/tile.xy;
+                vec4 tileBorders = vec4(tileSize*gridCoords, tileSize*(gridCoords+1));
+                vec2 normalizedCoords = (coords-tileBorders.xy)/tileSize;
+                vec4 worldCoords = inverse(projection)*vec4(2*normalizedCoords-1,1,1);
+                vec4 transCoords = projection*inverse(cameraTransformations[index])*vec4(worldCoords);
+                vec2 finalCoords = clamp( (((transCoords.xy/transCoords.w)+1)/2) * tileSize + tileBorders.xy, tileBorders.xy, tileBorders.zw );
+                //vec4 transCoords = vec4(normalizedCoords,1, 1);
+                fragColor = texture(screenTex, finalCoords);
+            }
             else{
                 uint sel = min(selectedView,uint(tile.x*tile.y-1));
                 fragColor = texture(screenTex, texCoords.xy/vec2(tile.xy) + vec2(vec2(1.f)/tile.xy)*vec2(sel%uint(tile.x),sel/uint(tile.x)));
@@ -543,6 +557,7 @@ auto fs = std::make_shared<ge::gl::Shader>(GL_FRAGMENT_SHADER,
         fsSrc
         );
 auto prg = vars.reCreate<ge::gl::Program>("holoProgram",vs,fs);
+//exit(1);
 prg->setNonexistingUniformWarning(false);
 }
 
@@ -590,7 +605,6 @@ class Quilt{
             float strength = vars.addOrGetFloat("DStrength",0.f);
             auto currentTestID = vars.addOrGetUint32(varsPrefix+"current",0);
 
-
             float const fov = glm::radians<float>(vars.getFloat("quiltRender.fov"));
             float const size = vars.getFloat("quiltRender.size");
             float const camDist  =  size / glm::tan(fov * 0.5f); /// ?
@@ -609,7 +623,9 @@ class Quilt{
             addVarsLimitsF(vars,"quiltRender.d",0,400,0.01);
             float S = 0.5f*d*glm::tan(viewCone);
             //float tilt = d*aspect*glm::tan(vars.getFloat("camera.fovy")/2);
-
+            auto& matrices = vars.getVector<glm::mat4>("cameraTransformations");
+            matrices.clear();
+            matrices.reserve(45);
             size_t counter = 0;
             for(size_t j=0;j<counts.y;++j)
                 for(size_t i=0;i<counts.x;++i){
@@ -628,10 +644,12 @@ class Quilt{
                     view[3][0] += s;
                     //proj[2][0] += s/tilt;//(tilt+vars.addOrGetFloat("DTilt",0.f)*counter*0.01f);
 
-                    view = getTestMatrix(vars,counter,view);
-                    vars.getVector<glm::mat4>("cameraTransformations").push_back(view);
+                    
+                    auto editedView = getTestMatrix(vars,counter,view);
+                    auto deltaMatrix = proj*view*glm::inverse(editedView)*glm::inverse(proj);
+                    matrices.push_back(deltaMatrix);
 
-                    fce(view,proj);
+                    fce(editedView,proj);
                     counter++;
                 }
             fbo->unbind();
@@ -729,6 +747,8 @@ void drawHolo(vars::Vars&vars){
     }else{
         vars.get<std::shared_ptr<ge::gl::Texture>>("quiltTex")->get()->bind(0);
     }
+
+    auto matrices = vars.getVector<glm::mat4>("cameraTransformations");
     vars.get<ge::gl::Program>("holoProgram")
         ->set1i ("showQuilt"       ,                vars.getBool       ("showQuilt"            ))
         ->set1i ("showAsSequence"  ,                vars.getBool       ("showAsSequence"       ))
@@ -746,6 +766,8 @@ void drawHolo(vars::Vars&vars){
         ->set1ui("drawOnlyOneImage",                vars.getBool       ("drawOnlyOneImage"     ))
         ->set1f ("focus"           ,                vars.getFloat      ("quiltView.focus"      ))
         ->set1ui("stride"          ,                vars.getUint32     ("quiltView.stride"     ))
+        ->setMatrix4fv("cameraTransformations",     glm::value_ptr(*matrices.data()), matrices.size())
+        ->setMatrix4fv("projection",  glm::value_ptr(vars.getReinterpret<basicCamera::CameraProjection>("projection")->getProjection()))
         ->use();
 
     ge::gl::glDrawArrays(GL_TRIANGLE_STRIP,0,4);
