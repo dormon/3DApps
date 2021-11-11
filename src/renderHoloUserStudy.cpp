@@ -82,8 +82,11 @@ class TestCase
 {
     public:
         enum TestType {MAX_SLIDER=0, BEST_SLIDER, CHECKBOX}; 
+        enum TestCategory {CAMERAS, CONE_MAX, CONE_MIN, DOF}; 
         std::string name;
         TestType type;
+        TestCategory category{CAMERAS};
+        bool compensate{false};
 };
 
 
@@ -172,7 +175,7 @@ class RenderModel: public ge::gl::Context{
     public:
         RenderModel(Model*mdl, std::string textureFileName, std::string bckgFileName);
         ~RenderModel();
-        void draw(glm::mat4 const&view,glm::mat4 const&projection);
+        void draw(glm::mat4 const&view,glm::mat4 const&projection, vars::Vars&vars);
         std::shared_ptr<ge::gl::VertexArray>vao           = nullptr;
         std::shared_ptr<ge::gl::Buffer     >vertices      = nullptr;
         std::shared_ptr<ge::gl::Buffer     >normals       = nullptr;
@@ -265,6 +268,8 @@ RenderModel::RenderModel(Model*mdl, std::string textureFileName, std::string bck
     this->vao->addAttrib(this->uvs,2,2,GL_FLOAT);
 
     bckgTex = loadColorTexture(bckgFileName);
+    bckgTex->texParameteri(GL_TEXTURE_WRAP_S,GL_CLAMP_TO_EDGE);
+    bckgTex->texParameteri(GL_TEXTURE_WRAP_T,GL_CLAMP_TO_EDGE);
     modelTex = loadColorTexture(textureFileName);
 
     const std::string vertSrc =
@@ -333,12 +338,14 @@ RenderModel::RenderModel(Model*mdl, std::string textureFileName, std::string bck
         vec3 dl = dF * diffuseColor;
         vec3 sl = sF * specularColor;
 
-        fColor = vec4(dl + sl,1);
+        //fColor = vec4(dl + sl,1);
+        fColor = vec4(diffuseColor,1);
 
       }).";
         auto vs = std::make_shared<ge::gl::Shader>(GL_VERTEX_SHADER, vertSrc);
     auto fs = std::make_shared<ge::gl::Shader>(GL_FRAGMENT_SHADER, fragSrc);
     this->program = std::make_shared<ge::gl::Program>(vs,fs);
+    this->program->setNonexistingUniformWarning(false);
 
     const std::string bckgVertSrc =
         "#version 450 \n"
@@ -357,14 +364,44 @@ RenderModel::RenderModel(Model*mdl, std::string textureFileName, std::string bck
       in vec2 uv;
       layout(location = 0) out vec4 outColor;
       layout(binding=0)uniform sampler2D bckgTex;
+      uniform float blurAmount = 0.0;
+
+    const float pi = atan(1.0) * 4.0;
+    const int samples = 16;
+    const float sigma = float(samples) * 0.25;
+
+    float gaussian(vec2 i) {
+        return 1.0 / (2.0 * pi * sigma*sigma * exp(-((i.x*i.x + i.y*i.y) / (2.0 * sigma*sigma))));
+    }
+
+    vec3 blur(sampler2D sp, vec2 uv, vec2 scale) {
+        vec3 col = vec3(0.0);
+        float accum = 0.0;
+        float weight;
+        vec2 offset;
+
+        for (int x = -samples / 2; x < samples / 2; ++x) {
+            for (int y = -samples / 2; y < samples / 2; ++y) {
+                offset = vec2(x, y);
+                weight = gaussian(offset);
+                col += texture(sp, uv + scale * offset).rgb * weight;
+                accum += weight;
+            }
+        }
+
+        return col / accum;
+        }
+
 
       void main(){
-        outColor = texture(bckgTex,uv);
+        vec2 pixelSize = 1.0/textureSize(bckgTex, 0);
+        outColor = vec4(blur(bckgTex,uv, pixelSize*blurAmount),1);
+        //outColor = texture(bckgTex,uv);
 
       }).";
         auto bckgVs = std::make_shared<ge::gl::Shader>(GL_VERTEX_SHADER, bckgVertSrc);
     auto bckgFs = std::make_shared<ge::gl::Shader>(GL_FRAGMENT_SHADER, bckgFragSrc);
-    this->bckgProgram = std::make_shared<ge::gl::Program>(bckgVs,bckgFs);
+    this->bckgProgram = std::make_shared<ge::gl::Program>(bckgVs,bckgFs);// exit(1);
 }
 
 RenderModel::~RenderModel(){
@@ -372,11 +409,12 @@ RenderModel::~RenderModel(){
 }
 
 
-void RenderModel::draw(glm::mat4 const&view,glm::mat4 const&projection){
+void RenderModel::draw(glm::mat4 const&view,glm::mat4 const&projection, vars::Vars&vars){
     assert(this!=nullptr);
     ge::gl::glEnable(GL_DEPTH_TEST);
     this->bckgProgram->use();
     this->bckgTex->bind(0);
+    this->bckgProgram->set1f("blurAmount", vars.getFloat("blurAmount"));
     this->vao->bind(); 
     this->glDrawArrays(GL_TRIANGLES,0,3);
     this->program->use();
@@ -399,7 +437,7 @@ void drawModel(vars::Vars&vars,glm::mat4 const&view,glm::mat4 const&proj){
     preprareDrawModel(vars);
 
     auto rm = vars.get<RenderModel>("renderModel");
-    rm->draw(view,proj);
+    rm->draw(view,proj, vars);
 }
 
 void drawModel(vars::Vars&vars){
@@ -481,6 +519,7 @@ void createHoloProgram(vars::Vars&vars){
       uniform uint drawOnlyOneImage = 0;
       uniform mat4 cameraTransformations[45];
       uniform mat4 projection;
+      uniform bool compensation = false;
 
       layout(binding=0)uniform sampler2D screenTex;
 
@@ -525,27 +564,29 @@ void createHoloProgram(vars::Vars&vars){
           if(showQuilt == 0)
             fragColor = vec4(rgb[ri].r, rgb[1].g, rgb[bi].b, 1.0);
           else{
-            if(showAsSequence == 0)
-            {
-                //fragColor = texture(screenTex, texCoords.xy);
-                ivec2 gridCoords = ivec2(trunc(texCoords.xy*tile.xy));
-                int index = gridCoords.y*int(tile.x)+gridCoords.x;
-                vec2 coords = texArr(vec3(mod(texCoords.xy*tile.xy,vec2(1)),index/float(tile.z)));
+    if(showAsSequence == 0)
+    {
+        vec2 finalCoords = texCoords.xy;
+        if(compensation)
+        {
+            ivec2 gridCoords = ivec2(trunc(texCoords.xy*tile.xy));
+            int index = gridCoords.y*int(tile.x)+gridCoords.x;
+            vec2 coords = texArr(vec3(mod(texCoords.xy*tile.xy,vec2(1)),index/float(tile.z)));
 
-                vec2 tileSize = 1.0/tile.xy;
-                vec4 tileBorders = vec4(tileSize*gridCoords, tileSize*(gridCoords+1));
-                vec2 normalizedCoords = (coords-tileBorders.xy)/tileSize;
-                vec4 worldCoords = inverse(projection)*vec4(2*normalizedCoords-1,1,1);
-                vec4 transCoords = projection*inverse(cameraTransformations[index])*vec4(worldCoords);
-                vec2 finalCoords = clamp( (((transCoords.xy/transCoords.w)+1)/2) * tileSize + tileBorders.xy, tileBorders.xy, tileBorders.zw );
-                //vec4 transCoords = vec4(normalizedCoords,1, 1);
-                fragColor = texture(screenTex, finalCoords);
-            }
-            else{
-                uint sel = min(selectedView,uint(tile.x*tile.y-1));
-                fragColor = texture(screenTex, texCoords.xy/vec2(tile.xy) + vec2(vec2(1.f)/tile.xy)*vec2(sel%uint(tile.x),sel/uint(tile.x)));
+            vec2 tileSize = 1.0/tile.xy;
+            vec4 tileBorders = vec4(tileSize*gridCoords, tileSize*(gridCoords+1));
+            vec2 normalizedCoords = (coords-tileBorders.xy)/tileSize;
+            vec4 worldCoords = inverse(projection)*vec4(2*normalizedCoords-1,tile.w,1);
+            vec4 transCoords = projection*cameraTransformations[index]*vec4(worldCoords);
+            finalCoords = clamp( (((transCoords.xy/transCoords.w)+1)/2) * tileSize + tileBorders.xy, tileBorders.xy, tileBorders.zw );
+        }
+        fragColor = texture(screenTex, finalCoords);
+    }
+    else{
+        uint sel = min(selectedView,uint(tile.x*tile.y-1));
+        fragColor = texture(screenTex, texCoords.xy/vec2(tile.xy) + vec2(vec2(1.f)/tile.xy)*vec2(sel%uint(tile.x),sel/uint(tile.x)));
 
-            }
+    }
 }
 }
 ).";
@@ -603,17 +644,11 @@ class Quilt{
             ge::gl::glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
 
             float strength = vars.addOrGetFloat("DStrength",0.f);
-            auto currentTestID = vars.addOrGetUint32(varsPrefix+"current",0);
 
             float const fov = glm::radians<float>(vars.getFloat("quiltRender.fov"));
             float const size = vars.getFloat("quiltRender.size");
             float const camDist  =  size / glm::tan(fov * 0.5f); /// ?
             float viewCone = glm::radians<float>(vars.getFloat("quiltRender.viewCone")); /// ?
-            float defaultCone = glm::pi<float>()/6.0f;
-            if(currentTestID == 13)
-                viewCone = defaultCone*strength;
-            if(currentTestID == 14)
-                viewCone = defaultCone*(1.0f-strength);
 
             float const aspect = static_cast<float>(res.x) / static_cast<float>(res.y);
             //float const viewConeSweep = -camDist * glm::tan(viewCone);
@@ -644,10 +679,10 @@ class Quilt{
                     view[3][0] += s;
                     //proj[2][0] += s/tilt;//(tilt+vars.addOrGetFloat("DTilt",0.f)*counter*0.01f);
 
-                    
+
                     auto editedView = getTestMatrix(vars,counter,view);
                     auto deltaMatrix = proj*view*glm::inverse(editedView)*glm::inverse(proj);
-                    matrices.push_back(deltaMatrix);
+                    matrices.push_back(glm::inverse(deltaMatrix));
 
                     fce(editedView,proj);
                     counter++;
@@ -666,7 +701,9 @@ class Quilt{
         }
 
         glm::mat4 getTestMatrix(vars::Vars&vars,uint32_t counter,glm::mat4 const&inView){
-            auto        currentTestID =                     vars.addOrGetUint32(varsPrefix+"current"  ,0    );
+            auto currentTestID = vars.addOrGetUint32(varsPrefix+"current",0);
+            auto currentTestItem = vars.getVector<TestCase>("testItems")[currentTestID];
+            vars.reCreate<bool>("compensation", currentTestItem.compensate);
             float       viewCone      = glm::radians<float>(vars.getFloat      ("quiltRender.viewCone"     )); /// ?
             float       strength      =                     vars.addOrGetFloat ("DStrength"           ,0.f  );
             float       d             =                     vars.addOrGetFloat ("quiltRender.d"       ,0.7f );
@@ -675,10 +712,12 @@ class Quilt{
             addVarsLimitsF(vars,"quiltRender.d",0,400,0.01);
 
             float defaultCone = glm::pi<float>()/6.0f;
-            if(currentTestID == 14)
+            if(currentTestItem.category == TestCase::CONE_MAX)
                 viewCone = defaultCone*strength;
-            if(currentTestID == 15)
+            else if(currentTestItem.category == TestCase::CONE_MIN)
                 viewCone = defaultCone*(1.0f-strength);
+            else if(currentTestItem.category == TestCase::DOF)
+                vars.reCreate<float>("blurAmount", 10*strength);
 
             auto const numViews = counts.x * counts.y;
             float t = (float)counter / (float)(numViews - 1);
@@ -690,28 +729,28 @@ class Quilt{
             bool jagged    = (currentTestID/3)%2;//vars.addOrGetBool("DJagged");
             bool translate = (currentTestID/6); //vars.addOrGetBool("DTranslate");
             float deform = 0.f;
-            
-               if(currentTestID < 12)
-               {
 
-               if(jagged)deform = strength*(glm::sin((float)(counter)*freq/100.f*glm::pi<float>()*2.f))*0.5f; 
-               else      deform = strength*counter*0.05f;
+            if(currentTestItem.category == TestCase::CAMERAS)
+            {
 
-               if(translate){
-               for(int k=0;k<3;++k)
-               view[3][k] += ((axis>>k)&1)*deform;
-               }else{
-                
-               auto camPos = glm::inverse(view)*glm::vec4(0.f,0.f,0.f,1.f);
-               view = glm::translate(glm::mat4(1.f),+glm::vec3(camPos))*
-               glm::rotate   (glm::mat4(1.f),deform,glm::vec3((axis>>0)&1,(axis>>1)&1,(axis>>2)&1))*
-               glm::translate(glm::mat4(1.f),-glm::vec3(camPos))*
-               view;
+                if(jagged)deform = strength*(glm::sin((float)(counter)*freq/100.f*glm::pi<float>()*2.f))*0.5f; 
+                else      deform = strength*counter*0.05f;
 
-               view = rotateViewMatrix(view, deform, glm::vec3((axis>>0)&1,(axis>>1)&1,(axis>>2)&1));
-               }
-               }
-               else if(currentTestID < 15)
+                if(translate){
+                    for(int k=0;k<3;++k)
+                        view[3][k] += ((axis>>k)&1)*deform;
+                }else{
+
+                    auto camPos = glm::inverse(view)*glm::vec4(0.f,0.f,0.f,1.f);
+                    view = glm::translate(glm::mat4(1.f),+glm::vec3(camPos))*
+                        glm::rotate   (glm::mat4(1.f),deform,glm::vec3((axis>>0)&1,(axis>>1)&1,(axis>>2)&1))*
+                        glm::translate(glm::mat4(1.f),-glm::vec3(camPos))*
+                        view;
+
+                    view = rotateViewMatrix(view, deform, glm::vec3((axis>>0)&1,(axis>>1)&1,(axis>>2)&1));
+                }
+            }
+            else
             {
                 auto camPos = glm::inverse(view)*glm::vec4(0.f,0.f,0.f,1.f);
                 const float r = vars.addOrGetFloat("radius",1.f);
@@ -766,6 +805,7 @@ void drawHolo(vars::Vars&vars){
         ->set1ui("drawOnlyOneImage",                vars.getBool       ("drawOnlyOneImage"     ))
         ->set1f ("focus"           ,                vars.getFloat      ("quiltView.focus"      ))
         ->set1ui("stride"          ,                vars.getUint32     ("quiltView.stride"     ))
+        ->set1i("compensation"    ,                vars.getBool       ("compensation"         ))
         ->setMatrix4fv("cameraTransformations",     glm::value_ptr(*matrices.data()), matrices.size())
         ->setMatrix4fv("projection",  glm::value_ptr(vars.getReinterpret<basicCamera::CameraProjection>("projection")->getProjection()))
         ->use();
@@ -802,30 +842,13 @@ void drawTestingGui(vars::Vars&vars)
     const std::vector<std::string> labels{"Move the slider to the highest (righmost) value which is still producing visually acceptable and pleasant result.",
         "Move the slider wherever you need to achieve the nicest result for you.",
         "Turn on or off the effect (checkbox) and leave it at the state which looks better."};
-    const std::vector<TestCase> items{ 
-        {"YawNoiseLinear", TestCase::MAX_SLIDER},
-            {"PitchNoiseLinear", TestCase::MAX_SLIDER},
-            {"RollNoiseLinear", TestCase::MAX_SLIDER},
-            {"YawNoiseJagged", TestCase::MAX_SLIDER},
-            {"PitchNoiseJagged", TestCase::MAX_SLIDER},
-            {"RollJagged", TestCase::MAX_SLIDER},
-            {"HorizontalNoiseLinear", TestCase::MAX_SLIDER},
-            {"VerticalNoiseLinear", TestCase::MAX_SLIDER},
-            {"ZoomNoiseLinear", TestCase::MAX_SLIDER},
-            {"HorizontalNoiseJagged", TestCase::MAX_SLIDER},
-            {"VerticalNoiseJagged", TestCase::MAX_SLIDER},
-            {"ZoomJagged", TestCase::MAX_SLIDER},
-            {"Circular", TestCase::MAX_SLIDER},
-            {"CircularInvert", TestCase::MAX_SLIDER},
-            {"3DEffectMax", TestCase::MAX_SLIDER},
-            {"3DEffectMin", TestCase::MAX_SLIDER},
-    };
+    auto items = vars.getVector<TestCase>("testItems");
     auto slider{vars.addOrGet<float>("DStrength",0.f)};
     auto &currentID{vars.addOrGetUint32(varsPrefix+"current",0)};
     auto currentItem{items[currentID]};
     auto prefixedName = varsPrefix+currentItem.name;
     auto &currentVar{vars.addOrGetFloat(prefixedName,0)};
-    auto currentSickVar{vars.addOrGet<float>(prefixedName+"Sick",0)};
+    //auto currentSickVar{vars.addOrGet<float>(prefixedName+"Sick",0)};
 
     ImGui::Begin("Testing");
     //ImGui::GetStyle().ScaleAllSizes(5.f);
@@ -949,11 +972,12 @@ void Holo::init(){
     vars.add<ge::gl::VertexArray>("emptyVao");
     vars.add<glm::uvec2>("windowSize",window->getWidth(),window->getHeight());
     vars.addFloat("input.sensitivity",0.01f);
-    vars.addFloat("camera.fovy",glm::half_pi<float>());
+    vars.addFloat("camera.fovy",0.9f);//glm::half_pi<float>());
     vars.addFloat("camera.near",.1f);
     vars.addFloat("camera.far",1000.f);
     vars.add<std::map<SDL_Keycode, bool>>("input.keyDown");
     vars.addBool("useOrbitCamera",false);
+    vars.addFloat("blurAmount", 0.0);
 
     vars.addBool("resetTimer", true);
 
@@ -967,10 +991,11 @@ void Holo::init(){
     vars.addInt32      ("quiltView.bi"         ,2);
     vars.add<glm::vec4>("quiltView.tile"       ,5.00f, 9.00f, 45.00f, 45.00f);
     vars.add<glm::vec4>("quiltView.viewPortion",0.99976f, 0.99976f, 0.00f, 0.00f);
-    vars.addFloat      ("quiltView.focus"      ,0.00f);
+    vars.addFloat      ("quiltView.focus"      ,0.205f);
     vars.addUint32     ("quiltView.stride"     ,1);
     addVarsLimitsF(vars,"quiltView.focus",-1,+1,0.001f);
     vars.addBool ("showQuilt");
+    vars.addBool ("compensation");
     vars.addBool ("renderQuilt", true);
     vars.addBool ("renderScene",false);
     vars.addBool ("showAsSequence",false);
@@ -982,7 +1007,7 @@ void Holo::init(){
 
     vars.addFloat("quiltRender.size",5.f);
     vars.addFloat("quiltRender.fov",90.f);
-    vars.addFloat("quiltRender.viewCone",30.f);
+    vars.addFloat("quiltRender.viewCone",35.f);
     vars.addFloat("quiltRender.texScale",1.64f);
     addVarsLimitsF(vars,"quiltRender.texScale",0.1f,5,0.01f);
     vars.addFloat("quiltRender.texScaleAspect",0.745f);
@@ -991,6 +1016,38 @@ void Holo::init(){
     vars.add<Quilt>("quilt",vars);
 
     createCamera(vars);
+
+    auto &items = vars.addVector<TestCase>("testItems");
+    items.insert(items.end(), { 
+            {"YawNoiseLinear", TestCase::MAX_SLIDER},
+            {"PitchNoiseLinear", TestCase::MAX_SLIDER},
+            {"RollNoiseLinear", TestCase::MAX_SLIDER},
+            {"YawNoiseJagged", TestCase::MAX_SLIDER},
+            {"PitchNoiseJagged", TestCase::MAX_SLIDER},
+            {"RollJagged", TestCase::MAX_SLIDER},
+            {"HorizontalNoiseLinear", TestCase::MAX_SLIDER},
+            {"VerticalNoiseLinear", TestCase::MAX_SLIDER},
+            {"ZoomNoiseLinear", TestCase::MAX_SLIDER},
+            {"HorizontalNoiseJagged", TestCase::MAX_SLIDER},
+            {"VerticalNoiseJagged", TestCase::MAX_SLIDER},
+            {"ZoomJagged", TestCase::MAX_SLIDER},
+            {"Circular", TestCase::MAX_SLIDER},
+            {"CircularInvert", TestCase::MAX_SLIDER},
+            });
+    auto compItems = items;
+    for(auto& item : compItems)
+    {
+        item.name += "Compensated"; 
+        item.compensate = true;
+    }
+    items.reserve(compItems.size());
+    items.insert(items.end(), compItems.begin(), compItems.end()); 
+    items.insert(items.end(), 
+            {  
+            {"3DEffectMax", TestCase::MAX_SLIDER, TestCase::CONE_MAX},
+            {"3DEffectMin", TestCase::MAX_SLIDER, TestCase::CONE_MIN},
+            {"DoF", TestCase::BEST_SLIDER, TestCase::DOF},
+            });
 
     GLint dims[4];
     ge::gl::glGetIntegerv(GL_MAX_VIEWPORT_DIMS, dims);
