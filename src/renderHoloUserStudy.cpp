@@ -41,19 +41,23 @@
 
 std::string const varsPrefix = "measurements";
 
-SDL_Surface* flipSurface(SDL_Surface* sfc) {
-    SDL_Surface* result = SDL_CreateRGBSurface(sfc->flags, sfc->w, sfc->h,
-            sfc->format->BytesPerPixel * 8, sfc->format->Rmask, sfc->format->Gmask,
-            sfc->format->Bmask, sfc->format->Amask);
+SDL_Surface *flipSurface(SDL_Surface *sfc)
+{
+    SDL_Surface *result = SDL_CreateRGBSurface(sfc->flags, sfc->w, sfc->h,
+                          sfc->format->BytesPerPixel * 8, sfc->format->Rmask, sfc->format->Gmask,
+                          sfc->format->Bmask, sfc->format->Amask);
     const auto pitch = sfc->pitch;
     const auto pxlength = pitch*(sfc->h - 1);
-    auto pixels = static_cast<unsigned char*>(sfc->pixels) + pxlength;
-    auto rpixels = static_cast<unsigned char*>(result->pixels) ;
-    for(auto line = 0; line < sfc->h; ++line) {
-        memcpy(rpixels,pixels,pitch);
+    auto pixels = static_cast<unsigned char *>(sfc->pixels) + pxlength;
+    auto rpixels = static_cast<unsigned char *>(result->pixels) ;
+
+    for(auto line = 0; line < sfc->h; ++line)
+    {
+        memcpy(rpixels, pixels, pitch);
         pixels -= pitch;
         rpixels += pitch;
     }
+
     return result;
 }
 
@@ -63,7 +67,7 @@ void screenShot(std::string filename, int w, int h)
     Uint32 rmask = 0xff000000;
     Uint32 gmask = 0x00ff0000;
     Uint32 bmask = 0x0000ff00;
-    Uint32 amask = 0x000000ff;  
+    Uint32 amask = 0x000000ff;
 #else
     Uint32 rmask = 0x000000ff;
     Uint32 gmask = 0x0000ff00;
@@ -74,42 +78,46 @@ void screenShot(std::string filename, int w, int h)
     ge::gl::glReadPixels(0, 0, w, h, GL_RGB, GL_UNSIGNED_BYTE, ss->pixels);
     SDL_Surface *s = flipSurface(ss);
     SDL_SaveBMP(s, filename.c_str());
-    SDL_FreeSurface(s); 
-    SDL_FreeSurface(ss); 
+    SDL_FreeSurface(s);
+    SDL_FreeSurface(ss);
 }
 
 class TestCase
 {
-    public:
-        enum TestType {MAX_SLIDER=0, BEST_SLIDER, CHECKBOX}; 
-        enum TestCategory {CAMERAS, CONE_MAX, CONE_MIN, DOF}; 
-        std::string name;
-        TestType type;
-        TestCategory category{CAMERAS};
-        bool compensate{false};
+public:
+    enum TestType {MAX_SLIDER=0, BEST_SLIDER, CHECKBOX};
+    enum TestCategory {CAMERAS, CONE_MAX, CONE_MIN, DOF};
+    std::string name;
+    TestType type;
+    TestCategory category{CAMERAS};
+    bool compensate{false};
 };
 
 
-class Holo: public simple3DApp::Application{
-    public:
-        Holo(int argc, char* argv[]) : Application(argc, argv) {}
-        virtual ~Holo(){}
-        virtual void draw() override;
-        void stop() {mainLoop->stop();};
+class Holo: public simple3DApp::Application
+{
+public:
+    Holo(int argc, char *argv[]) : Application(argc, argv) {}
+    virtual ~Holo() {}
+    virtual void draw() override;
+    void stop()
+    {
+        mainLoop->stop();
+    };
 
-        vars::Vars vars;
-        bool fullscreen = false;
+    vars::Vars vars;
+    bool fullscreen = false;
 
-        virtual void                init() override;
-        virtual void                resize(uint32_t x,uint32_t y) override;
-        virtual void                key(SDL_Event const& e, bool down) override;
-        virtual void                mouseMove(SDL_Event const& event) override;
+    virtual void                init() override;
+    virtual void                resize(uint32_t x, uint32_t y) override;
+    virtual void                key(SDL_Event const &e, bool down) override;
+    virtual void                mouseMove(SDL_Event const &event) override;
 };
 
 std::shared_ptr<ge::gl::Texture> loadColorTexture(std::string fileName)
-{ 
-    if(fileName.empty())   
-        return std::make_shared<ge::gl::Texture>(GL_TEXTURE_2D,GL_RGB8,1,1,1);
+{
+    if(fileName.empty())
+        return std::make_shared<ge::gl::Texture>(GL_TEXTURE_2D, GL_RGB8, 1, 1, 1);
 
     fipImage colorImg;
     colorImg.load(fileName.c_str());
@@ -124,75 +132,95 @@ std::shared_ptr<ge::gl::Texture> loadColorTexture(std::string fileName)
 
     GLenum format;
     GLenum type;
-    if(imgType == FIT_BITMAP){
+
+    if(imgType == FIT_BITMAP)
+    {
         std::cerr << "color imgType: FIT_BITMAP" << std::endl;
+
         if(BPP == 24)format = GL_BGR;
+
         if(BPP == 32)format = GL_BGRA;
+
         type = GL_UNSIGNED_BYTE;
     }
-    if(imgType == FIT_RGBAF){
+
+    if(imgType == FIT_RGBAF)
+    {
         std::cerr << "color imgType: FIT_RGBAF" << std::endl;
+
         if(BPP == 32*4)format = GL_RGBA;
+
         if(BPP == 32*3)format = GL_RGB;
+
         type = GL_FLOAT;
     }
-    if(imgType == FIT_RGBA16){
+
+    if(imgType == FIT_RGBA16)
+    {
         std::cerr << "color imgType: FIT_RGBA16" << std::endl;
+
         if(BPP == 48)format = GL_RGB ;
+
         if(BPP == 64)format = GL_RGBA;
+
         type = GL_UNSIGNED_SHORT;
     }
 
-    auto colorTex = std::make_shared<ge::gl::Texture>(GL_TEXTURE_2D,GL_RGB8,1,width,height);
+    auto colorTex = std::make_shared<ge::gl::Texture>(GL_TEXTURE_2D, GL_RGB8, 1, width, height);
     //ge::gl::glPixelStorei(GL_UNPACK_ROW_LENGTH,width);
     //ge::gl::glPixelStorei(GL_UNPACK_ALIGNMENT ,1    );
-    ge::gl::glTextureSubImage2D(colorTex->getId(),0,0,0,width,height,format,type,data);
+    ge::gl::glTextureSubImage2D(colorTex->getId(), 0, 0, 0, width, height, format, type, data);
     return colorTex;
 }
 
 
-class Model{
-    public:
-        aiScene const*model = nullptr;
-        Model(std::string const&name);
-        virtual ~Model();
-        std::vector<float> getVertices() const;
-        std::vector<float> getNormals() const;
-        std::vector<float> getUVs() const;
-
-        std::string getName() const { return name; };
-
-    protected:
-        void generateVertices();
-        std::vector<float> vertices;
-        std::vector<float> normals;
-        std::vector<float> uvs;
-
-        std::string name;
-};
-
-class RenderModel: public ge::gl::Context{
-    public:
-        RenderModel(Model*mdl, std::string textureFileName, std::string bckgFileName);
-        ~RenderModel();
-        void draw(glm::mat4 const&view,glm::mat4 const&projection, vars::Vars&vars);
-        std::shared_ptr<ge::gl::VertexArray>vao           = nullptr;
-        std::shared_ptr<ge::gl::Buffer     >vertices      = nullptr;
-        std::shared_ptr<ge::gl::Buffer     >normals       = nullptr;
-        std::shared_ptr<ge::gl::Buffer     >uvs       = nullptr;
-        std::shared_ptr<ge::gl::Buffer     >indices       = nullptr;
-        std::shared_ptr<ge::gl::Buffer     >indexVertices = nullptr;
-        std::shared_ptr<ge::gl::Program    >program       = nullptr;
-        std::shared_ptr<ge::gl::Program    >bckgProgram       = nullptr;
-        std::shared_ptr<ge::gl::Texture>   bckgTex = nullptr;
-        std::shared_ptr<ge::gl::Texture>   modelTex = nullptr;
-        glm::vec3 lightPos{0,0,1000};   
-        uint32_t nofVertices = 0;
-};
-
-Model::Model(std::string const&fileName)
+class Model
 {
-    model = aiImportFile(fileName.c_str(),aiProcess_Triangulate|aiProcess_GenNormals|aiProcess_SortByPType);
+public:
+    aiScene const *model = nullptr;
+    Model(std::string const &name);
+    virtual ~Model();
+    std::vector<float> getVertices() const;
+    std::vector<float> getNormals() const;
+    std::vector<float> getUVs() const;
+
+    std::string getName() const
+    {
+        return name;
+    };
+
+protected:
+    void generateVertices();
+    std::vector<float> vertices;
+    std::vector<float> normals;
+    std::vector<float> uvs;
+
+    std::string name;
+};
+
+class RenderModel: public ge::gl::Context
+{
+public:
+    RenderModel(Model *mdl, std::string textureFileName, std::string bckgFileName);
+    ~RenderModel();
+    void draw(glm::mat4 const &view, glm::mat4 const &projection, vars::Vars &vars);
+    std::shared_ptr<ge::gl::VertexArray>vao           = nullptr;
+    std::shared_ptr<ge::gl::Buffer     >vertices      = nullptr;
+    std::shared_ptr<ge::gl::Buffer     >normals       = nullptr;
+    std::shared_ptr<ge::gl::Buffer     >uvs       = nullptr;
+    std::shared_ptr<ge::gl::Buffer     >indices       = nullptr;
+    std::shared_ptr<ge::gl::Buffer     >indexVertices = nullptr;
+    std::shared_ptr<ge::gl::Program    >program       = nullptr;
+    std::shared_ptr<ge::gl::Program    >bckgProgram       = nullptr;
+    std::shared_ptr<ge::gl::Texture>   bckgTex = nullptr;
+    std::shared_ptr<ge::gl::Texture>   modelTex = nullptr;
+    glm::vec3 lightPos{0, 0, 1000};
+    uint32_t nofVertices = 0;
+};
+
+Model::Model(std::string const &fileName)
+{
+    model = aiImportFile(fileName.c_str(), aiProcess_Triangulate|aiProcess_GenNormals|aiProcess_SortByPType);
 
     if (model == nullptr)
     {
@@ -205,8 +233,10 @@ Model::Model(std::string const&fileName)
     }
 }
 
-Model::~Model(){
+Model::~Model()
+{
     assert(this!=nullptr);
+
     if(this->model)aiReleaseImport(this->model);
 }
 
@@ -225,51 +255,62 @@ std::vector<float> Model::getUVs() const
     return uvs;
 }
 
-void Model::generateVertices(){
+void Model::generateVertices()
+{
     size_t nofVertices = 0;
-    for(size_t i=0;i<model->mNumMeshes;++i)
+
+    for(size_t i=0; i<model->mNumMeshes; ++i)
         nofVertices+=model->mMeshes[i]->mNumFaces*3;
+
     vertices.reserve(nofVertices*3);
-    for(size_t i=0;i<model->mNumMeshes;++i){
+
+    for(size_t i=0; i<model->mNumMeshes; ++i)
+    {
         auto mesh = model->mMeshes[i];
-        for(size_t j=0;j<mesh->mNumFaces;++j)
-            for(size_t k=0;k<3;++k)
-                for(size_t l=0;l<3;++l)
+
+        for(size_t j=0; j<mesh->mNumFaces; ++j)
+            for(size_t k=0; k<3; ++k)
+                for(size_t l=0; l<3; ++l)
                 {
                     auto element = mesh->mFaces[j].mIndices[k];
                     vertices.push_back(mesh->mVertices[element][l]);
                     normals.push_back(mesh->mNormals[element][l]);
+
                     if(l<2)
                         uvs.push_back(mesh->mTextureCoords[0][element][l]);
                 }
     }
 }
 
-RenderModel::RenderModel(Model*mdl, std::string textureFileName, std::string bckgFileName){
+RenderModel::RenderModel(Model *mdl, std::string textureFileName, std::string bckgFileName)
+{
     assert(this!=nullptr);
+
     if(mdl==nullptr)
         std::cerr << "mdl is nullptr!" << std::endl;
+
     this->nofVertices = 0;
     auto model = mdl->model;
-    for(size_t i=0;i<model->mNumMeshes;++i)
+
+    for(size_t i=0; i<model->mNumMeshes; ++i)
         this->nofVertices+=model->mMeshes[i]->mNumFaces*3;
 
     std::vector<float>vertData;
     vertData = mdl->getVertices();
-    this->vertices = std::make_shared<ge::gl::Buffer>(this->nofVertices*sizeof(float)*3,vertData.data());
+    this->vertices = std::make_shared<ge::gl::Buffer>(this->nofVertices*sizeof(float)*3, vertData.data());
     auto normData = mdl->getNormals();
-    this->normals = std::make_shared<ge::gl::Buffer>(this->nofVertices*sizeof(float)*3,normData.data());
+    this->normals = std::make_shared<ge::gl::Buffer>(this->nofVertices*sizeof(float)*3, normData.data());
     auto uvData = mdl->getUVs();
-    this->uvs = std::make_shared<ge::gl::Buffer>(this->nofVertices*sizeof(float)*2,uvData.data());
+    this->uvs = std::make_shared<ge::gl::Buffer>(this->nofVertices*sizeof(float)*2, uvData.data());
 
     this->vao = std::make_shared<ge::gl::VertexArray>();
-    this->vao->addAttrib(this->vertices,0,3,GL_FLOAT);
-    this->vao->addAttrib(this->normals,1,3,GL_FLOAT);
-    this->vao->addAttrib(this->uvs,2,2,GL_FLOAT);
+    this->vao->addAttrib(this->vertices, 0, 3, GL_FLOAT);
+    this->vao->addAttrib(this->normals, 1, 3, GL_FLOAT);
+    this->vao->addAttrib(this->uvs, 2, 2, GL_FLOAT);
 
     bckgTex = loadColorTexture(bckgFileName);
-    bckgTex->texParameteri(GL_TEXTURE_WRAP_S,GL_CLAMP_TO_EDGE);
-    bckgTex->texParameteri(GL_TEXTURE_WRAP_T,GL_CLAMP_TO_EDGE);
+    bckgTex->texParameteri(GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    bckgTex->texParameteri(GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     modelTex = loadColorTexture(textureFileName);
 
     const std::string vertSrc =
@@ -295,8 +336,8 @@ RenderModel::RenderModel(Model*mdl, std::string textureFileName, std::string bck
         vNormal   = normal;
         vUV   = uv;
       }).";
-        const std::string fragSrc = 
-        "#version 450\n" 
+    const std::string fragSrc =
+        "#version 450\n"
         R".(
       layout(location=0)out vec4 fColor;
       layout(binding=0)uniform sampler2D modelTex;
@@ -342,9 +383,9 @@ RenderModel::RenderModel(Model*mdl, std::string textureFileName, std::string bck
         fColor = vec4(diffuseColor,1);
 
       }).";
-        auto vs = std::make_shared<ge::gl::Shader>(GL_VERTEX_SHADER, vertSrc);
+    auto vs = std::make_shared<ge::gl::Shader>(GL_VERTEX_SHADER, vertSrc);
     auto fs = std::make_shared<ge::gl::Shader>(GL_FRAGMENT_SHADER, fragSrc);
-    this->program = std::make_shared<ge::gl::Program>(vs,fs);
+    this->program = std::make_shared<ge::gl::Program>(vs, fs);
     this->program->setNonexistingUniformWarning(false);
 
     const std::string bckgVertSrc =
@@ -358,8 +399,8 @@ RenderModel::RenderModel(Model*mdl, std::string textureFileName, std::string bck
         gl_Position = vec4(2.0f*uv-1.0f, 0.9999999f, 1.0f);
       }
     ).";
-        const std::string bckgFragSrc = 
-        "#version 450\n" 
+    const std::string bckgFragSrc =
+        "#version 450\n"
         R".(
       in vec2 uv;
       layout(location = 0) out vec4 outColor;
@@ -399,55 +440,61 @@ RenderModel::RenderModel(Model*mdl, std::string textureFileName, std::string bck
         //outColor = texture(bckgTex,uv);
 
       }).";
-        auto bckgVs = std::make_shared<ge::gl::Shader>(GL_VERTEX_SHADER, bckgVertSrc);
+    auto bckgVs = std::make_shared<ge::gl::Shader>(GL_VERTEX_SHADER, bckgVertSrc);
     auto bckgFs = std::make_shared<ge::gl::Shader>(GL_FRAGMENT_SHADER, bckgFragSrc);
-    this->bckgProgram = std::make_shared<ge::gl::Program>(bckgVs,bckgFs);// exit(1);
+    this->bckgProgram = std::make_shared<ge::gl::Program>(bckgVs, bckgFs); // exit(1);
 }
 
-RenderModel::~RenderModel(){
+RenderModel::~RenderModel()
+{
     assert(this!=nullptr);
 }
 
 
-void RenderModel::draw(glm::mat4 const&view,glm::mat4 const&projection, vars::Vars&vars){
+void RenderModel::draw(glm::mat4 const &view, glm::mat4 const &projection, vars::Vars &vars)
+{
     assert(this!=nullptr);
     ge::gl::glEnable(GL_DEPTH_TEST);
     this->bckgProgram->use();
     this->bckgTex->bind(0);
     this->bckgProgram->set1f("blurAmount", vars.getFloat("blurAmount"));
-    this->vao->bind(); 
-    this->glDrawArrays(GL_TRIANGLES,0,3);
+    this->vao->bind();
+    this->glDrawArrays(GL_TRIANGLES, 0, 3);
     this->program->use();
     this->modelTex->bind(0);
     this->program->set3fv("lightPos", glm::value_ptr(this->lightPos));
-    this->program->setMatrix4fv("projection",glm::value_ptr(projection));
-    this->program->setMatrix4fv("view"      ,glm::value_ptr(view      ));
-    this->glDrawArrays(GL_TRIANGLES,0,this->nofVertices);
+    this->program->setMatrix4fv("projection", glm::value_ptr(projection));
+    this->program->setMatrix4fv("view", glm::value_ptr(view      ));
+    this->glDrawArrays(GL_TRIANGLES, 0, this->nofVertices);
     this->vao->unbind();
 }
 
-void preprareDrawModel(vars::Vars&vars){
-    if(notChanged(vars,"all",__FUNCTION__,{"modelFileName"}))return;
+void preprareDrawModel(vars::Vars &vars)
+{
+    if(notChanged(vars, "all", __FUNCTION__, {"modelFileName"}))return;
 
-    vars.add<Model          >("model"      ,vars.getString("modelFileName"));
-    vars.add<RenderModel    >("renderModel",vars.get<Model>("model"), vars.getString("modelTexFileName"), vars.getString("bckgTexFileName"));
+    vars.add<Model          >("model", vars.getString("modelFileName"));
+    vars.add<RenderModel    >("renderModel", vars.get<Model>("model"), vars.getString("modelTexFileName"), vars.getString("bckgTexFileName"));
 }
 
-void drawModel(vars::Vars&vars,glm::mat4 const&view,glm::mat4 const&proj){
+void drawModel(vars::Vars &vars, glm::mat4 const &view, glm::mat4 const &proj)
+{
     preprareDrawModel(vars);
 
     auto rm = vars.get<RenderModel>("renderModel");
-    rm->draw(view,proj, vars);
+    rm->draw(view, proj, vars);
 }
 
-void drawModel(vars::Vars&vars){
+void drawModel(vars::Vars &vars)
+{
     auto view = vars.getReinterpret<basicCamera::CameraTransform>("view");
     auto projection = vars.get<basicCamera::PerspectiveCamera>("projection");
-    drawModel(vars,view->getView(),projection->getProjection());
+    drawModel(vars, view->getView(), projection->getProjection());
 }
 
-void createView(vars::Vars&vars){
-    if(notChanged(vars,"all",__FUNCTION__,{"useOrbitCamera"}))return;
+void createView(vars::Vars &vars)
+{
+    if(notChanged(vars, "all", __FUNCTION__, {"useOrbitCamera"}))return;
 
     if(vars.getBool("useOrbitCamera"))
         vars.reCreate<basicCamera::OrbitCamera>("view");
@@ -455,8 +502,9 @@ void createView(vars::Vars&vars){
         vars.reCreate<basicCamera::FreeLookCamera>("view");
 }
 
-void createProjection(vars::Vars&vars){
-    if(notChanged(vars,"all",__FUNCTION__,{"windowSize","camera.fovy","camera.near","camera.far"}))return;
+void createProjection(vars::Vars &vars)
+{
+    if(notChanged(vars, "all", __FUNCTION__, {"windowSize", "camera.fovy", "camera.near", "camera.far"}))return;
 
     auto windowSize = vars.get<glm::uvec2>("windowSize");
     auto width = windowSize->x;
@@ -466,21 +514,24 @@ void createProjection(vars::Vars&vars){
     auto farv  = vars.getFloat("camera.far" );
     auto fovy = vars.getFloat("camera.fovy");
 
-    vars.reCreate<basicCamera::PerspectiveCamera>("projection",fovy,aspect,nearv,farv);
+    vars.reCreate<basicCamera::PerspectiveCamera>("projection", fovy, aspect, nearv, farv);
 }
 
-void createCamera(vars::Vars&vars){
+void createCamera(vars::Vars &vars)
+{
     createProjection(vars);
     createView(vars);
 }
 
-void loadTextures(vars::Vars&vars){
-    if(notChanged(vars,"all",__FUNCTION__,{"quiltTexFileName"}))return;
-    vars.add<std::shared_ptr<ge::gl::Texture>>("quiltTex",loadColorTexture(vars.getString("quiltTexFileName")));
+void loadTextures(vars::Vars &vars)
+{
+    if(notChanged(vars, "all", __FUNCTION__, {"quiltTexFileName"}))return;
+    vars.add<std::shared_ptr<ge::gl::Texture>>("quiltTex", loadColorTexture(vars.getString("quiltTexFileName")));
 }
 
-void createHoloProgram(vars::Vars&vars){
-    if(notChanged(vars,"all",__FUNCTION__,{}))return;
+void createHoloProgram(vars::Vars &vars)
+{
+    if(notChanged(vars, "all", __FUNCTION__, {}))return;
 
     std::string const vsSrc = R".(
       #version 450 core
@@ -537,6 +588,13 @@ void createHoloProgram(vars::Vars&vars){
           return vec2(x, y) * viewPortion.xy;
       }
 
+      vec2 compensationTransform(vec2 coords, int index)
+      {
+        vec4 worldCoords = inverse(projection)*vec4(2*coords-1,tile.w,1);
+        vec4 transCoords = projection*cameraTransformations[index]*vec4(worldCoords);
+        return (((transCoords.xy/transCoords.w)+1)/2);
+      }  
+
       void main()
       {
         vec3 nuv = vec3(texCoords.xy, 0.0);
@@ -576,9 +634,7 @@ void createHoloProgram(vars::Vars&vars){
             vec2 tileSize = 1.0/tile.xy;
             vec4 tileBorders = vec4(tileSize*gridCoords, tileSize*(gridCoords+1));
             vec2 normalizedCoords = (coords-tileBorders.xy)/tileSize;
-            vec4 worldCoords = inverse(projection)*vec4(2*normalizedCoords-1,tile.w,1);
-            vec4 transCoords = projection*cameraTransformations[index]*vec4(worldCoords);
-            finalCoords = clamp( (((transCoords.xy/transCoords.w)+1)/2) * tileSize + tileBorders.xy, tileBorders.xy, tileBorders.zw );
+            finalCoords = clamp( compensationTransform(normalizedCoords, index) * tileSize + tileBorders.xy, tileBorders.xy, tileBorders.zw );
         }
         fragColor = texture(screenTex, finalCoords);
     }
@@ -598,8 +654,7 @@ auto fs = std::make_shared<ge::gl::Shader>(GL_FRAGMENT_SHADER,
         fsSrc
         );
 auto prg = vars.reCreate<ge::gl::Program>("holoProgram",vs,fs);
-//exit(1);
-prg->setNonexistingUniformWarning(false);
+//prg->setNonexistingUniformWarning(false);
 }
 
 class Quilt{
@@ -611,6 +666,7 @@ class Quilt{
         std::shared_ptr<ge::gl::Texture>color;
         std::shared_ptr<ge::gl::Texture>depth;
         vars::Vars&vars;
+
         void createTextures(){
             if(notChanged(vars,"all",__FUNCTION__,{"quiltRender.texScale","quiltRender.texScaleAspect"}))return;
             float texScale = vars.getFloat("quiltRender.texScale");
@@ -631,9 +687,12 @@ class Quilt{
             GLenum buffers[] = {GL_COLOR_ATTACHMENT0};
             fbo->drawBuffers(1,buffers);
         }
-        Quilt(vars::Vars&vars):vars(vars){
+
+        Quilt(vars::Vars&vars):vars(vars)
+        {
             createTextures();
         }
+
         void draw(std::function<void(glm::mat4 const&view,glm::mat4 const&proj)>const&fce,glm::mat4 const&centerView,glm::mat4 const&centerProj){
             createTextures();
             GLint origViewport[4];
@@ -644,18 +703,10 @@ class Quilt{
             ge::gl::glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
 
             float strength = vars.addOrGetFloat("DStrength",0.f);
+            float viewCone = glm::radians<float>(vars.getFloat("quiltRender.viewCone"));
 
-            float const fov = glm::radians<float>(vars.getFloat("quiltRender.fov"));
-            float const size = vars.getFloat("quiltRender.size");
-            float const camDist  =  size / glm::tan(fov * 0.5f); /// ?
-            float viewCone = glm::radians<float>(vars.getFloat("quiltRender.viewCone")); /// ?
-
-            float const aspect = static_cast<float>(res.x) / static_cast<float>(res.y);
-            //float const viewConeSweep = -camDist * glm::tan(viewCone);
-            float const projModifier = 1.f / (size * aspect);
             auto const numViews = counts.x * counts.y;
             float d = vars.addOrGetFloat("quiltRender.d",0.70f);
-            addVarsLimitsF(vars,"quiltRender.d",0,400,0.01);
             float S = 0.5f*d*glm::tan(viewCone);
             //float tilt = d*aspect*glm::tan(vars.getFloat("camera.fovy")/2);
             auto& matrices = vars.getVector<glm::mat4>("cameraTransformations");
@@ -666,7 +717,7 @@ class Quilt{
                 for(size_t i=0;i<counts.x;++i){
                     ge::gl::glViewport(i*(res.x),j*(res.y),res.x,res.y);
 
-                    float currentViewLerp = 0.f; // if numviews is 1, take center view
+                    float currentViewLerp = 0.f;
                     if (numViews > 1)
                         currentViewLerp = (float)counter / (numViews - 1) - 0.5f;
 
@@ -678,7 +729,6 @@ class Quilt{
                     float s = S-2*t*S;
                     view[3][0] += s;
                     //proj[2][0] += s/tilt;//(tilt+vars.addOrGetFloat("DTilt",0.f)*counter*0.01f);
-
 
                     auto editedView = getTestMatrix(vars,counter,view);
                     auto deltaMatrix = proj*view*glm::inverse(editedView)*glm::inverse(proj);
@@ -704,7 +754,7 @@ class Quilt{
             auto currentTestID = vars.addOrGetUint32(varsPrefix+"current",0);
             auto currentTestItem = vars.getVector<TestCase>("testItems")[currentTestID];
             vars.reCreate<bool>("compensation", currentTestItem.compensate);
-            float       viewCone      = glm::radians<float>(vars.getFloat      ("quiltRender.viewCone"     )); /// ?
+            float       viewCone      = glm::radians<float>(vars.getFloat      ("quiltRender.viewCone"     ));
             float       strength      =                     vars.addOrGetFloat ("DStrength"           ,0.f  );
             float       d             =                     vars.addOrGetFloat ("quiltRender.d"       ,0.7f );
             auto        view          = inView;
@@ -723,11 +773,11 @@ class Quilt{
             float t = (float)counter / (float)(numViews - 1);
 
             float S = 0.5f*d*glm::tan(viewCone);
-            uint32_t axis = (currentTestID%3)+1; //vars.addOrGetUint32("DAxis",1);
+            uint32_t axis = (currentTestID%3)+1; 
             if(axis == 3) axis = 4;
             uint32_t freq = vars.addOrGetFloat ("DFreq",25.f);
-            bool jagged    = (currentTestID/3)%2;//vars.addOrGetBool("DJagged");
-            bool translate = (currentTestID/6); //vars.addOrGetBool("DTranslate");
+            bool jagged    = (currentTestID/3)%2;
+            bool translate = (currentTestID/6); 
             float deform = 0.f;
 
             if(currentTestItem.category == TestCase::CAMERAS)
@@ -755,15 +805,6 @@ class Quilt{
                 auto camPos = glm::inverse(view)*glm::vec4(0.f,0.f,0.f,1.f);
                 const float r = vars.addOrGetFloat("radius",1.f);
                 float s = S-2*t*S;
-                /*
-                   float offset = 3*glm::half_pi<float>()+t*glm::pi<float>();
-                   auto circular = strength;//vars.addOrGetFloat("circular", 1.0f);
-                   float x = glm::sin(offset) * 2;
-                   float y = glm::cos(offset) * 2 * circular;
-                   auto direction = glm::mix(glm::vec3(x, 0, y-1), glm::vec3(0.0), circular); 
-                   y+=(1-circular)*3;
-                   view = glm::lookAt(glm::vec3(x, 0, y+camPos.z), direction, glm::vec3(0.0, 1.0, 0.0));
-                 */
                 glm::vec2 circleCenter{camPos[0]-s+(S-2*0.5*S), camPos[2]+r};
                 float invert = (currentTestID == 12) ? 1 : -1;
                 auto circleCoord = glm::vec2(s,invert*glm::sqrt(r*r-s*s))+circleCenter;
@@ -774,7 +815,6 @@ class Quilt{
             }
             return view;
         }
-
 };
 
 void drawHolo(vars::Vars&vars){
