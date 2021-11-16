@@ -562,6 +562,8 @@ void createHoloProgram(vars::Vars &vars)
       uniform float flipX;
       uniform float flipY;
       uniform float subp = 0.00013f;
+      uniform float zoomAmount = 1.0;
+      uniform float imageZ = 0.9;
       uniform int ri = 0;
       uniform int bi = 2;
       uniform vec4 tile = vec4(5,9,45,45);
@@ -583,17 +585,45 @@ void createHoloProgram(vars::Vars &vars)
           // decide which section to take from based on the z.
           float z = floor(uvz.z * tile.z);
           float focusMod = focus*(1-2*clamp(z/tile.z,0,1));
-          float x = (mod(z, tile.x) + clamp(uvz.x+focusMod,0,1)) / tile.x;
+          float x = (mod(z, tile.x) + clamp(uvz.x+focusMod,-10,10)) / tile.x; //TODO clamping 0-1 might be necessary not 10
           float y = (floor(z / tile.x) + uvz.y) / tile.y;
           return vec2(x, y) * viewPortion.xy;
       }
 
       vec2 compensationTransform(vec2 coords, int index)
       {
-        vec4 worldCoords = inverse(projection)*vec4(2*coords-1,tile.w,1);
+        if(!compensation)
+            return coords;
+        vec4 worldCoords = inverse(projection)*vec4(2*coords-1,imageZ,1);
         vec4 transCoords = projection*cameraTransformations[index]*vec4(worldCoords);
         return (((transCoords.xy/transCoords.w)+1)/2);
-      }  
+      } 
+
+      vec2 quiltCompensation(vec2 coords)
+      {
+        ivec2 gridCoords = ivec2(trunc(coords.xy*tile.xy));
+        int index = gridCoords.y*int(tile.x)+gridCoords.x;
+        vec2 nCoords = texArr(vec3(mod(texCoords.xy*tile.xy,vec2(1)),index/float(tile.z)));
+
+        vec2 tileSize = 1.0/tile.xy;
+        vec4 tileBorders = vec4(tileSize*gridCoords, tileSize*(gridCoords+1));
+        vec2 normalizedCoords = (nCoords-tileBorders.xy)/tileSize;
+        return compensationTransform(normalizedCoords, index) * tileSize + tileBorders.xy;
+      }
+
+      vec2 zoomCoordinates(vec2 coords, float amount)
+      {
+        vec2 gridCoords = trunc(coords.xy*tile.xy) + 0.5;
+        vec2 offset = -(gridCoords-tile.xy/2)/tile.xy - 0.5;
+        return amount*(offset+coords)-offset;
+      }
+
+      vec4 getClampingBorders(vec2 coords)
+      {
+        vec2 gridCoords = trunc(coords.xy*tile.xy);
+        vec2 tileSize = 1.0/tile.xy;
+        return vec4(tileSize*gridCoords, tileSize*(gridCoords+1));
+      }
 
       void main()
       {
@@ -623,20 +653,14 @@ void createHoloProgram(vars::Vars &vars)
             fragColor = vec4(rgb[ri].r, rgb[1].g, rgb[bi].b, 1.0);
           else{
     if(showAsSequence == 0)
-    {
-        vec2 finalCoords = texCoords.xy;
-        if(compensation)
-        {
-            ivec2 gridCoords = ivec2(trunc(texCoords.xy*tile.xy));
-            int index = gridCoords.y*int(tile.x)+gridCoords.x;
-            vec2 coords = texArr(vec3(mod(texCoords.xy*tile.xy,vec2(1)),index/float(tile.z)));
-
-            vec2 tileSize = 1.0/tile.xy;
-            vec4 tileBorders = vec4(tileSize*gridCoords, tileSize*(gridCoords+1));
-            vec2 normalizedCoords = (coords-tileBorders.xy)/tileSize;
-            finalCoords = clamp( compensationTransform(normalizedCoords, index) * tileSize + tileBorders.xy, tileBorders.xy, tileBorders.zw );
-        }
+    { 
+        vec4 borders =  getClampingBorders(texCoords.xy);
+        //vec2 finalCoords = clamp( quiltCompensation(texCoords.xy), borders.xy, borders.zw);
+        vec2 finalCoords = quiltCompensation(texCoords.xy);
+        //finalCoords = clamp(zoomCoordinates(finalCoords, zoomAmount), borders.xy, borders.zw);
+        finalCoords = zoomCoordinates(finalCoords, zoomAmount);
         fragColor = texture(screenTex, finalCoords);
+        //fragColor = vec4(finalCoords,1.0,1.0);
     }
     else{
         uint sel = min(selectedView,uint(tile.x*tile.y-1));
@@ -654,6 +678,7 @@ auto fs = std::make_shared<ge::gl::Shader>(GL_FRAGMENT_SHADER,
         fsSrc
         );
 auto prg = vars.reCreate<ge::gl::Program>("holoProgram",vs,fs);
+//exit(1);
 //prg->setNonexistingUniformWarning(false);
 }
 
@@ -753,7 +778,6 @@ class Quilt{
         glm::mat4 getTestMatrix(vars::Vars&vars,uint32_t counter,glm::mat4 const&inView){
             auto currentTestID = vars.addOrGetUint32(varsPrefix+"current",0);
             auto currentTestItem = vars.getVector<TestCase>("testItems")[currentTestID];
-            vars.reCreate<bool>("compensation", currentTestItem.compensate);
             float       viewCone      = glm::radians<float>(vars.getFloat      ("quiltRender.viewCone"     ));
             float       strength      =                     vars.addOrGetFloat ("DStrength"           ,0.f  );
             float       d             =                     vars.addOrGetFloat ("quiltRender.d"       ,0.7f );
@@ -844,6 +868,8 @@ void drawHolo(vars::Vars&vars){
         ->set4fv("viewPortion"     ,glm::value_ptr(*vars.get<glm::vec4>("quiltView.viewPortion")))
         ->set1ui("drawOnlyOneImage",                vars.getBool       ("drawOnlyOneImage"     ))
         ->set1f ("focus"           ,                vars.getFloat      ("quiltView.focus"      ))
+        ->set1f ("zoomAmount"           ,           vars.getFloat      ("quiltView.zoom"      ))
+        ->set1f ("imageZ"           ,               vars.getFloat      ("imageZ"      ))
         ->set1ui("stride"          ,                vars.getUint32     ("quiltView.stride"     ))
         ->set1i("compensation"    ,                vars.getBool       ("compensation"         ))
         ->setMatrix4fv("cameraTransformations",     glm::value_ptr(*matrices.data()), matrices.size())
@@ -882,7 +908,7 @@ void drawTestingGui(vars::Vars&vars)
     const std::vector<std::string> labels{"Move the slider to the highest (righmost) value which is still producing visually acceptable and pleasant result.",
         "Move the slider wherever you need to achieve the nicest result for you.",
         "Turn on or off the effect (checkbox) and leave it at the state which looks better."};
-    auto items = vars.getVector<TestCase>("testItems");
+    auto &items = vars.getVector<TestCase>("testItems");
     auto slider{vars.addOrGet<float>("DStrength",0.f)};
     auto &currentID{vars.addOrGetUint32(varsPrefix+"current",0)};
     auto currentItem{items[currentID]};
@@ -908,6 +934,7 @@ void drawTestingGui(vars::Vars&vars)
         vars.reCreate<double>(prefixedName+"Time", vars.get<Timer<double>>("timer")->elapsedFromStart());
         *resetTimer = true;    
         currentID++;
+        vars.reCreate<bool>("compensation", items[currentID].compensate);
 
         if(currentID > items.size()-1)
         {
@@ -1032,7 +1059,9 @@ void Holo::init(){
     vars.add<glm::vec4>("quiltView.tile"       ,5.00f, 9.00f, 45.00f, 45.00f);
     vars.add<glm::vec4>("quiltView.viewPortion",0.99976f, 0.99976f, 0.00f, 0.00f);
     vars.addFloat      ("quiltView.focus"      ,0.205f);
+    vars.addFloat      ("quiltView.zoom"      ,1.0f);
     vars.addUint32     ("quiltView.stride"     ,1);
+    vars.addFloat      ("imageZ"       ,0.9);
     addVarsLimitsF(vars,"quiltView.focus",-1,+1,0.001f);
     vars.addBool ("showQuilt");
     vars.addBool ("compensation");
