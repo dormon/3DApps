@@ -592,9 +592,11 @@ void createHoloProgram(vars::Vars &vars)
 
       vec2 compensationTransform(vec2 coords, int index)
       {
+        coords=((coords-0.5)*zoomAmount)+0.5;
         if(!compensation)
             return coords;
         vec4 worldCoords = inverse(projection)*vec4(2*coords-1,imageZ,1);
+        worldCoords/=worldCoords.w;
         vec4 transCoords = projection*cameraTransformations[index]*vec4(worldCoords);
         return (((transCoords.xy/transCoords.w)+1)/2);
       } 
@@ -609,13 +611,6 @@ void createHoloProgram(vars::Vars &vars)
         vec4 tileBorders = vec4(tileSize*gridCoords, tileSize*(gridCoords+1));
         vec2 normalizedCoords = (nCoords-tileBorders.xy)/tileSize;
         return compensationTransform(normalizedCoords, index) * tileSize + tileBorders.xy;
-      }
-
-      vec2 zoomCoordinates(vec2 coords, float amount)
-      {
-        vec2 gridCoords = trunc(coords.xy*tile.xy) + 0.5;
-        vec2 offset = -(gridCoords-tile.xy/2)/tile.xy - 0.5;
-        return amount*(offset+coords)-offset;
       }
 
       vec4 getClampingBorders(vec2 coords)
@@ -654,13 +649,8 @@ void createHoloProgram(vars::Vars &vars)
           else{
     if(showAsSequence == 0)
     { 
-        vec4 borders =  getClampingBorders(texCoords.xy);
-        //vec2 finalCoords = clamp( quiltCompensation(texCoords.xy), borders.xy, borders.zw);
         vec2 finalCoords = quiltCompensation(texCoords.xy);
-        //finalCoords = clamp(zoomCoordinates(finalCoords, zoomAmount), borders.xy, borders.zw);
-        finalCoords = zoomCoordinates(finalCoords, zoomAmount);
         fragColor = texture(screenTex, finalCoords);
-        //fragColor = vec4(finalCoords,1.0,1.0);
     }
     else{
         uint sel = min(selectedView,uint(tile.x*tile.y-1));
@@ -756,7 +746,7 @@ class Quilt{
                     //proj[2][0] += s/tilt;//(tilt+vars.addOrGetFloat("DTilt",0.f)*counter*0.01f);
 
                     auto editedView = getTestMatrix(vars,counter,view);
-                    auto deltaMatrix = proj*view*glm::inverse(editedView)*glm::inverse(proj);
+                    auto deltaMatrix = view*glm::inverse(editedView);
                     matrices.push_back(glm::inverse(deltaMatrix));
 
                     fce(editedView,proj);
