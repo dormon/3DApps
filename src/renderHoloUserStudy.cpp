@@ -86,7 +86,7 @@ class TestCase
 {
 public:
     enum TestType {MAX_SLIDER=0, BEST_SLIDER, CHECKBOX};
-    enum TestCategory {CAMERAS, CONE_MAX, CONE_MIN, DOF};
+    enum TestCategory {CAMERAS, CONE_MAX, CONE_MIN, DOF, CIRCULAR, CIRCULAR_INVERT};
     std::string name;
     TestType type;
     TestCategory category{CAMERAS};
@@ -605,12 +605,18 @@ void createHoloProgram(vars::Vars &vars)
       {
         ivec2 gridCoords = ivec2(trunc(coords.xy*tile.xy));
         int index = gridCoords.y*int(tile.x)+gridCoords.x;
-        vec2 nCoords = texArr(vec3(mod(texCoords.xy*tile.xy,vec2(1)),index/float(tile.z)));
+        vec2 nCoords = texArr(vec3(mod(coords.xy*tile.xy,vec2(1)),index/float(tile.z)));
 
         vec2 tileSize = 1.0/tile.xy;
         vec4 tileBorders = vec4(tileSize*gridCoords, tileSize*(gridCoords+1));
         vec2 normalizedCoords = (nCoords-tileBorders.xy)/tileSize;
         return compensationTransform(normalizedCoords, index) * tileSize + tileBorders.xy;
+      }
+
+      vec2 compensate(vec3 coords)
+      {
+        coords.xy = compensationTransform(coords.xy, int(coords.z*tile.z));
+        return texArr(coords);
       }
 
       vec4 getClampingBorders(vec2 coords)
@@ -639,7 +645,7 @@ void createHoloProgram(vars::Vars &vars)
               else
                 rgb[i] = vec4(0);
             }else{
-                rgb[i] = texture(screenTex, texArr(nuv));
+                rgb[i] = texture(screenTex, compensate(nuv));//texArr(nuv));
             }
           }
         }
@@ -649,7 +655,9 @@ void createHoloProgram(vars::Vars &vars)
           else{
     if(showAsSequence == 0)
     { 
-        vec2 finalCoords = quiltCompensation(texCoords.xy);
+        vec4 borders =  getClampingBorders(texCoords.xy);
+        vec2 finalCoords = clamp( quiltCompensation(texCoords.xy), borders.xy, borders.zw);
+        //vec2 finalCoords = quiltCompensation(texCoords.xy);
         fragColor = texture(screenTex, finalCoords);
     }
     else{
@@ -684,7 +692,7 @@ class Quilt{
 
         void createTextures(){
             if(notChanged(vars,"all",__FUNCTION__,{"quiltRender.texScale","quiltRender.texScaleAspect"}))return;
-            float texScale = vars.getFloat("quiltRender.texScale");
+            float texScale = vars.getFloat("quiltRender.texScale"); 
             float texScaleAspect =  vars.getFloat("quiltRender.texScaleAspect");
             auto newRes = glm::uvec2(glm::vec2(baseRes) * texScale * glm::vec2(texScaleAspect,1.f));
             if(newRes == res)return;
@@ -783,22 +791,20 @@ class Quilt{
             else if(currentTestItem.category == TestCase::DOF)
                 vars.reCreate<float>("blurAmount", 10*strength);
 
-            auto const numViews = counts.x * counts.y;
-            float t = (float)counter / (float)(numViews - 1);
 
-            float S = 0.5f*d*glm::tan(viewCone);
             uint32_t axis = (currentTestID%3)+1; 
             if(axis == 3) axis = 4;
             uint32_t freq = vars.addOrGetFloat ("DFreq",25.f);
             bool jagged    = (currentTestID/3)%2;
-            bool translate = (currentTestID/6); 
+            bool translate = (currentTestID/6)%2; 
             float deform = 0.f;
 
             if(currentTestItem.category == TestCase::CAMERAS)
             {
+                float halfStrength = strength*0.4;
 
-                if(jagged)deform = strength*(glm::sin((float)(counter)*freq/100.f*glm::pi<float>()*2.f))*0.5f; 
-                else      deform = strength*counter*0.05f;
+                if(jagged)deform = halfStrength*(glm::sin((float)(counter)*freq/100.f*glm::pi<float>()*2.f))*0.5f; 
+                else      deform = halfStrength*counter*0.05f;
 
                 if(translate){
                     for(int k=0;k<3;++k)
@@ -814,19 +820,20 @@ class Quilt{
                     view = rotateViewMatrix(view, deform, glm::vec3((axis>>0)&1,(axis>>1)&1,(axis>>2)&1));
                 }
             }
-            else
+            else if(currentTestItem.category == TestCase::CIRCULAR || currentTestItem.category == TestCase::CIRCULAR_INVERT)
             {
-                auto camPos = glm::inverse(view)*glm::vec4(0.f,0.f,0.f,1.f);
-                const float r = vars.addOrGetFloat("radius",1.f);
-                float s = S-2*t*S;
-                glm::vec2 circleCenter{camPos[0]-s+(S-2*0.5*S), camPos[2]+r};
-                float invert = (currentTestID == 12) ? 1 : -1;
-                auto circleCoord = glm::vec2(s,invert*glm::sqrt(r*r-s*s))+circleCenter;
-                view[3][2] = -circleCoord.y;
-                float angle = glm::angle(glm::vec2(0,1), glm::normalize(circleCenter-circleCoord));
-                view = rotateViewMatrix(view, glm::radians(angle) ,glm::vec3(0,1,0));
+                const float r = 5;// 0.5f*d*glm::tan(viewCone)*2;
+                glm::vec2 circleCenter{0,-3};
+                float invert = (currentTestItem.category == TestCase::CIRCULAR_INVERT) ? 1 : -1.0;
+                float t = (float)counter / (float)(counts.x * counts.y - 1);
+                auto a = t*glm::half_pi<float>()-glm::pi<float>()*0.25;
+                auto circleCoord = glm::vec2(circleCenter.x+r*glm::sin(a), (circleCenter.y+r*glm::cos(a))*invert);
+                auto circleView = glm::lookAt(glm::vec3(circleCoord.x,0.0, circleCoord.y), glm::vec3(circleCenter.x,0.0, circleCenter.y), glm::vec3(0,1,0));                
+                view = glm::mix(inView, circleView, strength); 
 
             }
+            else
+                return inView;
             return view;
         }
 };
@@ -900,7 +907,7 @@ void drawTestingGui(vars::Vars&vars)
         "Turn on or off the effect (checkbox) and leave it at the state which looks better."};
     auto &items = vars.getVector<TestCase>("testItems");
     auto slider{vars.addOrGet<float>("DStrength",0.f)};
-    auto &currentID{vars.addOrGetUint32(varsPrefix+"current",0)};
+    auto &currentID{vars.getUint32(varsPrefix+"current")};
     auto currentItem{items[currentID]};
     auto prefixedName = varsPrefix+currentItem.name;
     auto &currentVar{vars.addOrGetFloat(prefixedName,0)};
@@ -912,7 +919,7 @@ void drawTestingGui(vars::Vars&vars)
 
     ImGui::TextWrapped("%s", (labels[currentItem.type].c_str()));//+" If you feel sick during the adjusting of the slider, also adjust the sickness level (0 not sick at all, 1 very dizzy)").c_str());
     if(currentItem.type == TestCase::MAX_SLIDER || currentItem.type == TestCase::BEST_SLIDER)
-        ImGui::SliderFloat("Slider", slider, 0, 1, "%.6f");
+        ImGui::SliderFloat("Slider", slider, 0, 1.0, "%.6f");
     else
         ImGui::Checkbox("Enable effect", reinterpret_cast<bool*>(slider));
 
@@ -925,7 +932,7 @@ void drawTestingGui(vars::Vars&vars)
         *resetTimer = true;    
         currentID++;
         vars.reCreate<bool>("compensation", items[currentID].compensate);
-
+std::cerr << currentItem.name << std::endl;
         if(currentID > items.size()-1)
         {
             saveResults(vars, items);
@@ -1048,8 +1055,8 @@ void Holo::init(){
     vars.addInt32      ("quiltView.bi"         ,2);
     vars.add<glm::vec4>("quiltView.tile"       ,5.00f, 9.00f, 45.00f, 45.00f);
     vars.add<glm::vec4>("quiltView.viewPortion",0.99976f, 0.99976f, 0.00f, 0.00f);
-    vars.addFloat      ("quiltView.focus"      ,0.205f);
-    vars.addFloat      ("quiltView.zoom"      ,1.0f);
+    vars.addFloat      ("quiltView.focus"      ,0.056f);
+    vars.addFloat      ("quiltView.zoom"      ,0.5f);
     vars.addUint32     ("quiltView.stride"     ,1);
     vars.addFloat      ("imageZ"       ,0.9);
     addVarsLimitsF(vars,"quiltView.focus",-1,+1,0.001f);
@@ -1067,10 +1074,12 @@ void Holo::init(){
     vars.addFloat("quiltRender.size",5.f);
     vars.addFloat("quiltRender.fov",90.f);
     vars.addFloat("quiltRender.viewCone",35.f);
-    vars.addFloat("quiltRender.texScale",1.64f);
+    vars.addFloat("quiltRender.texScale",3.2f);
     addVarsLimitsF(vars,"quiltRender.texScale",0.1f,5,0.01f);
     vars.addFloat("quiltRender.texScaleAspect",0.745f);
     addVarsLimitsF(vars,"quiltRender.texScaleAspect",0.1f,10,0.01f);
+    
+    vars.addUint32(varsPrefix+"current", 0);
 
     vars.add<Quilt>("quilt",vars);
 
@@ -1090,8 +1099,6 @@ void Holo::init(){
             {"HorizontalNoiseJagged", TestCase::MAX_SLIDER},
             {"VerticalNoiseJagged", TestCase::MAX_SLIDER},
             {"ZoomJagged", TestCase::MAX_SLIDER},
-            {"Circular", TestCase::MAX_SLIDER},
-            {"CircularInvert", TestCase::MAX_SLIDER},
             });
     auto compItems = items;
     for(auto& item : compItems)
@@ -1103,6 +1110,10 @@ void Holo::init(){
     items.insert(items.end(), compItems.begin(), compItems.end()); 
     items.insert(items.end(), 
             {  
+            {"Circular", TestCase::MAX_SLIDER, TestCase::CIRCULAR},
+            {"CircularInvert", TestCase::MAX_SLIDER, TestCase::CIRCULAR_INVERT},
+            {"CircularCompensated", TestCase::MAX_SLIDER, TestCase::CIRCULAR, true},
+            {"CircularInvertCompensated", TestCase::MAX_SLIDER, TestCase::CIRCULAR_INVERT, true},
             {"3DEffectMax", TestCase::MAX_SLIDER, TestCase::CONE_MAX},
             {"3DEffectMin", TestCase::MAX_SLIDER, TestCase::CONE_MIN},
             {"DoF", TestCase::BEST_SLIDER, TestCase::DOF},
