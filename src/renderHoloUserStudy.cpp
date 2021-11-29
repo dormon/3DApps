@@ -799,6 +799,7 @@ class Quilt{
             bool translate = (currentTestID/6)%2; 
             float deform = 0.f;
 
+            vars.reCreate<float>("imageZ",0.9);
             if(currentTestItem.category == TestCase::CAMERAS)
             {
                 float halfStrength = strength*0.4;
@@ -822,6 +823,7 @@ class Quilt{
             }
             else if(currentTestItem.category == TestCase::CIRCULAR || currentTestItem.category == TestCase::CIRCULAR_INVERT)
             {
+                vars.reCreate<float>("imageZ",0.93);
                 const float r = 5;// 0.5f*d*glm::tan(viewCone)*2;
                 glm::vec2 circleCenter{0,-3};
                 float invert = (currentTestItem.category == TestCase::CIRCULAR_INVERT) ? 1 : -1.0;
@@ -1146,6 +1148,7 @@ void Holo::key(SDL_Event const& event, bool DOWN) {
 }
 
 void Holo::mouseMove(SDL_Event const& e) {
+    return;
     if(vars.getBool("useOrbitCamera")){
         auto sensitivity = vars.getFloat("input.sensitivity");
         auto orbitCamera =
