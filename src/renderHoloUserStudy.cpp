@@ -830,7 +830,14 @@ class Quilt{
                 float t = (float)counter / (float)(counts.x * counts.y - 1);
                 auto a = t*glm::half_pi<float>()-glm::pi<float>()*0.25;
                 auto circleCoord = glm::vec2(circleCenter.x+r*glm::sin(a), (circleCenter.y+r*glm::cos(a))*invert);
-                auto circleView = glm::lookAt(glm::vec3(circleCoord.x,0.0, circleCoord.y), glm::vec3(circleCenter.x,0.0, circleCenter.y), glm::vec3(0,1,0));                
+                auto pos = glm::vec3(circleCoord.x,0.0, circleCoord.y);
+                auto cPos = glm::vec3(circleCenter.x,0.0, circleCenter.y);
+                if(invert > 0)
+                {
+                    cPos.z *= -1;
+                    cPos = cPos+(pos-cPos)*2.0f;
+                }
+                auto circleView = glm::lookAt(pos, cPos, glm::vec3(0,1,0));                
                 view = glm::mix(inView, circleView, strength); 
 
             }
