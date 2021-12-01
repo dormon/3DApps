@@ -893,6 +893,10 @@ void saveResults(vars::Vars&vars, const std::vector<TestCase> &items)
     timeinfo = localtime (&rawtime);
     std::string fileName{asctime(timeinfo)};
     fileName.pop_back();
+    if(vars.getBool("moveHead"))
+        fileName += "_moving";
+    else
+        fileName += "_static";
     std::ofstream f(vars.getString("resultDir")+fileName+".txt");
 
     for(const auto &item : items)
@@ -920,19 +924,15 @@ void drawTestingGui(vars::Vars&vars)
     auto currentItem{items[currentID]};
     auto prefixedName = varsPrefix+currentItem.name;
     auto &currentVar{vars.addOrGetFloat(prefixedName,0)};
-    //auto currentSickVar{vars.addOrGet<float>(prefixedName+"Sick",0)};
 
     ImGui::Begin("Testing");
-    //ImGui::GetStyle().ScaleAllSizes(5.f);
-    //ImGui::GetIO().FontGlobalScale = 5.f;
 
-    ImGui::TextWrapped("%s", (labels[currentItem.type].c_str()));//+" If you feel sick during the adjusting of the slider, also adjust the sickness level (0 not sick at all, 1 very dizzy)").c_str());
+    ImGui::TextWrapped("%s", (labels[currentItem.type].c_str()));
     if(currentItem.type == TestCase::MAX_SLIDER || currentItem.type == TestCase::BEST_SLIDER)
         ImGui::SliderFloat("Slider", slider, 0, 1.0, "%.6f");
     else
         ImGui::Checkbox("Enable effect", reinterpret_cast<bool*>(slider));
 
-    //ImGui::SliderFloat("Sickness level", currentSickVar, 0, 1, "%.1f");
     if (ImGui::Button("Next"))
     {
         currentVar = *slider;
@@ -948,6 +948,10 @@ std::cerr << currentItem.name << std::endl;
             (*vars.get<Holo*>("thisApp"))->stop();
         }
     }
+    std::string headInfo{"Please do not move your head while performing this task!"};
+    if(vars.getBool("moveHead"))
+        headInfo = "Please move your head around to see the scene from all angles!";
+    ImGui::TextWrapped("%s", (headInfo.c_str()));
     ImGui::End();
 }
 
@@ -1023,6 +1027,7 @@ void Holo::init(){
     auto const textureFile = args->gets("--texture","","texture file");
     auto const backgroundFile = args->gets("--bckg","","background file");
     auto const resultDir = args->gets("--outDir","","where to save results");
+    auto const moveHead = args->isPresent("--moveHead","user is allowed to move head");
     auto const showHelp = args->isPresent("-h","shows help");
     if (showHelp || !args->validate()) {
         std::cerr << args->toStr();
@@ -1041,6 +1046,7 @@ void Holo::init(){
     vars.addString("modelFileName",modelFile);
     vars.addString("modelTexFileName",textureFile);
     vars.addString("resultDir",resultDir);
+    vars.addBool("moveHead", moveHead);
 
     vars.add<ge::gl::VertexArray>("emptyVao");
     vars.add<glm::uvec2>("windowSize",window->getWidth(),window->getHeight());
