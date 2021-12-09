@@ -86,7 +86,7 @@ class TestCase
 {
 public:
     enum TestType {MAX_SLIDER=0, BEST_SLIDER, CHECKBOX};
-    enum TestCategory {CAMERAS, CONE_MAX, CONE_MIN, DOF, CIRCULAR, CIRCULAR_INVERT};
+    enum TestCategory {CAMERAS, CONE_MAX, CONE_MIN, CONE_BEST, DOF30, DOF60, CIRCULAR, CIRCULAR_INVERT};
     std::string name;
     TestType type;
     TestCategory category{CAMERAS};
@@ -727,10 +727,42 @@ class Quilt{
 
             float strength = vars.addOrGetFloat("DStrength",0.f);
             float viewCone = glm::radians<float>(vars.getFloat("quiltRender.viewCone"));
+            
+            auto currentTestID = vars.addOrGetUint32(varsPrefix+"current",0);
+            auto currentTestItem = vars.getVector<TestCase>("testItems")[currentTestID];
+            float defaultCone = glm::pi<float>()/6.0f;
+            constexpr float MAX_CONE = glm::radians(85.0f);
+            constexpr float MAX_FOCUS = 0.887;
+            float tanCone = glm::tan(viewCone);
+            float maxTanCone = glm::tan(MAX_CONE);
+            const std::set<TestCase::TestCategory> cone{TestCase::CONE_BEST, TestCase::CONE_MAX, TestCase::CONE_MIN};         
+
+            vars.reCreate<float>("quiltView.focus",0.056f);
+            if(cone.find(currentTestItem.category) != cone.end())
+            {
+                viewCone = MAX_CONE*strength;
+                if(currentTestItem.category == TestCase::CONE_MIN) 
+                    viewCone = MAX_CONE*(1.0f-strength);
+                
+                tanCone = glm::tan(viewCone);
+                float focus = glm::mix(0.0f, MAX_FOCUS, tanCone/maxTanCone);
+                vars.reCreate<float>("quiltView.focus", focus); 
+            }
+            else if(currentTestItem.category == TestCase::DOF30)
+            {
+                vars.reCreate<float>("blurAmount", 10*strength);
+                tanCone = glm::tan(glm::radians(30.0f));
+            }
+            else if(currentTestItem.category == TestCase::DOF60)
+            {
+                vars.reCreate<float>("blurAmount", 10*strength);
+                tanCone = glm::tan(glm::radians(60.0f));
+            }
+
 
             auto const numViews = counts.x * counts.y;
             float d = vars.addOrGetFloat("quiltRender.d",0.70f);
-            float S = 0.5f*d*glm::tan(viewCone);
+            float S = 0.5f*d*tanCone;
             //float tilt = d*aspect*glm::tan(vars.getFloat("camera.fovy")/2);
             auto& matrices = vars.getVector<glm::mat4>("cameraTransformations");
             matrices.clear();
@@ -776,21 +808,11 @@ class Quilt{
         glm::mat4 getTestMatrix(vars::Vars&vars,uint32_t counter,glm::mat4 const&inView){
             auto currentTestID = vars.addOrGetUint32(varsPrefix+"current",0);
             auto currentTestItem = vars.getVector<TestCase>("testItems")[currentTestID];
-            float       viewCone      = glm::radians<float>(vars.getFloat      ("quiltRender.viewCone"     ));
             float       strength      =                     vars.addOrGetFloat ("DStrength"           ,0.f  );
             float       d             =                     vars.addOrGetFloat ("quiltRender.d"       ,0.7f );
             auto        view          = inView;
 
             addVarsLimitsF(vars,"quiltRender.d",0,400,0.01);
-
-            float defaultCone = glm::pi<float>()/6.0f;
-            if(currentTestItem.category == TestCase::CONE_MAX)
-                viewCone = defaultCone*strength;
-            else if(currentTestItem.category == TestCase::CONE_MIN)
-                viewCone = defaultCone*(1.0f-strength);
-            else if(currentTestItem.category == TestCase::DOF)
-                vars.reCreate<float>("blurAmount", 10*strength);
-
 
             uint32_t axis = (currentTestID%3)+1; 
             if(axis == 3) axis = 4;
@@ -799,19 +821,32 @@ class Quilt{
             bool translate = (currentTestID/6)%2; 
             float deform = 0.f;
 
+            constexpr float COMPENSATION_COEF{2.0};
+            constexpr float JAGGED_COEF{0.2};
+            constexpr float ALL_COEF{0.1};
+            constexpr float Z_COEF{4.0};
+            constexpr float TRANSLATE_COEF{2.5};
+            constexpr float CIRCULAR_COEF{0.5};
+
             vars.reCreate<float>("imageZ",0.9);
             if(currentTestItem.category == TestCase::CAMERAS)
             {
-                float halfStrength = strength*0.4;
+                float halfStrength = strength*ALL_COEF;
+                if(vars.getBool("compensation"))
+                    halfStrength *= COMPENSATION_COEF;
 
-                if(jagged)deform = halfStrength*(glm::sin((float)(counter)*freq/100.f*glm::pi<float>()*2.f))*0.5f; 
+                if(jagged)deform = JAGGED_COEF*halfStrength*(glm::sin((float)(counter)*freq/100.f*glm::pi<float>()*2.f))*0.5f; 
                 else      deform = halfStrength*counter*0.05f;
 
+                if(axis==4)
+                    deform *= Z_COEF;
+
                 if(translate){
+                    vars.reCreate<float>("imageZ",0.93);
+                    deform *= TRANSLATE_COEF;
                     for(int k=0;k<3;++k)
                         view[3][k] += ((axis>>k)&1)*deform;
                 }else{
-
                     auto camPos = glm::inverse(view)*glm::vec4(0.f,0.f,0.f,1.f);
                     view = glm::translate(glm::mat4(1.f),+glm::vec3(camPos))*
                         glm::rotate   (glm::mat4(1.f),deform,glm::vec3((axis>>0)&1,(axis>>1)&1,(axis>>2)&1))*
@@ -906,6 +941,21 @@ void saveResults(vars::Vars&vars, const std::vector<TestCase> &items)
     f.close();
 }
 
+void changeColor(int i)
+{
+    glm::vec3 color(0.0f);
+    color[i] = 1.0f;     
+    std::vector<ImGuiCol_> imCols{ImGuiCol_FrameBg, ImGuiCol_FrameBgHovered, ImGuiCol_FrameBgActive, ImGuiCol_SliderGrab, ImGuiCol_SliderGrabActive};
+    float step = 1.0f/imCols.size();
+    float current = 0.0f;
+    for(auto const& imCol : imCols)
+    {
+       current +=step;
+       auto newColor = color*current; 
+       ImGui::GetStyle().Colors[imCol] = ImVec4(newColor.x, newColor.y, newColor.z, 1.0f);
+    }
+}
+
 void drawTestingGui(vars::Vars&vars)
 {
     auto timer = vars.addOrGet<Timer<double>>("timer");
@@ -927,6 +977,7 @@ void drawTestingGui(vars::Vars&vars)
 
     ImGui::Begin("Testing");
 
+    changeColor(currentItem.type);
     ImGui::TextWrapped("%s", (labels[currentItem.type].c_str()));
     if(currentItem.type == TestCase::MAX_SLIDER || currentItem.type == TestCase::BEST_SLIDER)
         ImGui::SliderFloat("Slider", slider, 0, 1.0, "%.6f");
@@ -937,11 +988,13 @@ void drawTestingGui(vars::Vars&vars)
     {
         currentVar = *slider;
         *slider = 0;
-        vars.reCreate<double>(prefixedName+"Time", vars.get<Timer<double>>("timer")->elapsedFromStart());
+        auto t = vars.reCreate<double>(prefixedName+"Time", vars.get<Timer<double>>("timer")->elapsedFromStart());
         *resetTimer = true;    
         currentID++;
         vars.reCreate<bool>("compensation", items[currentID].compensate);
-std::cerr << currentItem.name << std::endl;
+
+        std::cout << currentItem.name << " " << currentVar << " " << *t << std::endl;
+
         if(currentID > items.size()-1)
         {
             saveResults(vars, items);
@@ -967,9 +1020,11 @@ void Holo::draw(){
 
         float freeCameraSpeed = vars.addOrGetFloat("camera.speed",0.01f);
         auto keys = vars.get<std::map<SDL_Keycode, bool>>("input.keyDown");
+        /*
         for (int a = 0; a < 3; ++a)
             freeView->move(a, float((*keys)["d s"[a]] - (*keys)["acw"[a]]) *
                     freeCameraSpeed);
+        */
         view = freeView;
     }
 
@@ -1131,7 +1186,9 @@ void Holo::init(){
             {"CircularInvertCompensated", TestCase::MAX_SLIDER, TestCase::CIRCULAR_INVERT, true},
             {"3DEffectMax", TestCase::MAX_SLIDER, TestCase::CONE_MAX},
             {"3DEffectMin", TestCase::MAX_SLIDER, TestCase::CONE_MIN},
-            {"DoF", TestCase::BEST_SLIDER, TestCase::DOF},
+            {"3DEffectBest", TestCase::BEST_SLIDER, TestCase::CONE_BEST},
+            {"DoF30", TestCase::BEST_SLIDER, TestCase::DOF30},
+            {"DoF60", TestCase::BEST_SLIDER, TestCase::DOF60},
             });
 
     GLint dims[4];
