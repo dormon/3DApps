@@ -757,6 +757,8 @@ class Quilt{
             {
                 vars.reCreate<float>("blurAmount", 10*strength);
                 tanCone = glm::tan(glm::radians(60.0f));
+                float focus = glm::mix(0.0f, MAX_FOCUS, tanCone/maxTanCone);
+                vars.reCreate<float>("quiltView.focus", focus); 
             }
 
 
@@ -821,9 +823,9 @@ class Quilt{
             bool translate = (currentTestID/6)%2; 
             float deform = 0.f;
 
-            constexpr float COMPENSATION_COEF{2.0};
+            constexpr float COMPENSATION_COEF{3.0};
             constexpr float JAGGED_COEF{0.2};
-            constexpr float ALL_COEF{0.1};
+            constexpr float ALL_COEF{0.075};
             constexpr float Z_COEF{4.0};
             constexpr float TRANSLATE_COEF{2.5};
             constexpr float CIRCULAR_COEF{0.5};
@@ -1195,8 +1197,8 @@ void Holo::init(){
     ge::gl::glGetIntegerv(GL_MAX_VIEWPORT_DIMS, dims);
     std::cerr << "maxFramebuffer: " << dims[0] << " x " << dims[1] << std::endl;
 
-    ImGui::GetStyle().ScaleAllSizes(4.f);
-    ImGui::GetIO().FontGlobalScale = 4.f;
+    ImGui::GetStyle().ScaleAllSizes(4.5f);
+    ImGui::GetIO().FontGlobalScale = 4.5f;
 }
 
 void Holo::key(SDL_Event const& event, bool DOWN) {
