@@ -450,7 +450,6 @@ RenderModel::~RenderModel()
     assert(this!=nullptr);
 }
 
-
 void RenderModel::draw(glm::mat4 const &view, glm::mat4 const &projection, vars::Vars &vars)
 {
     assert(this!=nullptr);
@@ -663,7 +662,6 @@ void createHoloProgram(vars::Vars &vars)
     else{
         uint sel = min(selectedView,uint(tile.x*tile.y-1));
         fragColor = texture(screenTex, texCoords.xy/vec2(tile.xy) + vec2(vec2(1.f)/tile.xy)*vec2(sel%uint(tile.x),sel/uint(tile.x)));
-
     }
 }
 }
@@ -823,12 +821,15 @@ class Quilt{
             bool translate = (currentTestID/6)%2; 
             float deform = 0.f;
 
-            constexpr float COMPENSATION_COEF{3.0};
+            float COMPENSATION_COEF{3.0};
+            if(vars.getString("bckgTexFileName") == "")
+                COMPENSATION_COEF = 6.0;
+
             constexpr float JAGGED_COEF{0.2};
-            constexpr float ALL_COEF{0.075};
+            constexpr float ALL_COEF{0.065};
             constexpr float Z_COEF{4.0};
             constexpr float TRANSLATE_COEF{2.5};
-            constexpr float CIRCULAR_COEF{0.5};
+            constexpr float CIRCULAR_COEF{0.25};
 
             vars.reCreate<float>("imageZ",0.9);
             if(currentTestItem.category == TestCase::CAMERAS)
@@ -875,7 +876,7 @@ class Quilt{
                     cPos = cPos+(pos-cPos)*2.0f;
                 }
                 auto circleView = glm::lookAt(pos, cPos, glm::vec3(0,1,0));                
-                view = glm::mix(inView, circleView, strength); 
+                view = glm::mix(inView, circleView, strength*CIRCULAR_COEF); 
 
             }
             else
@@ -934,12 +935,20 @@ void saveResults(vars::Vars&vars, const std::vector<TestCase> &items)
         fileName += "_moving";
     else
         fileName += "_static";
-    std::ofstream f(vars.getString("resultDir")+fileName+".txt");
+
+    if(vars.getString("bckgTexFileName") == "")
+        fileName += "_noBackground";
+
+    std::ofstream f(vars.getString("resultDir")+fileName+".csv");
 
     for(const auto &item : items)
-        f   << item.name << " " << vars.getFloat(varsPrefix+item.name) << std::endl
-            //<< "sick: " << vars.getFloat(TestCase::varsPrefix+item.name+"Sick") << std::endl
-            << "time: " << *vars.get<double>(varsPrefix+item.name+"Time") << std::endl << std::endl;
+        f << item.name << ",";
+    f << std::endl;
+    for(const auto &item : items)
+        f << vars.getFloat(varsPrefix+item.name) << ",";
+    f << std::endl;
+    for(const auto &item : items)
+        f << *vars.get<double>(varsPrefix+item.name+"Time") << ",";
     f.close();
 }
 
@@ -981,6 +990,7 @@ void drawTestingGui(vars::Vars&vars)
 
     changeColor(currentItem.type);
     ImGui::TextWrapped("%s", (labels[currentItem.type].c_str()));
+        
     if(currentItem.type == TestCase::MAX_SLIDER || currentItem.type == TestCase::BEST_SLIDER)
         ImGui::SliderFloat("Slider", slider, 0, 1.0, "%.6f");
     else
@@ -1029,7 +1039,6 @@ void Holo::draw(){
         */
         view = freeView;
     }
-
 
     ge::gl::glClearColor(0.1f,0.1f,0.1f,1.f);
     ge::gl::glClear(GL_COLOR_BUFFER_BIT);
@@ -1192,6 +1201,12 @@ void Holo::init(){
             {"DoF30", TestCase::BEST_SLIDER, TestCase::DOF30},
             {"DoF60", TestCase::BEST_SLIDER, TestCase::DOF60},
             });
+
+    if(vars.getString("bckgTexFileName") == "")
+    {
+        items.pop_back();
+        items.pop_back();
+    }
 
     GLint dims[4];
     ge::gl::glGetIntegerv(GL_MAX_VIEWPORT_DIMS, dims);
