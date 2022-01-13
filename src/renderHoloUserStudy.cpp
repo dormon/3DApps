@@ -393,10 +393,20 @@ RenderModel::RenderModel(Model *mdl, std::string textureFileName, std::string bc
         R".(
       #extension GL_KHR_vulkan_glsl : enable
       out vec2 uv;
+      uniform mat4 projection = mat4(1);
+      uniform mat4 view       = mat4(1);
+      uniform bool isRotation = false;
 
       void main(){
         uv = vec2((gl_VertexID << 1) & 2, gl_VertexID & 2);
         gl_Position = vec4(2.0f*uv-1.0f, 0.9999999f, 1.0f);
+        gl_Position *= 5; 
+        gl_Position.z = -10;
+        gl_Position.w = 1;
+        mat4 newView = view;
+        if(!isRotation)
+            newView=mat4(1);
+        gl_Position = projection*newView*gl_Position;//c4(position,1);
       }
     ).";
     const std::string bckgFragSrc =
@@ -457,6 +467,10 @@ void RenderModel::draw(glm::mat4 const &view, glm::mat4 const &projection, vars:
     this->bckgProgram->use();
     this->bckgTex->bind(0);
     this->bckgProgram->set1f("blurAmount", vars.getFloat("blurAmount"));
+    this->bckgProgram->setMatrix4fv("projection", glm::value_ptr(projection));
+    this->bckgProgram->setMatrix4fv("view", glm::value_ptr(view      ));
+    auto currentTestID = vars.addOrGetUint32(varsPrefix+"current",0);
+    this->bckgProgram->set1i("isRotation", currentTestID<6 || (currentTestID > 12 && currentTestID <18)); 
     this->vao->bind();
     this->glDrawArrays(GL_TRIANGLES, 0, 3);
     this->program->use();
@@ -1046,7 +1060,7 @@ void Holo::draw(){
     vars.get<ge::gl::VertexArray>("emptyVao")->bind();
 
     auto drawScene = [&](glm::mat4 const&view,glm::mat4 const&proj){
-        if(vars.addOrGetBool("drawGrid",true)){
+        if(vars.addOrGetBool("drawGrid",false)){
             vars.get<ge::gl::VertexArray>("emptyVao")->bind();
             drawGrid(vars,view,proj);
             vars.get<ge::gl::VertexArray>("emptyVao")->unbind();
@@ -1099,7 +1113,6 @@ void Holo::init(){
         std::cerr << args->toStr();
         exit(0);
     }
-
 
     if(notResizable)
         SDL_SetWindowResizable(window->getWindow(),SDL_FALSE);
