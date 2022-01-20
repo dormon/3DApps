@@ -406,7 +406,7 @@ RenderModel::RenderModel(Model *mdl, std::string textureFileName, std::string bc
         mat4 newView = view;
         if(!isRotation)
             newView=mat4(1);
-        gl_Position = projection*newView*gl_Position;//c4(position,1);
+        gl_Position = projection*view*gl_Position;//c4(position,1);
       }
     ).";
     const std::string bckgFragSrc =
@@ -734,7 +734,7 @@ class Quilt{
             ge::gl::glGetIntegerv(GL_VIEWPORT,origViewport);
 
             fbo->bind();
-            ge::gl::glClearColor(0,1,0,1);
+            ge::gl::glClearColor(0,0,0,1);
             ge::gl::glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
 
             float strength = vars.addOrGetFloat("DStrength",0.f);
@@ -1006,7 +1006,7 @@ void drawTestingGui(vars::Vars&vars)
     ImGui::TextWrapped("%s", (labels[currentItem.type].c_str()));
         
     if(currentItem.type == TestCase::MAX_SLIDER || currentItem.type == TestCase::BEST_SLIDER)
-        ImGui::SliderFloat("Slider", slider, 0, 1.0, "%.6f");
+      ImGui::SliderFloat("Slider", slider, 0, 1.0, "%.6f");
     else
         ImGui::Checkbox("Enable effect", reinterpret_cast<bool*>(slider));
 
@@ -1031,7 +1031,7 @@ void drawTestingGui(vars::Vars&vars)
     if(vars.getBool("moveHead"))
         headInfo = "Please move your head around to see the scene from all angles!";
     ImGui::TextWrapped("%s", (headInfo.c_str()));
-    ImGui::End();
+    ImGui::End();       
 }
 
 void Holo::draw(){
@@ -1091,6 +1091,16 @@ void Holo::draw(){
 
     vars.get<ge::gl::VertexArray>("emptyVao")->unbind();
 
+    auto debugScreen = vars.getVector<float>("debugScreen");
+    if(debugScreen[0] != -1)
+    {
+        int test = static_cast<int>(debugScreen[0]);
+        char name[2];
+        snprintf (name, 2, "%01d", test);
+        screenShot(name,window->getWidth(), window->getHeight());
+        (*vars.get<Holo*>("thisApp"))->stop();        
+    }
+
     drawTestingGui(vars);
     drawImguiVars(vars);
 
@@ -1101,6 +1111,8 @@ void Holo::init(){
     auto args = vars.add<argumentViewer::ArgumentViewer>("args",argc,argv);
     auto const windowSize = args->getu32v("--window-size",{1024,1024});
     auto const notResizable = args->isPresent("--notResizable");
+
+    auto const debugScreen = args->getf32v("--debug",{-1,-1});
 
     auto const quiltFile = args->gets("--quilt","","quilt image 5x9");
     auto const modelFile = args->gets("--model","","model file");
@@ -1114,9 +1126,24 @@ void Holo::init(){
         exit(0);
     }
 
+    vars.addVector<float>("debugScreen", debugScreen);
+    uint32_t start=0;
+    bool showQuilt{false};
+    size_t w=windowSize[0];
+    size_t h=windowSize[1];
+    if(debugScreen[0] != -1)
+    {
+        start=static_cast<uint32_t>(debugScreen[0]);
+        vars.add<float>("DStrength",debugScreen[1]);
+        w = 1920;
+        h = 1080;
+        showQuilt = true;
+    }
+    vars.addUint32(varsPrefix+"current", start);
+
     if(notResizable)
         SDL_SetWindowResizable(window->getWindow(),SDL_FALSE);
-    window->setSize(windowSize[0],windowSize[1]);
+    window->setSize(w,h);
 
     vars.add<Holo*>("thisApp", this);
 
@@ -1154,7 +1181,7 @@ void Holo::init(){
     vars.addUint32     ("quiltView.stride"     ,1);
     vars.addFloat      ("imageZ"       ,0.9);
     addVarsLimitsF(vars,"quiltView.focus",-1,+1,0.001f);
-    vars.addBool ("showQuilt");
+    vars.addBool ("showQuilt", showQuilt);
     vars.addBool ("compensation");
     vars.addBool ("renderQuilt", true);
     vars.addBool ("renderScene",false);
@@ -1173,8 +1200,6 @@ void Holo::init(){
     vars.addFloat("quiltRender.texScaleAspect",0.745f);
     addVarsLimitsF(vars,"quiltRender.texScaleAspect",0.1f,10,0.01f);
     
-    vars.addUint32(varsPrefix+"current", 0);
-
     vars.add<Quilt>("quilt",vars);
 
     createCamera(vars);
