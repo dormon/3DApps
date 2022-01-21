@@ -36,6 +36,8 @@
 #include <memory>
 #include <time.h>
 #include <fstream>
+#include <sstream>
+#include <iomanip>
 
 #define ___ std::cerr << __FILE__ << " " << __LINE__ << std::endl
 
@@ -1095,9 +1097,9 @@ void Holo::draw(){
     if(debugScreen[0] != -1)
     {
         int test = static_cast<int>(debugScreen[0]);
-        char name[2];
-        snprintf (name, 2, "%01d", test);
-        screenShot(name,window->getWidth(), window->getHeight());
+        std::stringstream name;
+        name << std::setw(2) << std::setfill('0') << test; 
+        screenShot(name.str(),window->getWidth(), window->getHeight());
         (*vars.get<Holo*>("thisApp"))->stop();        
     }
 
