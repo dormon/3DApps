@@ -1,0 +1,11 @@
+VALUES=(0.1120086 0.231342 0.0795596 0.1006085 0.0849261 0.1553404 0.3829993 0.2512669 0.3263631 0.2329686 0.1666419 0.2022154 0.1975141 0.292052 0.0728708 0.8429982 0.8271607 0.3376011 0.443644 0.2329972 0.134708 0.3104921 0.2885406 0.2513537 0.1757619 0.0180304 0.3108024 0.3994175 0.5821599 0.6785908 0.5454806)
+
+LEN=${#VALUES[@]}
+echo $LEN
+
+for (( i=0; i<${LEN}; i++ ));
+do
+/home/ichlubna/Workspace/dormon/3DApps/build/renderHoloUserStudy --model /home/ichlubna/Workspace/3Dmonitor/measurements/box.obj --texture /home/ichlubna/Workspace/3Dmonitor/measurements/box.png --bckg /home/ichlubna/Workspace/3Dmonitor/measurements/bckg.jpg --outDir /home/ichlubna/Workspace/3Dmonitor/measurements/mereni/ --debug $i ${VALUES[$i]} --window-size 10 10
+done
+
+

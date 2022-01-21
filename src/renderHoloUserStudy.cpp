@@ -1098,7 +1098,9 @@ void Holo::draw(){
     {
         int test = static_cast<int>(debugScreen[0]);
         std::stringstream name;
-        name << std::setw(2) << std::setfill('0') << test; 
+        name << std::setw(2) << std::setfill('0') << test;
+        auto &items = vars.getVector<TestCase>("testItems");
+        name << "-" << debugScreen [1] << "_" << items[test].name << ".bmp";
         screenShot(name.str(),window->getWidth(), window->getHeight());
         (*vars.get<Holo*>("thisApp"))->stop();        
     }

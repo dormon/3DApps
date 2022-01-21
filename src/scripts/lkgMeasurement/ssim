@@ -1,0 +1,19 @@
+SSIMVALUES=()
+PSNRVALUES=()
+for FILE in $( ls $1 | sort -n ); do
+    SSIM=$(ffmpeg -i $1/${FILE} -i ./reference.bmp -lavfi ssim -f null - 2>&1 | grep -o -P '(?<=All:).*(?= )')
+    PSNR=$(ffmpeg -i $1/${FILE} -i ./reference.bmp -lavfi psnr -f null - 2>&1 | grep -o -P '(?<=average:).*(?= min)')
+    echo $FILE $SSIM $PSNR
+    SSIMVALUES+=($SSIM)
+    PSNRVALUES+=($PSNR)
+done
+
+for value in "${SSIMVALUES[@]}"
+do
+     echo -n "$value,"
+done
+echo ""
+for value in "${PSNRVALUES[@]}"
+do
+     echo -n "$value,"
+done
