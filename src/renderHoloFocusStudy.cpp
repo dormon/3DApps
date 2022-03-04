@@ -36,6 +36,10 @@ class Holo: public simple3DApp::Application{
         virtual void                resize(uint32_t x,uint32_t y) override;
         virtual void                key(SDL_Event const& e, bool down) override;
         virtual void                mouseMove(SDL_Event const& event) override;
+        void stop()
+        {
+            mainLoop->stop();
+        };
 };
 
 void createTrianglesProgram(vars::Vars&vars){
@@ -245,7 +249,7 @@ void draw3DCursor(vars::Vars&vars){
 }
 
 void loadColorTexture(std::string path, std::string name, vars::Vars&vars){
-
+    std::cout << "Loading: " << path.c_str() << std::endl;
     fipImage colorImg;
     colorImg.load(path.c_str());
     auto const width   = colorImg.getWidth();
@@ -488,7 +492,10 @@ void drawHolo(vars::Vars&vars){
     if(vars.getBool("renderQuilt")){
         vars.get<Quilt>("quilt")->color->bind(0);
     }else{
-        vars.get<ge::gl::Texture>("quiltTex")->bind(0);
+        if(!vars.getBool("switch"))
+            vars.get<ge::gl::Texture>("firstTexture")->bind(0);
+        else
+            vars.get<ge::gl::Texture>("secondTexture")->bind(0);
     }
     vars.get<ge::gl::Program>("holoProgram")
         ->set1i ("showQuilt"       ,                vars.getBool       ("showQuilt"            ))
@@ -511,18 +518,107 @@ void drawHolo(vars::Vars&vars){
     ge::gl::glDrawArrays(GL_TRIANGLE_STRIP,0,4);
 }
 
+void analyzeInputDirs(vars::Vars&vars)
+{
+    auto focusRoot = std::filesystem::directory_iterator(vars.getString("focusDir"));
+    auto &focusFiles = vars.reCreateVector<std::string>("focusFiles");
+    for(const auto &file : focusRoot)
+        focusFiles.push_back(file.path());
+
+    auto selectRoot = std::filesystem::directory_iterator(vars.getString("selectDir"));
+    auto selectSubdir = std::filesystem::directory_iterator(selectRoot->path());
+    auto &selectFiles = vars.reCreateVector<std::pair<std::string, std::string>>("selectFiles");
+    for(const auto &file : selectSubdir)
+        selectFiles.push_back({file.path().filename(), ""});
+    auto firstPath = selectRoot->path().string();
+    selectRoot++; 
+    auto secondPath = selectRoot->path().string();
+    for(auto &pair : selectFiles)
+        pair = {firstPath+"/"+pair.first, secondPath+"/"+pair.first};
+}
+
+void saveResults(vars::Vars&vars)
+{
+    std::vector<std::string>results{"focusResults", "selectResults"};
+    for(auto const &r : results)
+    {
+        std::ofstream f(r+".txt");
+        auto resultsList = vars.getVector<std::string>(r);
+        for(auto const &rs : resultsList)
+            f << rs+"\n";
+        f.close();
+    }
+}
+
+void finishCurrentFocus(vars::Vars&vars)
+{
+    auto focusFiles = vars.getVector<std::string>("focusFiles");
+    auto currentID = vars.getSizeT("currentID");
+    auto focusResults = vars.addOrGet<std::vector<std::string>>("focusResults");
+    focusResults->push_back(focusFiles[currentID]+" "+std::to_string(vars.getFloat("quiltView.focus")));
+}
+
+void finishCurrentSelection(vars::Vars&vars)
+{
+    auto selectFiles = vars.getVector<std::pair<std::string, std::string>>("selectFiles");
+    auto currentID = vars.getSizeT("currentID");
+    auto selectResults = vars.addOrGet<std::vector<std::string>>("selectResults");
+    auto selectedFile = (vars.getBool("switch")) ? selectFiles[currentID].first : selectFiles[currentID].second;
+    selectResults->push_back(selectedFile);
+}
+
+void reloadTextures(vars::Vars&vars)
+{
+    auto &currentID = vars.getSizeT("currentID"); 
+    auto &focusFiles = vars.getVector<std::string>("focusFiles");
+    auto &selectFiles = vars.getVector<std::pair<std::string, std::string>>("selectFiles");
+    auto &slider = vars.getBool("slider");
+    
+    if(slider)
+        loadColorTexture(focusFiles[currentID], "firstTexture", vars);
+    else
+    {
+        loadColorTexture(selectFiles[currentID].first, "firstTexture", vars);
+        loadColorTexture(selectFiles[currentID].second, "secondTexture", vars);
+    } 
+}
+
 void drawImguiStudy(vars::Vars&vars)
 {
     ImGui::Begin("Testing");
 
-    if(vars.getBool("slider"))
+    auto &currentID = vars.getSizeT("currentID"); 
+    auto &focusFiles = vars.getVector<std::string>("focusFiles");
+    auto &selectFiles = vars.getVector<std::pair<std::string, std::string>>("selectFiles");
+    auto &slider = vars.getBool("slider");
+
+    if(slider)
+    {
         ImGui::SliderFloat("Slider", vars.get<float>("quiltView.focus"), -1.0, 1.0, "%.6f");
+    }
     else
         ImGui::Checkbox("Switch", vars.get<bool>("switch"));
 
     if (ImGui::Button("Next"))
     {
-        
+        if(slider)
+            finishCurrentFocus(vars);
+        else
+            finishCurrentSelection(vars);
+        currentID++;
+        if(slider && currentID >= focusFiles.size())
+        {
+            slider = false;
+            currentID = 0;
+        }
+        if(currentID >= selectFiles.size())
+        {
+           saveResults(vars);
+           (*vars.get<Holo*>("thisApp"))->stop();
+           ImGui::End();       
+           return;
+        }
+        reloadTextures(vars);
     }
     ImGui::End();       
 }
@@ -594,55 +690,6 @@ void Holo::draw(){
     swap();
 }
 
-void analyzeInputDirs(vars::Vars&vars)
-{
-    auto focusRoot = std::filesystem::directory_iterator(vars.getString("focusDir"));
-    auto focusFiles = vars.reCreateVector<std::string>("focusFiles");
-    for(const auto &file : focusRoot)
-        focusFiles.push_back(file.path());
-
-    auto selectRoot = std::filesystem::directory_iterator(vars.getString("selectDir"));
-    auto selectSubdir = std::filesystem::directory_iterator(selectRoot->path());
-    auto selectFiles = vars.reCreateVector<std::pair<std::string, std::string>>("focusFiles");
-    for(const auto &file : selectSubdir)
-       selectFiles.push_back({file.path().filename(), ""});
-    auto firstPath = selectRoot->path().string();
-    selectRoot++; 
-    auto secondPath = selectRoot->path().string();
-    for(auto &pair : selectFiles)
-        pair = {firstPath+pair.first, secondPath+pair.first};
-}
-
-void saveResults(vars::Vars&vars)
-{
-    auto results = {"focusResults", "selectResults"};
-    for(auto const &r : results)
-    {
-        std::ofstream f(r);
-        auto resultsList = vars.getVector<std::string>(r);
-        for(auto const &rs : resultsList)
-            f << rs+"\n";
-        f.close();
-    }
-}
-
-void finishCurrentFocus(vars::Vars&vars)
-{
-    auto focusFiles = vars.getVector<std::string>("focusFiles");
-    auto currentID = vars.getSizeT("currentID");
-    auto focusResults = vars.addOrGet<std::vector<std::string>>("focusResults");
-    focusResults->push_back(focusFiles[currentID]+" "+std::to_string(vars.getFloat("quiltView.focus")));
-}
-
-void finishCurrentSelection(vars::Vars&vars)
-{
-    auto selectFiles = vars.getVector<std::pair<std::string, std::string>>("selectFiles");
-    auto currentID = vars.getSizeT("currentID");
-    auto selectResults = vars.addOrGet<std::vector<std::string>>("selectResults");
-    auto selectedFile = (vars.getBool("switch")) ? selectFiles[currentID].first : selectFiles[currentID].second;
-    selectResults->push_back(selectedFile);
-}
-
 void Holo::init(){
     auto args = vars.add<argumentViewer::ArgumentViewer>("args",argc,argv);
     auto const focusDir = args->gets("--focusDir","","directory with quilts for focusing");
@@ -694,9 +741,12 @@ void Holo::init(){
     vars.addFloat("quiltRender.texScaleAspect",0.745f);
     addVarsLimitsF(vars,"quiltRender.texScaleAspect",0.1f,10,0.01f);
 
-    vars.addBool ("slider",false);
+    vars.addBool ("slider",true);
     vars.addBool ("switch",false);
-    vars.addSizeT("currentID, 0");
+    vars.addSizeT("currentID", 0);
+    vars.add<Holo*>("thisApp", this);
+    analyzeInputDirs(vars);
+    reloadTextures(vars);
 
     vars.add<Quilt>("quilt",vars);
 
