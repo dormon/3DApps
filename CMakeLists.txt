@@ -1,7 +1,6 @@
 cmake_minimum_required(VERSION 3.12.1)
 
 project(3DApps)
-
 SET(CMAKE_CXX_STANDARD 20)
 
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
@@ -91,7 +90,8 @@ addApp2(imagePointCloud                       "src/imagePointCloud.cpp"         
 addApp2(fragmentPlay                          "src/fragmentPlay.cpp"                          "Simple3DApp::Simple3DApp;ArgumentViewer::ArgumentViewer;barrier;imguiVars::imguiVars;FreeImagePlus;FreeImage")
 addApp2(frameInterpolation                    "src/frameInterpolation.cpp"                    "Simple3DApp::Simple3DApp;ArgumentViewer::ArgumentViewer;barrier;imguiVars::imguiVars;FreeImagePlus;FreeImage")
 addApp2(renderHolo                            "src/renderHolo.cpp"                            "Simple3DApp::Simple3DApp;ArgumentViewer::ArgumentViewer;drawGrid;barrier;imguiVars::imguiVars;FreeImagePlus;FreeImage;drawBunny")
-addApp2(renderHoloFocus                       "src/renderHoloFocus.cpp"                       "Simple3DApp::Simple3DApp;ArgumentViewer::ArgumentViewer;drawGrid;barrier;imguiVars::imguiVars;FreeImagePlus;FreeImage;drawBunny")
+addApp2(renderHoloFocus                       "src/renderHoloFocus.cpp;src/holoCalibration.h;src/holoCalibration.cpp"                       "Simple3DApp::Simple3DApp;ArgumentViewer::ArgumentViewer;drawGrid;barrier;imguiVars::imguiVars;FreeImagePlus;FreeImage;drawBunny;libusb")
+addApp2(renderHoloFocusStudy                       "src/renderHoloFocusStudy.cpp;src/holoCalibration.h;src/holoCalibration.cpp"                       "Simple3DApp::Simple3DApp;ArgumentViewer::ArgumentViewer;drawGrid;barrier;imguiVars::imguiVars;FreeImagePlus;FreeImage;drawBunny;libusb")
 addApp2(lf_prob_core                          "src/lf_prob_core.cpp"                          "Simple3DApp::Simple3DApp;ArgumentViewer::ArgumentViewer;barrier;imguiVars::imguiVars;FreeImagePlus;FreeImage;loadTxtFile;ls")
 addApp2(renderHoloModel                       "src/renderHoloModel.cpp"                       "Simple3DApp::Simple3DApp;ArgumentViewer::ArgumentViewer;drawGrid;barrier;imguiVars::imguiVars;FreeImagePlus;FreeImage;drawBunny;assimp::assimp")
 addApp2(renderHoloUserStudy                       "src/renderHoloUserStudy.cpp;src/holoCalibration.h;src/holoCalibration.cpp"                       "Simple3DApp::Simple3DApp;ArgumentViewer::ArgumentViewer;drawGrid;barrier;imguiVars::imguiVars;FreeImagePlus;FreeImage;drawBunny;assimp::assimp;libusb")

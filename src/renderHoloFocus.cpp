@@ -16,6 +16,7 @@
 #include <FreeImagePlus.h>
 #include <imguiDormon/imgui.h>
 #include <drawBunny.h>
+#include <holoCalibration.h>
 
 #define ___ std::cerr << __FILE__ << " " << __LINE__ << std::endl
 
@@ -600,11 +601,12 @@ void Holo::init(){
   vars.add<std::map<SDL_Keycode, bool>>("input.keyDown");
   vars.addBool("useOrbitCamera",false);
 
-  vars.addFloat      ("quiltView.pitch"      ,354.42108f);
-  vars.addFloat      ("quiltView.tilt"       ,-0.1153f);
-  vars.addFloat      ("quiltView.center"     ,0.04239f);
-  vars.addFloat      ("quiltView.invView"    ,1.00f);
-  vars.addFloat      ("quiltView.subp"       ,0.00013f);
+    HoloCalibration::Calibration cal = HoloCalibration::getCalibration();
+    vars.addFloat      ("quiltView.pitch"      ,cal.recalculatedPitch());
+    vars.addFloat      ("quiltView.tilt"       ,cal.tilt());
+    vars.addFloat      ("quiltView.center"     ,cal.center);
+    vars.addFloat      ("quiltView.invView"    ,cal.invView);
+    vars.addFloat      ("quiltView.subp"       ,cal.subp());
   vars.addInt32      ("quiltView.ri"         ,0);
   vars.addInt32      ("quiltView.bi"         ,2);
   vars.add<glm::vec4>("quiltView.tile"       ,5.00f, 9.00f, 45.00f, 45.00f);
