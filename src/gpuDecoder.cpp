@@ -152,7 +152,7 @@ GpuDecoder::GpuDecoder(const char* path)
     if(avformat_find_stream_info(formatContext, NULL) < 0)
         throw std::runtime_error("Cannot get the stream info");
 
-    videoStreamId = av_find_best_stream(formatContext, AVMEDIA_TYPE_VIDEO, -1, -1, &codec, 0);
+    videoStreamId = av_find_best_stream(formatContext, AVMEDIA_TYPE_VIDEO, -1, -1, const_cast<const AVCodec**>(&codec), 0);
     if(videoStreamId < 0)
         throw std::runtime_error("No video stream available");
 
