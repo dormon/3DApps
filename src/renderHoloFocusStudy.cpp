@@ -540,9 +540,15 @@ void analyzeInputDirs(vars::Vars&vars)
 void saveResults(vars::Vars&vars)
 {
     std::vector<std::string>results{"focusResults", "selectResults"};
+    time_t rawtime;
+    struct tm * timeinfo;
+    time (&rawtime);
+    timeinfo = localtime (&rawtime);
+    std::string dirName{asctime(timeinfo)};
+    std::filesystem::create_directory(dirName);
     for(auto const &r : results)
     {
-        std::ofstream f(r+".txt");
+        std::ofstream f(vars.getString("outDir")+"/"+dirName+"/"+r+".txt");
         auto resultsList = vars.getVector<std::string>(r);
         for(auto const &rs : resultsList)
             f << rs+"\n";
@@ -563,8 +569,20 @@ void finishCurrentSelection(vars::Vars&vars)
     auto selectFiles = vars.getVector<std::pair<std::string, std::string>>("selectFiles");
     auto currentID = vars.getSizeT("currentID");
     auto selectResults = vars.addOrGet<std::vector<std::string>>("selectResults");
-    auto selectedFile = (vars.getBool("switch")) ? selectFiles[currentID].first : selectFiles[currentID].second;
+    auto selectedFile = (!vars.getBool("switch")) ? selectFiles[currentID].first : selectFiles[currentID].second;
     selectResults->push_back(selectedFile);
+}
+
+float getFocusFromName(std::string name)
+{
+    auto fileName = std::string(std::filesystem::path(name).filename());
+    auto position = fileName.find("|");
+    std::cerr << "aaaa " << fileName <<std::endl;
+    if(position == std::string::npos)
+        return 0.0f;
+    std::string value = fileName.substr(0, position);
+    std::cerr << value <<std::endl;
+    return std::stof(value);
 }
 
 void reloadTextures(vars::Vars&vars)
@@ -573,11 +591,15 @@ void reloadTextures(vars::Vars&vars)
     auto &focusFiles = vars.getVector<std::string>("focusFiles");
     auto &selectFiles = vars.getVector<std::pair<std::string, std::string>>("selectFiles");
     auto &slider = vars.getBool("slider");
-    
+
     if(slider)
+    {
+        *vars.get<float>("quiltView.focus") = getFocusFromName(focusFiles[currentID]);
         loadColorTexture(focusFiles[currentID], "firstTexture", vars);
+    }
     else
     {
+        *vars.get<float>("quiltView.focus") = getFocusFromName(selectFiles[currentID].first);
         loadColorTexture(selectFiles[currentID].first, "firstTexture", vars);
         loadColorTexture(selectFiles[currentID].second, "secondTexture", vars);
     } 
@@ -594,10 +616,11 @@ void drawImguiStudy(vars::Vars&vars)
 
     if(slider)
     {
-        ImGui::SliderFloat("Slider", vars.get<float>("quiltView.focus"), -1.0, 1.0, "%.6f");
+        ImGui::SliderFloat("", vars.get<float>("quiltView.focus"), -1.0, 1.0, "%.6f");
     }
     else
         ImGui::Checkbox("Switch", vars.get<bool>("switch"));
+    ImGui::Dummy(ImVec2(0.0f, 50.0f));
 
     if (ImGui::Button("Next"))
     {
@@ -611,7 +634,7 @@ void drawImguiStudy(vars::Vars&vars)
             slider = false;
             currentID = 0;
         }
-        if(currentID >= selectFiles.size())
+        else if(!slider && currentID >= selectFiles.size())
         {
            saveResults(vars);
            (*vars.get<Holo*>("thisApp"))->stop();
@@ -694,6 +717,7 @@ void Holo::init(){
     auto args = vars.add<argumentViewer::ArgumentViewer>("args",argc,argv);
     auto const focusDir = args->gets("--focusDir","","directory with quilts for focusing");
     auto const selectDir = args->gets("--selectDir","","directory with quilts for selection, have to contain two subfolders with same filenames inside - pairs");
+    auto const outDir = args->gets("--outDir","","directory to save results to");
     auto const showHelp = args->isPresent("-h","shows help");
     if (showHelp || !args->validate()) {
         std::cerr << args->toStr();
@@ -702,6 +726,7 @@ void Holo::init(){
 
     vars.addString("focusDir",focusDir);
     vars.addString("selectDir",selectDir);
+    vars.addString("outDir",selectDir);
 
     vars.add<ge::gl::VertexArray>("emptyVao");
     vars.add<glm::uvec2>("windowSize",window->getWidth(),window->getHeight());
