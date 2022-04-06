@@ -544,11 +544,13 @@ void saveResults(vars::Vars&vars)
     struct tm * timeinfo;
     time (&rawtime);
     timeinfo = localtime (&rawtime);
-    std::string dirName{asctime(timeinfo)};
+    std::string dirName{vars.getString("outDir")+"/"+asctime(timeinfo)};
     std::filesystem::create_directory(dirName);
+    std::cout << "Storing results to: "+dirName << std::endl;
+
     for(auto const &r : results)
     {
-        std::ofstream f(vars.getString("outDir")+"/"+dirName+"/"+r+".txt");
+        std::ofstream f(dirName+"/"+r+".txt");
         auto resultsList = vars.getVector<std::string>(r);
         for(auto const &rs : resultsList)
             f << rs+"\n";
@@ -562,6 +564,7 @@ void finishCurrentFocus(vars::Vars&vars)
     auto currentID = vars.getSizeT("currentID");
     auto focusResults = vars.addOrGet<std::vector<std::string>>("focusResults");
     focusResults->push_back(focusFiles[currentID]+" "+std::to_string(vars.getFloat("quiltView.focus")));
+    std::cout << focusResults->back() << std::endl;
 }
 
 void finishCurrentSelection(vars::Vars&vars)
@@ -571,17 +574,16 @@ void finishCurrentSelection(vars::Vars&vars)
     auto selectResults = vars.addOrGet<std::vector<std::string>>("selectResults");
     auto selectedFile = (!vars.getBool("switch")) ? selectFiles[currentID].first : selectFiles[currentID].second;
     selectResults->push_back(selectedFile);
+    std::cout << selectResults->back() << std::endl;
 }
 
 float getFocusFromName(std::string name)
 {
     auto fileName = std::string(std::filesystem::path(name).filename());
     auto position = fileName.find("|");
-    std::cerr << "aaaa " << fileName <<std::endl;
     if(position == std::string::npos)
         return 0.0f;
     std::string value = fileName.substr(0, position);
-    std::cerr << value <<std::endl;
     return std::stof(value);
 }
 
@@ -726,7 +728,7 @@ void Holo::init(){
 
     vars.addString("focusDir",focusDir);
     vars.addString("selectDir",selectDir);
-    vars.addString("outDir",selectDir);
+    vars.addString("outDir",outDir);
 
     vars.add<ge::gl::VertexArray>("emptyVao");
     vars.add<glm::uvec2>("windowSize",window->getWidth(),window->getHeight());
