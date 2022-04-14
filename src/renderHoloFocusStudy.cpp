@@ -20,6 +20,7 @@
 #include <holoCalibration.h>
 #include <string>
 #include <fstream>
+#include <Timer.h>
 
 #define ___ std::cerr << __FILE__ << " " << __LINE__ << std::endl
 
@@ -556,6 +557,11 @@ void saveResults(vars::Vars&vars)
             f << rs+"\n";
         f.close();
     }
+    auto times = vars.getVector<double>("times");
+    std::ofstream ft(dirName+"/times.txt");
+    for(auto const &t : times)
+        ft << t << "\n";
+    ft.close();
 }
 
 void finishCurrentFocus(vars::Vars&vars)
@@ -610,6 +616,15 @@ void reloadTextures(vars::Vars&vars)
 
 void drawImguiStudy(vars::Vars&vars)
 {
+    auto &times = vars.getVector<double>("times");
+    auto timer = vars.addOrGet<Timer<double>>("timer");
+    auto resetTimer = vars.addOrGet<bool>("resetTimer", false);
+    if(*resetTimer)
+    {
+        timer->reset();
+        *resetTimer = false;
+    }
+
     ImGui::Begin("Testing");
 
     auto &currentID = vars.getSizeT("currentID"); 
@@ -627,6 +642,11 @@ void drawImguiStudy(vars::Vars&vars)
 
     if (ImGui::Button("Next"))
     {
+        auto t = vars.get<Timer<double>>("timer")->elapsedFromStart();
+        std::cout << "Elapsed: " << t << std::endl;
+        times.push_back(t);
+        *resetTimer = true;    
+
         if(slider)
             finishCurrentFocus(vars);
         else
@@ -773,6 +793,7 @@ void Holo::init(){
     vars.addBool ("switch",false);
     vars.addSizeT("currentID", 0);
     vars.add<Holo*>("thisApp", this);
+    vars.addVector<double>("times");
     analyzeInputDirs(vars);
     reloadTextures(vars);
 
