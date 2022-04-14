@@ -249,7 +249,7 @@ void draw3DCursor(vars::Vars&vars){
 }
 
 void loadColorTexture(std::string path, std::string name, vars::Vars&vars){
-    std::cout << "Loading: " << path.c_str() << std::endl;
+    std::cerr << "Loading: " << path.c_str() << std::endl;
     fipImage colorImg;
     colorImg.load(path.c_str());
     auto const width   = colorImg.getWidth();
@@ -546,7 +546,7 @@ void saveResults(vars::Vars&vars)
     timeinfo = localtime (&rawtime);
     std::string dirName{vars.getString("outDir")+"/"+asctime(timeinfo)};
     std::filesystem::create_directory(dirName);
-    std::cout << "Storing results to: "+dirName << std::endl;
+    std::cout << "Storing results to: " << dirName << std::endl;
 
     for(auto const &r : results)
     {
@@ -573,6 +573,7 @@ void finishCurrentSelection(vars::Vars&vars)
     auto currentID = vars.getSizeT("currentID");
     auto selectResults = vars.addOrGet<std::vector<std::string>>("selectResults");
     auto selectedFile = (!vars.getBool("switch")) ? selectFiles[currentID].first : selectFiles[currentID].second;
+    vars.getBool("switch") = false;
     selectResults->push_back(selectedFile);
     std::cout << selectResults->back() << std::endl;
 }
