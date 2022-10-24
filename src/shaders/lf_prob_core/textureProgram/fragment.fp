@@ -3,7 +3,7 @@ in vec2 vCoord;
 layout(binding=0)uniform sampler2D tex[8];
 uniform float inOffset = 0;
 uniform float inShift  = 0;
-uniform int   mode   = 7;
+uniform int   mode   = 0;
 uniform int   inplaceMeanSize = 4;
 uniform bool  showMix = false;
 uniform float contrast = 100;
@@ -11,11 +11,16 @@ uniform float brightness = 0;
 
 //offset = cameraDistance*near/depth
 
+vec4 getColor(int i,vec2 coord,float offset,float shift){
+  return texture(tex[i],coord+vec2(offset*i-shift,0));
+}
+
 vec4 getMeanColor(float offset,float shift){
   vec4 meanColor = vec4(0);
 
   for(int i=0;i<8;++i)
-    meanColor += texture(tex[i],vCoord+vec2(offset*i-shift,0));
+    meanColor += getColor(i,vCoord,offset,shift);
+    //meanColor += texture(tex[i],vCoord+vec2(offset*i-shift,0));
   meanColor/=8;
   return meanColor;
 }
@@ -115,11 +120,27 @@ vec4 getDepth2(){
   return vec4((bestFocus+range)/range/2.f);
 }
 
+uniform float pixX = 50;
+uniform float pixY = 50;
+
 void main(){
   float shift = inShift / 100.f;
   float offset = inOffset / 5000.f;
   if(mode==0 || showMix){
     presentColor(getMeanColor(offset,shift));
+
+    if(length(vCoord-vec2(pixX/100,pixY/100))<0.001){
+      fColor = vec4(1,0,0,1);
+      return;
+    }
+    if(vCoord.y>0.9){
+      vec2 nc = vCoord;
+      nc.y-=0.9;
+      nc.y/=0.1;
+      fColor = vec4(nc,0,1);
+      vec4 cc = getColor(int(nc.x*8),vec2(pixX/100,pixY/100),offset,shift); 
+      fColor = vec4(cc.r>nc.y,cc.g>nc.y,cc.r>nc.y,1);
+    }
     return;
   }
   if(mode==1)
