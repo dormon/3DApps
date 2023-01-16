@@ -312,9 +312,9 @@ void createHoloProgram(vars::Vars&vars){
   uniform int showAsSequence = 0;
   uniform uint selectedView = 0;
   // HoloPlay values
-  uniform float pitch = 354.42108f;
-  uniform float tilt = -0.1153f;
-  uniform float center = 0.04239f;
+  uniform float pitch = 354.677f;
+  uniform float tilt = -0.113949f;
+  uniform float center = -0.400272f;
   uniform float invView = 1.f;
   uniform float flipX;
   uniform float flipY;
@@ -601,12 +601,11 @@ void Holo::init(){
   vars.add<std::map<SDL_Keycode, bool>>("input.keyDown");
   vars.addBool("useOrbitCamera",false);
 
-    HoloCalibration::Calibration cal = HoloCalibration::getCalibration();
-    vars.addFloat      ("quiltView.pitch"      ,cal.recalculatedPitch());
-    vars.addFloat      ("quiltView.tilt"       ,cal.tilt());
-    vars.addFloat      ("quiltView.center"     ,cal.center);
-    vars.addFloat      ("quiltView.invView"    ,cal.invView);
-    vars.addFloat      ("quiltView.subp"       ,cal.subp());
+  vars.addFloat      ("quiltView.pitch"      ,354.677f);
+  vars.addFloat      ("quiltView.tilt"       ,-0.113949f);
+  vars.addFloat      ("quiltView.center"     ,-0.400272);
+  vars.addFloat      ("quiltView.invView"    ,1);
+  vars.addFloat      ("quiltView.subp"       ,0.000130208);
   vars.addInt32      ("quiltView.ri"         ,0);
   vars.addInt32      ("quiltView.bi"         ,2);
   vars.add<glm::vec4>("quiltView.tile"       ,5.00f, 9.00f, 45.00f, 45.00f);

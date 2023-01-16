@@ -90,7 +90,7 @@ addApp2(imagePointCloud                       "src/imagePointCloud.cpp"         
 addApp2(fragmentPlay                          "src/fragmentPlay.cpp"                          "Simple3DApp::Simple3DApp;ArgumentViewer::ArgumentViewer;barrier;imguiVars::imguiVars;FreeImagePlus;FreeImage")
 addApp2(frameInterpolation                    "src/frameInterpolation.cpp"                    "Simple3DApp::Simple3DApp;ArgumentViewer::ArgumentViewer;barrier;imguiVars::imguiVars;FreeImagePlus;FreeImage")
 addApp2(renderHolo                            "src/renderHolo.cpp"                            "Simple3DApp::Simple3DApp;ArgumentViewer::ArgumentViewer;drawGrid;barrier;imguiVars::imguiVars;FreeImagePlus;FreeImage;drawBunny")
-addApp2(renderHoloFocus                       "src/renderHoloFocus.cpp;src/holoCalibration.h;src/holoCalibration.cpp"                       "Simple3DApp::Simple3DApp;ArgumentViewer::ArgumentViewer;drawGrid;barrier;imguiVars::imguiVars;FreeImagePlus;FreeImage;drawBunny;libusb")
+addApp2(renderHoloFocus                       "src/renderHoloFocus.cpp"                       "Simple3DApp::Simple3DApp;ArgumentViewer::ArgumentViewer;drawGrid;barrier;imguiVars::imguiVars;FreeImagePlus;FreeImage;drawBunny")
 addApp2(renderHoloFocusStudy                       "src/renderHoloFocusStudy.cpp;src/holoCalibration.h;src/holoCalibration.cpp"                       "Simple3DApp::Simple3DApp;ArgumentViewer::ArgumentViewer;drawGrid;barrier;imguiVars::imguiVars;FreeImagePlus;FreeImage;drawBunny;libusb")
 addApp2(lf_prob_core                          "src/lf_prob_core.cpp"                          "Simple3DApp::Simple3DApp;ArgumentViewer::ArgumentViewer;barrier;imguiVars::imguiVars;FreeImagePlus;FreeImage;loadTxtFile;ls")
 addApp2(renderHoloModel                       "src/renderHoloModel.cpp"                       "Simple3DApp::Simple3DApp;ArgumentViewer::ArgumentViewer;drawGrid;barrier;imguiVars::imguiVars;FreeImagePlus;FreeImage;drawBunny;assimp::assimp")
@@ -113,6 +113,7 @@ addApp2(lightfieldPlayer                      "src/lightfieldPlayer.cpp"        
 addApp2(tessellationLevels                    "src/tessellationLevels.cpp"                    "Simple3DApp::Simple3DApp;barrier;imguiVars::imguiVars;Vars::Vars")
 addApp2(perPixelLf                               "src/perPixelLf.cpp"                         "ArgumentViewer::ArgumentViewer")
 addApp2(quiltDetector                        "src/quiltDetector.cpp"                          "ArgumentViewer::ArgumentViewer;cv")
+addApp2(lkgGetCalibration                    "src/lkgGetCalibration.cpp;src/holoCalibration.h;src/holoCalibration.cpp" "libusb-1.0")
 
 add_subdirectory(src/GMU)
 
