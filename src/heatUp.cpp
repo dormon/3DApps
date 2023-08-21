@@ -2,7 +2,6 @@
 #include<sstream>
 #include<vector>
 #include<iostream>
-#include<CL/cl.hpp>
 
 bool running = true;
 

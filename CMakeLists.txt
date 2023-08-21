@@ -72,7 +72,7 @@ addApp2(shadowVolumes                         "src/shadowVolumes.cpp"           
 addApp2(openglTest                            "src/openglTest.cpp"                            "SDL2::SDL2;SDL2::SDL2main;geGL::geGL")
 addApp2(bufferBindingTest                     "src/bufferBindingTest.cpp"                     "SDL2::SDL2;SDL2::SDL2main;geGL::geGL")
 addApp2(workgroupCoop                         "src/workgroupCoop.cpp"                         "SDL2::SDL2;SDL2::SDL2main;geGL::geGL")
-addApp2(heatUp                                "src/heatUp.cpp"                                "OpenCL::OpenCL;Threads")
+addApp2(heatUp                                "src/heatUp.cpp"                                "Threads")
 addApp2(pbr                                   "src/pbr.cpp"                                   "Simple3DApp::Simple3DApp;drawGrid;imguiVars::imguiVars")
 addApp2(drawVars                              "src/drawVars.cpp"                              "Simple3DApp::Simple3DApp;imguiVars::imguiVars")
 addApp2(pathTracing                           "src/pathTracing.cpp"                           "Simple3DApp::Simple3DApp;drawGrid;imguiVars::imguiVars")
