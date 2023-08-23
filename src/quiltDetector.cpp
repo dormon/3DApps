@@ -1,3 +1,4 @@
+// Measurement scripts available at https://github.com/dormon/3DApps/tree/master/src/scripts/lkgMeasurement
 #include <glm/fwd.hpp>
 #include <iostream>
 #include <opencv2/calib3d.hpp>
